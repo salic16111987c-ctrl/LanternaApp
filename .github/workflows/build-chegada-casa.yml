@@ -1,0 +1,460 @@
+name: Build Chegada Casa
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-chegada-casa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Criar projeto Android
+        shell: bash
+        run: |
+          rm -rf chegada-app chegada-build.gradle chegada-settings.gradle
+          mkdir -p chegada-app/src/main/java/com/andreson/chegadacasa
+
+          cat > chegada-settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = 'ChegadaCasa'
+          include ':chegada-app'
+          project(':chegada-app').projectDir = file('chegada-app')
+          EOF
+
+          cat > chegada-build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > chegada-app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.andreson.chegadacasa'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.andreson.chegadacasa'
+                  minSdk 26
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0-teste'
+              }
+          }
+
+          dependencies {
+              implementation 'com.google.android.gms:play-services-location:21.3.0'
+          }
+          EOF
+
+          cat > chegada-app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+              <application
+                  android:allowBackup="false"
+                  android:label="Chegada Casa"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <receiver
+                      android:name=".GeofenceReceiver"
+                      android:exported="false" />
+              </application>
+          </manifest>
+          EOF
+
+          cat > chegada-app/src/main/java/com/andreson/chegadacasa/MainActivity.java <<'EOF'
+          package com.andreson.chegadacasa;
+
+          import android.Manifest;
+          import android.app.Activity;
+          import android.app.PendingIntent;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.content.pm.PackageManager;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.view.Gravity;
+          import android.view.ViewGroup;
+          import android.widget.ArrayAdapter;
+          import android.widget.Button;
+          import android.widget.CheckBox;
+          import android.widget.LinearLayout;
+          import android.widget.Spinner;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          import com.google.android.gms.location.FusedLocationProviderClient;
+          import com.google.android.gms.location.Geofence;
+          import com.google.android.gms.location.GeofencingClient;
+          import com.google.android.gms.location.GeofencingRequest;
+          import com.google.android.gms.location.LocationServices;
+          import com.google.android.gms.location.Priority;
+          import com.google.android.gms.tasks.CancellationTokenSource;
+
+          public class MainActivity extends Activity {
+              private FusedLocationProviderClient fused;
+              private GeofencingClient geofencing;
+              private SharedPreferences prefs;
+              private TextView status;
+              private Spinner raio;
+              private CheckBox soNoite;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  fused = LocationServices.getFusedLocationProviderClient(this);
+                  geofencing = LocationServices.getGeofencingClient(this);
+                  prefs = getSharedPreferences("config", MODE_PRIVATE);
+                  montarTela();
+                  pedirPermissoesBasicas();
+              }
+
+              private void montarTela() {
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(dp(24), dp(24), dp(24), dp(24));
+                  root.setBackgroundColor(Color.rgb(245,245,245));
+
+                  TextView titulo = new TextView(this);
+                  titulo.setText("🏠 CHEGADA CASA");
+                  titulo.setTextSize(30);
+                  titulo.setTypeface(Typeface.DEFAULT_BOLD);
+                  titulo.setTextColor(Color.BLACK);
+                  titulo.setGravity(Gravity.CENTER);
+                  root.addView(titulo, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                  TextView subtitulo = new TextView(this);
+                  subtitulo.setText("Versão de teste do acionamento por proximidade");
+                  subtitulo.setTextSize(16);
+                  subtitulo.setTextColor(Color.DKGRAY);
+                  subtitulo.setGravity(Gravity.CENTER);
+                  LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                  sp.setMargins(0, dp(8), 0, dp(22));
+                  root.addView(subtitulo, sp);
+
+                  TextView lblRaio = new TextView(this);
+                  lblRaio.setText("Raio para acionar:");
+                  lblRaio.setTextSize(18);
+                  lblRaio.setTextColor(Color.BLACK);
+                  root.addView(lblRaio);
+
+                  raio = new Spinner(this);
+                  String[] opcoes = {"100 metros", "200 metros", "300 metros"};
+                  ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, opcoes);
+                  raio.setAdapter(adapter);
+                  int salvo = prefs.getInt("raio", 200);
+                  raio.setSelection(salvo == 100 ? 0 : salvo == 300 ? 2 : 1);
+                  root.addView(raio);
+
+                  soNoite = new CheckBox(this);
+                  soNoite.setText("Somente à noite (18h às 6h)");
+                  soNoite.setTextSize(17);
+                  soNoite.setChecked(prefs.getBoolean("so_noite", false));
+                  root.addView(soNoite);
+
+                  Button definirCasa = botao("DEFINIR CASA NESTE LOCAL");
+                  definirCasa.setOnClickListener(v -> definirCasa());
+                  root.addView(definirCasa, paramsBotao());
+
+                  Button ativar = botao("ATIVAR AUTOMAÇÃO");
+                  ativar.setOnClickListener(v -> ativarGeofence());
+                  root.addView(ativar, paramsBotao());
+
+                  Button testar = botao("TESTAR ALERTA AGORA");
+                  testar.setOnClickListener(v -> GeofenceReceiver.mostrarNotificacao(this, "Teste aprovado", "O aplicativo está pronto para avisar quando você chegar perto de casa."));
+                  root.addView(testar, paramsBotao());
+
+                  status = new TextView(this);
+                  status.setTextSize(16);
+                  status.setTextColor(Color.DKGRAY);
+                  status.setPadding(0, dp(18), 0, 0);
+                  root.addView(status);
+                  atualizarStatus();
+
+                  setContentView(root);
+              }
+
+              private Button botao(String texto) {
+                  Button b = new Button(this);
+                  b.setText(texto);
+                  b.setTextSize(18);
+                  b.setTypeface(Typeface.DEFAULT_BOLD);
+                  return b;
+              }
+
+              private LinearLayout.LayoutParams paramsBotao() {
+                  LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(68));
+                  p.setMargins(0, dp(12), 0, 0);
+                  return p;
+              }
+
+              private int dp(int valor) {
+                  return Math.round(valor * getResources().getDisplayMetrics().density);
+              }
+
+              private void pedirPermissoesBasicas() {
+                  if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                      requestPermissions(new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 100);
+                  }
+                  if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                      requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 101);
+                  }
+              }
+
+              private void definirCasa() {
+                  if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                      pedirPermissoesBasicas();
+                      Toast.makeText(this, "Permita a localização e tente novamente.", Toast.LENGTH_LONG).show();
+                      return;
+                  }
+                  status.setText("Obtendo localização atual...");
+                  CancellationTokenSource cts = new CancellationTokenSource();
+                  fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.getToken())
+                          .addOnSuccessListener(loc -> {
+                              if (loc == null) {
+                                  status.setText("Não consegui obter a localização. Ative o GPS e tente novamente.");
+                                  return;
+                              }
+                              prefs.edit().putLong("lat", Double.doubleToRawLongBits(loc.getLatitude()))
+                                      .putLong("lon", Double.doubleToRawLongBits(loc.getLongitude()))
+                                      .putBoolean("casa_definida", true).apply();
+                              status.setText("Casa definida com sucesso. Agora toque em ATIVAR AUTOMAÇÃO.");
+                          })
+                          .addOnFailureListener(e -> status.setText("Erro ao obter localização: " + e.getMessage()));
+              }
+
+              private int raioSelecionado() {
+                  int pos = raio.getSelectedItemPosition();
+                  return pos == 0 ? 100 : pos == 2 ? 300 : 200;
+              }
+
+              private boolean temBackground() {
+                  if (Build.VERSION.SDK_INT < 29) return true;
+                  return checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED;
+              }
+
+              private void abrirPermissaoSempre() {
+                  Toast.makeText(this, "Em Localização, escolha PERMITIR O TEMPO TODO e volte ao app.", Toast.LENGTH_LONG).show();
+                  Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()));
+                  startActivity(i);
+              }
+
+              private void ativarGeofence() {
+                  if (!prefs.getBoolean("casa_definida", false)) {
+                      Toast.makeText(this, "Primeiro defina sua casa neste local.", Toast.LENGTH_LONG).show();
+                      return;
+                  }
+                  if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                      pedirPermissoesBasicas();
+                      return;
+                  }
+                  if (!temBackground()) {
+                      if (Build.VERSION.SDK_INT == 29) {
+                          requestPermissions(new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION}, 102);
+                      } else {
+                          abrirPermissaoSempre();
+                      }
+                      return;
+                  }
+
+                  int metros = raioSelecionado();
+                  prefs.edit().putInt("raio", metros).putBoolean("so_noite", soNoite.isChecked()).apply();
+                  double lat = Double.longBitsToDouble(prefs.getLong("lat", 0));
+                  double lon = Double.longBitsToDouble(prefs.getLong("lon", 0));
+
+                  Geofence geofence = new Geofence.Builder()
+                          .setRequestId("casa")
+                          .setCircularRegion(lat, lon, metros)
+                          .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                          .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
+                          .build();
+
+                  GeofencingRequest req = new GeofencingRequest.Builder()
+                          .addGeofence(geofence)
+                          .build();
+
+                  try {
+                      geofencing.removeGeofences(getGeofencePendingIntent()).addOnCompleteListener(t -> {
+                          try {
+                              geofencing.addGeofences(req, getGeofencePendingIntent())
+                                      .addOnSuccessListener(v -> {
+                                          prefs.edit().putBoolean("ativa", true).apply();
+                                          status.setText("AUTOMAÇÃO ATIVA — aviso ao entrar em " + metros + " m da sua casa.");
+                                          Toast.makeText(this, "Automação ativada!", Toast.LENGTH_LONG).show();
+                                      })
+                                      .addOnFailureListener(e -> status.setText("Não foi possível ativar: " + e.getMessage()));
+                          } catch (SecurityException e) {
+                              status.setText("Permissão de localização insuficiente.");
+                          }
+                      });
+                  } catch (SecurityException e) {
+                      status.setText("Permissão de localização insuficiente.");
+                  }
+              }
+
+              private PendingIntent getGeofencePendingIntent() {
+                  Intent intent = new Intent(this, GeofenceReceiver.class);
+                  int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                  if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;
+                  return PendingIntent.getBroadcast(this, 77, intent, flags);
+              }
+
+              private void atualizarStatus() {
+                  if (!prefs.getBoolean("casa_definida", false)) {
+                      status.setText("1. Vá para sua casa e toque em DEFINIR CASA NESTE LOCAL.\n2. Depois permita localização o tempo todo.\n3. Ative a automação.");
+                  } else if (prefs.getBoolean("ativa", false)) {
+                      status.setText("AUTOMAÇÃO ATIVA — raio salvo: " + prefs.getInt("raio", 200) + " m.");
+                  } else {
+                      status.setText("Casa já definida. Falta ativar a automação.");
+                  }
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  if (status != null) atualizarStatus();
+              }
+          }
+          EOF
+
+          cat > chegada-app/src/main/java/com/andreson/chegadacasa/GeofenceReceiver.java <<'EOF'
+          package com.andreson.chegadacasa;
+
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.os.Build;
+
+          import com.google.android.gms.location.Geofence;
+          import com.google.android.gms.location.GeofencingEvent;
+
+          import java.util.Calendar;
+
+          public class GeofenceReceiver extends BroadcastReceiver {
+              @Override
+              public void onReceive(Context context, Intent intent) {
+                  GeofencingEvent event = GeofencingEvent.fromIntent(intent);
+                  if (event == null || event.hasError()) return;
+
+                  int transition = event.getGeofenceTransition();
+                  SharedPreferences prefs = context.getSharedPreferences("config", Context.MODE_PRIVATE);
+
+                  if (transition == Geofence.GEOFENCE_TRANSITION_EXIT) {
+                      prefs.edit().putBoolean("dentro", false).apply();
+                      return;
+                  }
+
+                  if (transition != Geofence.GEOFENCE_TRANSITION_ENTER) return;
+                  if (prefs.getBoolean("dentro", false)) return;
+
+                  long agora = System.currentTimeMillis();
+                  long ultimo = prefs.getLong("ultimo_alerta", 0);
+                  if (agora - ultimo < 10 * 60 * 1000L) return;
+
+                  if (prefs.getBoolean("so_noite", false)) {
+                      int hora = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+                      if (!(hora >= 18 || hora < 6)) return;
+                  }
+
+                  prefs.edit().putBoolean("dentro", true).putLong("ultimo_alerta", agora).apply();
+                  mostrarNotificacao(context, "Você chegou perto de casa", "Teste aprovado: o celular entrou no raio configurado. Depois vamos trocar este alerta pelo comando para ligar as luzes eWeLink.");
+              }
+
+              public static void mostrarNotificacao(Context context, String titulo, String texto) {
+                  String canal = "chegada";
+                  NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                  if (Build.VERSION.SDK_INT >= 26) {
+                      NotificationChannel ch = new NotificationChannel(canal, "Chegada em casa", NotificationManager.IMPORTANCE_HIGH);
+                      ch.setDescription("Avisos do acionamento por proximidade");
+                      nm.createNotificationChannel(ch);
+                  }
+                  android.app.Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                          ? new android.app.Notification.Builder(context, canal)
+                          : new android.app.Notification.Builder(context);
+                  b.setSmallIcon(android.R.drawable.ic_dialog_info)
+                          .setContentTitle(titulo)
+                          .setContentText(texto)
+                          .setStyle(new android.app.Notification.BigTextStyle().bigText(texto))
+                          .setAutoCancel(true)
+                          .setPriority(android.app.Notification.PRIORITY_HIGH);
+                  nm.notify(2001, b.build());
+              }
+          }
+          EOF
+
+      - name: Instalar SDK Android 35
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" >/dev/null
+
+      - name: Compilar APK
+        run: gradle -c chegada-settings.gradle -b chegada-build.gradle :chegada-app:assembleDebug --no-daemon
+
+      - name: Preparar APK
+        run: cp chegada-app/build/outputs/apk/debug/chegada-app-debug.apk ChegadaCasa.apk
+
+      - name: Salvar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chegada-Casa-APK
+          path: ChegadaCasa.apk
+
+      - name: Criar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="chegada-casa-${{ github.run_number }}"
+          gh release create "$TAG" ChegadaCasa.apk --title "Chegada Casa APK" --notes "Versão de teste: geofence com raio de 100, 200 ou 300 metros e notificação ao chegar." || true
