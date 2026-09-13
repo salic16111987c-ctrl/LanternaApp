@@ -30,10 +30,10 @@ jobs:
       - name: Criar projeto Android
         shell: bash
         run: |
-          rm -rf chegada-app chegada-build.gradle chegada-settings.gradle
-          mkdir -p chegada-app/src/main/java/com/andreson/chegadacasa
+          rm -rf chegada-project
+          mkdir -p chegada-project/app/src/main/java/com/andreson/chegadacasa
 
-          cat > chegada-settings.gradle <<'EOF'
+          cat > chegada-project/settings.gradle <<'EOF'
           pluginManagement {
               repositories {
                   google()
@@ -49,17 +49,21 @@ jobs:
               }
           }
           rootProject.name = 'ChegadaCasa'
-          include ':chegada-app'
-          project(':chegada-app').projectDir = file('chegada-app')
+          include ':app'
           EOF
 
-          cat > chegada-build.gradle <<'EOF'
+          cat > chegada-project/build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.7.3' apply false
           }
           EOF
 
-          cat > chegada-app/build.gradle <<'EOF'
+          cat > chegada-project/gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+
+          cat > chegada-project/app/build.gradle <<'EOF'
           plugins {
               id 'com.android.application'
           }
@@ -72,7 +76,7 @@ jobs:
                   applicationId 'com.andreson.chegadacasa'
                   minSdk 26
                   targetSdk 35
-                  versionCode 1
+                  versionCode 2
                   versionName '1.0-teste'
               }
           }
@@ -82,7 +86,7 @@ jobs:
           }
           EOF
 
-          cat > chegada-app/src/main/AndroidManifest.xml <<'EOF'
+          cat > chegada-project/app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -110,7 +114,7 @@ jobs:
           </manifest>
           EOF
 
-          cat > chegada-app/src/main/java/com/andreson/chegadacasa/MainActivity.java <<'EOF'
+          cat > chegada-project/app/src/main/java/com/andreson/chegadacasa/MainActivity.java <<'EOF'
           package com.andreson.chegadacasa;
 
           import android.Manifest;
@@ -369,7 +373,7 @@ jobs:
           }
           EOF
 
-          cat > chegada-app/src/main/java/com/andreson/chegadacasa/GeofenceReceiver.java <<'EOF'
+          cat > chegada-project/app/src/main/java/com/andreson/chegadacasa/GeofenceReceiver.java <<'EOF'
           package com.andreson.chegadacasa;
 
           import android.app.NotificationChannel;
@@ -438,13 +442,14 @@ jobs:
           EOF
 
       - name: Instalar SDK Android 35
-        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" >/dev/null
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" >/dev/null
 
       - name: Compilar APK
-        run: gradle -c chegada-settings.gradle -b chegada-build.gradle :chegada-app:assembleDebug --no-daemon
+        working-directory: chegada-project
+        run: gradle :app:assembleDebug --no-daemon
 
       - name: Preparar APK
-        run: cp chegada-app/build/outputs/apk/debug/chegada-app-debug.apk ChegadaCasa.apk
+        run: cp chegada-project/app/build/outputs/apk/debug/app-debug.apk ChegadaCasa.apk
 
       - name: Salvar artefato
         uses: actions/upload-artifact@v4
