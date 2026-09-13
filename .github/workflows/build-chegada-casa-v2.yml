@@ -1,0 +1,52 @@
+name: Build Chegada Casa V2
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'chegada-casa/**'
+      - '.github/workflows/build-chegada-casa-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Instalar SDK Android 35
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" >/dev/null
+
+      - name: Compilar APK
+        working-directory: chegada-casa
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Preparar APK
+        run: cp chegada-casa/app/build/outputs/apk/debug/app-debug.apk ChegadaCasa-v2.apk
+
+      - name: Salvar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chegada-Casa-V2-APK
+          path: ChegadaCasa-v2.apk
+
+      - name: Criar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="chegada-casa-v2-${{ github.run_number }}"
+          gh release create "$TAG" ChegadaCasa-v2.apk --title "Chegada Casa V2" --notes "Versão com residência por endereço, mapa ou localização atual e tela preparada para vínculo eWeLink." || true
