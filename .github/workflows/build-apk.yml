@@ -1,0 +1,244 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Criar projeto Android
+        shell: bash
+        run: |
+          rm -rf app build.gradle settings.gradle gradle.properties
+          mkdir -p app/src/main/java/com/andreson/lanterna
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = 'LanternaApp'
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.andreson.lanterna'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.andreson.lanterna'
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName '1.0'
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-feature android:name="android.hardware.camera.flash" android:required="true" />
+              <application
+                  android:allowBackup="false"
+                  android:label="Lanterna"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:screenOrientation="portrait">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/andreson/lanterna/MainActivity.java <<'EOF'
+          package com.andreson.lanterna;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.hardware.camera2.CameraAccessException;
+          import android.hardware.camera2.CameraCharacteristics;
+          import android.hardware.camera2.CameraManager;
+          import android.content.Context;
+          import android.view.Gravity;
+          import android.view.ViewGroup;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          public class MainActivity extends Activity {
+              private CameraManager cameraManager;
+              private String cameraId;
+              private boolean ligada = false;
+              private TextView status;
+              private Button botao;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  cameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+                  cameraId = localizarFlash();
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setGravity(Gravity.CENTER);
+                  root.setPadding(dp(28), dp(28), dp(28), dp(28));
+                  root.setBackgroundColor(Color.rgb(245, 245, 245));
+
+                  TextView titulo = new TextView(this);
+                  titulo.setText("🔦 LANTERNA");
+                  titulo.setTextSize(32);
+                  titulo.setTypeface(Typeface.DEFAULT_BOLD);
+                  titulo.setTextColor(Color.BLACK);
+                  titulo.setGravity(Gravity.CENTER);
+                  root.addView(titulo);
+
+                  status = new TextView(this);
+                  status.setText(cameraId == null ? "FLASH NÃO ENCONTRADO" : "LANTERNA DESLIGADA");
+                  status.setTextSize(18);
+                  status.setTextColor(Color.DKGRAY);
+                  status.setGravity(Gravity.CENTER);
+                  LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+                          ViewGroup.LayoutParams.WRAP_CONTENT,
+                          ViewGroup.LayoutParams.WRAP_CONTENT);
+                  statusParams.setMargins(0, dp(28), 0, dp(28));
+                  root.addView(status, statusParams);
+
+                  botao = new Button(this);
+                  botao.setText("LIGAR");
+                  botao.setTextSize(24);
+                  botao.setTypeface(Typeface.DEFAULT_BOLD);
+                  botao.setEnabled(cameraId != null);
+                  LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(dp(240), dp(84));
+                  root.addView(botao, btnParams);
+
+                  botao.setOnClickListener(v -> alternar());
+                  setContentView(root);
+              }
+
+              private int dp(int valor) {
+                  return Math.round(valor * getResources().getDisplayMetrics().density);
+              }
+
+              private String localizarFlash() {
+                  try {
+                      for (String id : cameraManager.getCameraIdList()) {
+                          CameraCharacteristics c = cameraManager.getCameraCharacteristics(id);
+                          Boolean flash = c.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                          Integer facing = c.get(CameraCharacteristics.LENS_FACING);
+                          if (Boolean.TRUE.equals(flash) && facing != null &&
+                                  facing == CameraCharacteristics.LENS_FACING_BACK) {
+                              return id;
+                          }
+                      }
+                      for (String id : cameraManager.getCameraIdList()) {
+                          Boolean flash = cameraManager.getCameraCharacteristics(id)
+                                  .get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                          if (Boolean.TRUE.equals(flash)) return id;
+                      }
+                  } catch (CameraAccessException ignored) {}
+                  return null;
+              }
+
+              private void alternar() {
+                  if (cameraId == null) return;
+                  try {
+                      ligada = !ligada;
+                      cameraManager.setTorchMode(cameraId, ligada);
+                      status.setText(ligada ? "LANTERNA LIGADA" : "LANTERNA DESLIGADA");
+                      botao.setText(ligada ? "DESLIGAR" : "LIGAR");
+                  } catch (Exception e) {
+                      ligada = false;
+                      status.setText("NÃO FOI POSSÍVEL CONTROLAR O FLASH");
+                      botao.setText("TENTAR NOVAMENTE");
+                      Toast.makeText(this, "Feche a câmera de outros apps e tente novamente.", Toast.LENGTH_SHORT).show();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (ligada && cameraId != null) {
+                      try { cameraManager.setTorchMode(cameraId, false); } catch (Exception ignored) {}
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
+      - name: Instalar SDK Android 35
+        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0" >/dev/null
+
+      - name: Compilar APK
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Preparar APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Lanterna.apk
+
+      - name: Salvar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lanterna-APK
+          path: Lanterna.apk
+
+      - name: Criar release com APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="lanterna-${{ github.run_number }}"
+          gh release create "$TAG" Lanterna.apk \
+            --title "Lanterna APK" \
+            --notes "APK instalável do aplicativo Lanterna." || true
