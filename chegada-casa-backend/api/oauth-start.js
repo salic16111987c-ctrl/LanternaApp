@@ -1,13 +1,7 @@
 import crypto from 'crypto';
+import { resolveEwelinkCredentials } from '../lib/ewelink-config.js';
 
 const REDIRECT_URL = 'https://chegada-casa-api.vercel.app/api/auth/callback';
-
-function cleanEnv(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^[\'\"]|[\'\"]$/g, '')
-    .trim();
-}
 
 function nonce8() {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -20,15 +14,16 @@ function nonce8() {
 export default function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
-  const clientId = cleanEnv(process.env.EWELINK_APP_ID);
-  const clientSecret = cleanEnv(process.env.EWELINK_APP_SECRET);
+  const { clientId, clientSecret, clientIdSource, clientSecretSource } = resolveEwelinkCredentials();
   const redirectUrl = REDIRECT_URL;
 
   if (!clientId || !clientSecret) {
     return res.status(503).json({
       ok: false,
       configured: false,
-      message: 'EWELINK_APP_ID ou EWELINK_APP_SECRET ausente no backend.'
+      message: 'Não encontrei um App ID/Secret eWeLink válido no backend.',
+      clientIdSource,
+      clientSecretSource
     });
   }
 
@@ -49,7 +44,6 @@ export default function handler(req, res) {
     authorization
   };
 
-  // Mantém o mesmo formato utilizado pela biblioteca ewelink-api-next.
   const query = Object.keys(params)
     .map((key) => `${key}=${params[key]}`)
     .join('&');
@@ -63,7 +57,8 @@ export default function handler(req, res) {
   return res.status(200).json({
     ok: true,
     configured: true,
-    clientId,
+    clientIdSource,
+    clientSecretSource,
     redirectUrl,
     url
   });
