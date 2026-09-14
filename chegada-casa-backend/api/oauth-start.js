@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 
-const REDIRECT_URL = 'https://chegada-casa-api.vercel.app/api/auth/callback';
+// Este endereço precisa ser EXATAMENTE o mesmo cadastrado no app OAuth do eWeLink.
+// O Chegada Casa já possui um servidor local nessa porta aguardando o retorno.
+const REDIRECT_URL = 'http://127.0.0.1:8787/ewelink/callback';
 
 function cleanEnv(value) {
   return String(value || '')
@@ -10,11 +12,14 @@ function cleanEnv(value) {
 }
 
 function nonce8() {
-  return Math.random().toString(36).slice(-8);
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.randomBytes(8);
+  let out = '';
+  for (let i = 0; i < 8; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out;
 }
 
 export default function handler(req, res) {
-  // Limpa espaços/aspas acidentais das variáveis da Vercel.
   const clientId = cleanEnv(process.env.EWELINK_APP_ID);
   const clientSecret = cleanEnv(process.env.EWELINK_APP_SECRET);
   const redirectUrl = REDIRECT_URL;
@@ -29,24 +34,25 @@ export default function handler(req, res) {
 
   const state = String(req.query.state || 'chegada-casa');
   const seq = String(Date.now());
+  const nonce = nonce8();
   const authorization = crypto.createHmac('sha256', clientSecret)
     .update(`${clientId}_${seq}`)
     .digest('base64');
 
-  // Mesmo formato da biblioteca ewelink-api-next usada no exemplo oficial.
-  const params = {
-    clientId,
-    redirectUrl,
-    grantType: 'authorization_code',
-    state,
-    nonce: nonce8(),
-    seq,
-    showQRCode: null,
-    authorization
-  };
+  // Formato usado pelo OAuth2.0 do eWeLink. Os valores são codificados
+  // individualmente para preservar +, / e = da assinatura Base64.
+  const params = [
+    ['clientId', clientId],
+    ['seq', seq],
+    ['authorization', authorization],
+    ['redirectUrl', redirectUrl],
+    ['grantType', 'authorization_code'],
+    ['state', state],
+    ['nonce', nonce]
+  ];
 
-  const query = Object.keys(params)
-    .map((key) => `${key}=${params[key]}`)
+  const query = params
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
     .join('&');
 
   const url = `https://c2ccdn.coolkit.cc/oauth/index.html?${query}`;
@@ -57,8 +63,6 @@ export default function handler(req, res) {
     return res.redirect(302, url);
   }
 
-  // Não expõe o segredo. O retorno ajuda a conferir se a configuração
-  // ativa é a mesma cadastrada no portal do eWeLink.
   return res.status(200).json({
     ok: true,
     configured: true,
