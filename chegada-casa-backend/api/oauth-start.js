@@ -1,17 +1,23 @@
 import crypto from 'crypto';
 
+const REDIRECT_URL = 'https://chegada-casa-api.vercel.app/api/auth/callback';
+
+function cleanEnv(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .trim();
+}
+
 function nonce8() {
-  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  const bytes = crypto.randomBytes(8);
-  let out = '';
-  for (let i = 0; i < 8; i++) out += alphabet[bytes[i] % alphabet.length];
-  return out;
+  return Math.random().toString(36).slice(-8);
 }
 
 export default function handler(req, res) {
-  const clientId = process.env.EWELINK_APP_ID;
-  const clientSecret = process.env.EWELINK_APP_SECRET;
-  const redirectUrl = process.env.EWELINK_REDIRECT_URL || 'https://chegada-casa-api.vercel.app/api/auth/callback';
+  // Limpa espaços/aspas acidentais das variáveis da Vercel.
+  const clientId = cleanEnv(process.env.EWELINK_APP_ID);
+  const clientSecret = cleanEnv(process.env.EWELINK_APP_SECRET);
+  const redirectUrl = REDIRECT_URL;
 
   if (!clientId || !clientSecret) {
     return res.status(503).json({
@@ -23,20 +29,19 @@ export default function handler(req, res) {
 
   const state = String(req.query.state || 'chegada-casa');
   const seq = String(Date.now());
-  const nonce = nonce8();
   const authorization = crypto.createHmac('sha256', clientSecret)
     .update(`${clientId}_${seq}`)
     .digest('base64');
 
-  // Replica o formato usado pela biblioteca ewelink-api-next.
+  // Mesmo formato da biblioteca ewelink-api-next usada no exemplo oficial.
   const params = {
     clientId,
     redirectUrl,
     grantType: 'authorization_code',
     state,
-    nonce,
+    nonce: nonce8(),
     seq,
-    showQRCode: false,
+    showQRCode: null,
     authorization
   };
 
@@ -52,5 +57,13 @@ export default function handler(req, res) {
     return res.redirect(302, url);
   }
 
-  return res.status(200).json({ ok: true, url });
+  // Não expõe o segredo. O retorno ajuda a conferir se a configuração
+  // ativa é a mesma cadastrada no portal do eWeLink.
+  return res.status(200).json({
+    ok: true,
+    configured: true,
+    clientId,
+    redirectUrl,
+    url
+  });
 }
