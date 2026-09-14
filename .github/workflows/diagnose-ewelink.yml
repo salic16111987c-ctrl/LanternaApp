@@ -10,23 +10,82 @@ on:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
+    env:
+      EWELINK_APP_ID: ${{ secrets.EWELINK_APP_ID }}
+      EWELINK_APP_SECRET: ${{ secrets.EWELINK_APP_SECRET }}
     steps:
-      - name: Aguardar deploy Vercel
-        run: sleep 15
-
-      - name: Testar região +55 com credenciais do backend
+      - name: Verificar se os GitHub Secrets existem
+        shell: bash
         run: |
-          set -e
-          echo '--- resposta diagnose-region ---'
+          node <<'NODE'
+          const id = process.env.EWELINK_APP_ID || '';
+          const secret = process.env.EWELINK_APP_SECRET || '';
+          console.log(JSON.stringify({
+            appIdPresent: !!id,
+            appIdLength: id.length,
+            appIdAlphanumeric: /^[A-Za-z0-9]+$/.test(id),
+            secretPresent: !!secret,
+            secretLength: secret.length
+          }));
+          NODE
+
+      - name: Testar GitHub Secrets diretamente na CoolKit
+        shell: bash
+        run: |
+          node <<'NODE'
+          const crypto = require('crypto');
+          const https = require('https');
+
+          const appId = process.env.EWELINK_APP_ID || '';
+          const secret = process.env.EWELINK_APP_SECRET || '';
+
+          if (!appId || !secret) {
+            console.log(JSON.stringify({ok:false, stage:'github-secrets', message:'EWELINK_APP_ID ou EWELINK_APP_SECRET ausente'}));
+            process.exit(0);
+          }
+
+          if (!/^[A-Za-z0-9]+$/.test(appId)) {
+            console.log(JSON.stringify({ok:false, stage:'github-secrets', message:'EWELINK_APP_ID não é alfanumérico'}));
+            process.exit(0);
+          }
+
+          const payload = 'countryCode=55';
+          const authorization = crypto.createHmac('sha256', secret).update(payload).digest('base64');
+
+          const req = https.request({
+            hostname: 'apia.coolkit.cn',
+            path: '/v2/utils/get-region?countryCode=55',
+            method: 'GET',
+            headers: {
+              'X-CK-Appid': appId,
+              'Authorization': `Sign ${authorization}`,
+              'Accept': 'application/json'
+            }
+          }, (res) => {
+            let body = '';
+            res.on('data', c => body += c);
+            res.on('end', () => {
+              try {
+                const json = JSON.parse(body);
+                console.log(JSON.stringify({
+                  ok: Number(json.error) === 0,
+                  httpStatus: res.statusCode,
+                  error: json.error,
+                  msg: json.msg,
+                  region: json?.data?.region || null
+                }));
+              } catch {
+                console.log(JSON.stringify({ok:false, httpStatus:res.statusCode, message:'Resposta não JSON'}));
+              }
+            });
+          });
+          req.on('error', e => console.log(JSON.stringify({ok:false, message:e.message})));
+          req.end();
+          NODE
+
+      - name: Testar credenciais publicadas na Vercel
+        run: |
+          echo '--- Vercel atual ---'
           curl --fail-with-body --silent --show-error \
             'https://chegada-casa-api.vercel.app/api/diagnose-region?countryCode=55'
           echo
-
-      - name: Testar health do backend
-        run: |
-          echo '--- resposta health ---'
-          curl --fail-with-body --silent --show-error \
-            'https://chegada-casa-api.vercel.app/api/health'
-          echo
-
-# trigger 2: executar diagnóstico após o workflow já existir no branch main
