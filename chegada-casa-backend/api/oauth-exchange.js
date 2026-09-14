@@ -14,21 +14,21 @@ function apiBase(region) {
 }
 
 async function exchangeOnce({ clientId, clientSecret, redirectUrl, code, region }) {
+  // A ordem das propriedades precisa acompanhar o exemplo oficial,
+  // porque a assinatura HMAC é calculada sobre o JSON serializado.
   const bodyObject = {
-    code,
     redirectUrl,
+    code,
     grantType: 'authorization_code'
   };
   const body = JSON.stringify(bodyObject);
   const authorization = sign(clientSecret, body);
-  const nonce = crypto.randomBytes(6).toString('hex').slice(0, 8);
 
   const response = await fetch(`${apiBase(region)}/v2/user/oauth/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'X-CK-Appid': clientId,
-      'X-CK-Nonce': nonce,
       'Authorization': `Sign ${authorization}`
     },
     body
