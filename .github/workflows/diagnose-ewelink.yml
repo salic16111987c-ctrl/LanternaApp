@@ -20,4 +20,4 @@ jobs:
             'https://chegada-casa-api.vercel.app/api/diagnose-region?countryCode=55'
           echo
 
-# teste do APPID real capturado no painel eWeLink
+# teste com APPID exato copiado do portal eWeLink
