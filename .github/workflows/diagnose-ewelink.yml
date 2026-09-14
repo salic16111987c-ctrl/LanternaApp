@@ -12,10 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Aguardar deploy Vercel
-        run: sleep 20
+        run: sleep 25
 
       - name: Testar credenciais publicadas
         run: |
           curl --fail-with-body --silent --show-error \
             'https://chegada-casa-api.vercel.app/api/diagnose-region?countryCode=55'
           echo
+
+# teste do APPID real capturado no painel eWeLink
