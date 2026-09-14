@@ -2,6 +2,7 @@ package com.cilassouza.chegadacasa;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -43,6 +44,7 @@ public class MainActivity extends Activity {
     private GeofencingClient geofencing;
     private SharedPreferences prefs;
     private TextView status;
+    private TextView ewStatus;
     private EditText endereco;
     private Spinner raio;
     private CheckBox soNoite;
@@ -69,7 +71,7 @@ public class MainActivity extends Activity {
         titulo.setGravity(Gravity.CENTER);
         root.addView(titulo);
 
-        TextView sub = texto("Defina sua residência e o raio de acionamento", 15, false);
+        TextView sub = texto("Automação de chegada por localização + eWeLink", 15, false);
         sub.setTextColor(Color.DKGRAY);
         sub.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -113,15 +115,21 @@ public class MainActivity extends Activity {
         root.addView(soNoite);
 
         root.addView(texto("3. eWeLink", 20, true), sec);
-        TextView ewStatus = texto("Status: aguardando aprovação da conta de desenvolvedor eWeLink", 16, false);
+        ewStatus = texto("", 16, false);
         ewStatus.setTextColor(Color.DKGRAY);
         root.addView(ewStatus);
 
-        Button ew = botao("CONECTAR AO EWELINK");
-        ew.setOnClickListener(v -> Toast.makeText(this,
-                "Assim que o eWeLink liberar seu APP ID, este botão abrirá o login oficial e mostrará suas lâmpadas.",
-                Toast.LENGTH_LONG).show());
-        root.addView(ew, paramsBotao());
+        Button conectar = botao("CONECTAR AO EWELINK");
+        conectar.setOnClickListener(v -> mostrarEtapaOAuth());
+        root.addView(conectar, paramsBotao());
+
+        Button escolher = botao("ESCOLHER LÂMPADAS / DISPOSITIVOS");
+        escolher.setOnClickListener(v -> carregarDispositivos());
+        root.addView(escolher, paramsBotao());
+
+        Button testarEw = botao("TESTAR LÂMPADAS EWELINK");
+        testarEw.setOnClickListener(v -> testarEwelink());
+        root.addView(testarEw, paramsBotao());
 
         root.addView(texto("4. Automação", 20, true), sec);
         Button ativar = botao("ATIVAR AUTOMAÇÃO");
@@ -139,7 +147,7 @@ public class MainActivity extends Activity {
         status.setPadding(0, dp(18), 0, 0);
         root.addView(status);
 
-        TextView autor = texto("Cilas Souza — versão de teste", 12, false);
+        TextView autor = texto("Cilas Souza — Chegada Casa v1.2", 12, false);
         autor.setTextColor(Color.GRAY);
         autor.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -148,6 +156,114 @@ public class MainActivity extends Activity {
 
         setContentView(scroll);
         atualizarStatus();
+        atualizarEwelinkStatus();
+    }
+
+    private void mostrarEtapaOAuth() {
+        if (EwelinkApi.hasSession(this)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("eWeLink conectado")
+                    .setMessage("A autorização da conta já está salva no aparelho. Agora você pode carregar seus dispositivos e escolher quais deverão ligar quando chegar em casa.")
+                    .setPositiveButton("OK", null)
+                    .setNegativeButton("DESCONECTAR", (d, w) -> {
+                        EwelinkApi.clearSession(this);
+                        atualizarEwelinkStatus();
+                    })
+                    .show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("APPID aprovado")
+                .setMessage("Sua aplicação do eWeLink já está aprovada e o APPID já foi configurado no Chegada Casa. A camada que lista e aciona os dispositivos também já está pronta. Falta somente concluir o login OAuth para o eWeLink entregar o token da sua conta.\n\nO SEGREDO DO APP não será colocado dentro do APK nem no GitHub.")
+                .setPositiveButton("ENTENDI", null)
+                .show();
+    }
+
+    private void carregarDispositivos() {
+        if (!EwelinkApi.hasSession(this)) {
+            Toast.makeText(this, "Primeiro precisamos concluir o login OAuth do eWeLink.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        ewStatus.setText("Consultando seus dispositivos no eWeLink...");
+        EwelinkApi.fetchDevices(this, new EwelinkApi.DevicesCallback() {
+            @Override
+            public void onSuccess(List<EwelinkApi.Device> devices) {
+                runOnUiThread(() -> mostrarDispositivos(devices));
+            }
+
+            @Override
+            public void onError(String message) {
+                runOnUiThread(() -> {
+                    ewStatus.setText(message);
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void mostrarDispositivos(List<EwelinkApi.Device> devices) {
+        if (devices.isEmpty()) {
+            ewStatus.setText("Nenhum dispositivo liga/desliga compatível apareceu nessa conta eWeLink.");
+            return;
+        }
+
+        String[] nomes = new String[devices.size()];
+        boolean[] checked = new boolean[devices.size()];
+        for (int i = 0; i < devices.size(); i++) {
+            EwelinkApi.Device d = devices.get(i);
+            nomes[i] = d.name + (d.online ? "  • online" : "  • offline");
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("O que deve ligar quando você chegar?")
+                .setMultiChoiceItems(nomes, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
+                .setPositiveButton("SALVAR", (dialog, which) -> {
+                    EwelinkApi.saveSelected(this, devices, checked);
+                    atualizarEwelinkStatus();
+                    Toast.makeText(this, "Dispositivos selecionados salvos.", Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton("CANCELAR", null)
+                .show();
+    }
+
+    private void testarEwelink() {
+        if (!EwelinkApi.hasSession(this)) {
+            Toast.makeText(this, "eWeLink ainda não autorizado.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (EwelinkApi.selectedCount(this) == 0) {
+            Toast.makeText(this, "Primeiro escolha as lâmpadas/dispositivos.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        ewStatus.setText("Enviando comando de teste ao eWeLink...");
+        EwelinkApi.turnOnSelected(this, new EwelinkApi.TextCallback() {
+            @Override
+            public void onSuccess(String message) {
+                runOnUiThread(() -> {
+                    ewStatus.setText(message);
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                runOnUiThread(() -> {
+                    ewStatus.setText(message);
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void atualizarEwelinkStatus() {
+        if (ewStatus == null) return;
+        if (EwelinkApi.hasSession(this)) {
+            int n = EwelinkApi.selectedCount(this);
+            ewStatus.setText("✓ Conta eWeLink autorizada\n✓ APPID configurado\nDispositivos selecionados: " + n);
+        } else {
+            ewStatus.setText("✓ Conta de desenvolvedor aprovada\n✓ APPID configurado\n✓ OAuth 2.0 cadastrado\nAguardando concluir o login da conta eWeLink");
+        }
     }
 
     private TextView texto(String s, int tamanho, boolean negrito) {
@@ -338,5 +454,6 @@ public class MainActivity extends Activity {
             if (!e.isEmpty()) endereco.setText(e);
         }
         if (status != null) atualizarStatus();
+        atualizarEwelinkStatus();
     }
 }
