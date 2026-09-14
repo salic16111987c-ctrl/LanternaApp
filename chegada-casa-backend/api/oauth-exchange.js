@@ -14,8 +14,6 @@ function apiBase(region) {
 }
 
 async function exchangeOnce({ clientId, clientSecret, redirectUrl, code, region }) {
-  // A ordem das propriedades precisa acompanhar o exemplo oficial,
-  // porque a assinatura HMAC é calculada sobre o JSON serializado.
   const bodyObject = {
     redirectUrl,
     code,
@@ -54,7 +52,7 @@ export default async function handler(req, res) {
 
   const clientId = process.env.EWELINK_APP_ID;
   const clientSecret = process.env.EWELINK_APP_SECRET;
-  const redirectUrl = process.env.EWELINK_REDIRECT_URL || 'http://127.0.0.1:8787/ewelink/callback';
+  const redirectUrl = process.env.EWELINK_REDIRECT_URL || 'https://chegada-casa-api.vercel.app/api/auth/callback';
 
   if (!clientId || !clientSecret) {
     return res.status(503).json({ ok: false, configured: false, message: 'Backend eWeLink não configurado.' });
