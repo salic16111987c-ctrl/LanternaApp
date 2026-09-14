@@ -1,11 +1,5 @@
 import crypto from 'crypto';
-
-function cleanEnv(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^['"]|['"]$/g, '')
-    .trim();
-}
+import { resolveEwelinkCredentials } from '../lib/ewelink-config.js';
 
 function sign(secret, payload) {
   return crypto.createHmac('sha256', secret)
@@ -16,15 +10,16 @@ function sign(secret, payload) {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
-  const clientId = cleanEnv(process.env.EWELINK_APP_ID);
-  const clientSecret = cleanEnv(process.env.EWELINK_APP_SECRET);
+  const { clientId, clientSecret, clientIdSource, clientSecretSource } = resolveEwelinkCredentials();
   const countryCode = String(req.query.countryCode || '55').replace('+', '').trim();
 
   if (!clientId || !clientSecret) {
-    return res.status(503).json({
+    return res.status(200).json({
       ok: false,
       configured: false,
-      message: 'EWELINK_APP_ID ou EWELINK_APP_SECRET ausente.'
+      clientIdSource,
+      clientSecretSource,
+      message: 'Nenhum App ID/Secret eWeLink válido foi encontrado nas variáveis da Vercel.'
     });
   }
 
@@ -46,17 +41,22 @@ export default async function handler(req, res) {
     try {
       json = await response.json();
     } catch {
-      json = { raw: await response.text() };
+      json = { error: response.status, msg: `HTTP ${response.status}` };
     }
 
     return res.status(200).json({
       ok: response.ok && Number(json?.error ?? -1) === 0,
-      httpStatus: response.status,
+      configured: true,
+      clientIdSource,
+      clientSecretSource,
       appIdLength: clientId.length,
-      appIdSuffix: clientId.slice(-6),
       secretLength: clientSecret.length,
       countryCode,
-      coolkit: json
+      coolkit: {
+        error: json?.error,
+        msg: json?.msg,
+        region: json?.data?.region || null
+      }
     });
   } catch (error) {
     return res.status(500).json({
