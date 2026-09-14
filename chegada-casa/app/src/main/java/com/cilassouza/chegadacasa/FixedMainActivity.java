@@ -16,31 +16,33 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 public class FixedMainActivity extends MainActivity {
     private static final String BACKEND_BASE = "https://chegada-casa-api.vercel.app";
-    private static final int CALLBACK_PORT = 8787;
-
-    private volatile ServerSocket callbackServer;
+    private static final String PREF_OAUTH_STATE = "ewelink_oauth_state";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().getDecorView().post(this::wireOAuthButton);
+        getWindow().getDecorView().post(() -> {
+            wireOAuthButton();
+            handleOAuthIntent(getIntent());
+        });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleOAuthIntent(intent);
     }
 
     private void wireOAuthButton() {
         Button button = findButton(getWindow().getDecorView(), "CONECTAR AO EWELINK");
-        if (button != null) {
-            button.setOnClickListener(v -> connectEwelink());
-        }
+        if (button != null) button.setOnClickListener(v -> connectEwelink());
     }
 
     private Button findButton(View view, String text) {
@@ -72,126 +74,62 @@ public class FixedMainActivity extends MainActivity {
             return;
         }
 
-        final String state = UUID.randomUUID().toString();
+        String state = UUID.randomUUID().toString();
+        getSharedPreferences("config", MODE_PRIVATE)
+                .edit()
+                .putString(PREF_OAUTH_STATE, state)
+                .apply();
 
-        try {
-            closeCallbackServer();
+        Uri loginUrl = Uri.parse(BACKEND_BASE + "/api/oauth-start")
+                .buildUpon()
+                .appendQueryParameter("open", "1")
+                .appendQueryParameter("state", state)
+                .appendQueryParameter("t", String.valueOf(System.currentTimeMillis()))
+                .build();
 
-            ServerSocket server = new ServerSocket();
-            server.setReuseAddress(true);
-            server.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), CALLBACK_PORT));
-            server.setSoTimeout(5 * 60 * 1000);
-            callbackServer = server;
+        Toast.makeText(this,
+                "Abrindo o login oficial do eWeLink. Após autorizar, o Chegada Casa abrirá sozinho.",
+                Toast.LENGTH_LONG).show();
 
-            new Thread(() -> waitForOAuthCallback(server, state), "ewelink-oauth-callback").start();
-
-            Uri loginUrl = Uri.parse(BACKEND_BASE + "/api/oauth-start")
-                    .buildUpon()
-                    .appendQueryParameter("open", "1")
-                    .appendQueryParameter("state", state)
-                    .appendQueryParameter("t", String.valueOf(System.currentTimeMillis()))
-                    .build();
-
-            Toast.makeText(this,
-                    "Abrindo o login do eWeLink. Depois de autorizar, volte ao Chegada Casa.",
-                    Toast.LENGTH_LONG).show();
-
-            startActivity(new Intent(Intent.ACTION_VIEW, loginUrl));
-        } catch (Exception e) {
-            closeCallbackServer();
-            showError("Não consegui iniciar o retorno OAuth na porta 8787: " + safeMessage(e));
-        }
+        startActivity(new Intent(Intent.ACTION_VIEW, loginUrl));
     }
 
-    private void waitForOAuthCallback(ServerSocket server, String expectedState) {
-        try (Socket socket = server.accept()) {
-            socket.setSoTimeout(15000);
-            BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+    private void handleOAuthIntent(Intent intent) {
+        if (intent == null || intent.getData() == null) return;
+        Uri data = intent.getData();
+        if (!"chegadacasa".equalsIgnoreCase(data.getScheme()) ||
+                !"oauth".equalsIgnoreCase(data.getHost())) return;
 
-            String requestLine = reader.readLine();
-            String line;
-            while ((line = reader.readLine()) != null && !line.isEmpty()) {
-                // Consome os headers HTTP do navegador.
-            }
-
-            if (requestLine == null) {
-                writeBrowserResponse(socket, false, "Retorno OAuth vazio.");
-                showError("O eWeLink retornou uma resposta vazia.");
-                return;
-            }
-
-            String[] requestParts = requestLine.split(" ");
-            if (requestParts.length < 2) {
-                writeBrowserResponse(socket, false, "Retorno OAuth inválido.");
-                showError("O retorno OAuth veio em um formato inválido.");
-                return;
-            }
-
-            Uri callback = Uri.parse("http://127.0.0.1" + requestParts[1]);
-            String path = callback.getPath();
-            String code = callback.getQueryParameter("code");
-            String region = callback.getQueryParameter("region");
-            String returnedState = callback.getQueryParameter("state");
-            String oauthError = callback.getQueryParameter("error");
-
-            if (!"/ewelink/callback".equals(path)) {
-                writeBrowserResponse(socket, false, "Caminho de retorno inválido.");
-                showError("O navegador retornou para um caminho OAuth inesperado.");
-                return;
-            }
-
-            if (oauthError != null && !oauthError.isEmpty()) {
-                writeBrowserResponse(socket, false, "Autorização recusada pelo eWeLink.");
-                showError("O eWeLink recusou a autorização: " + oauthError);
-                return;
-            }
-
-            if (returnedState == null || !expectedState.equals(returnedState)) {
-                writeBrowserResponse(socket, false, "Validação de segurança do OAuth falhou.");
-                showError("Falha na validação de segurança (state) do OAuth.");
-                return;
-            }
-
-            if (code == null || code.trim().isEmpty()) {
-                writeBrowserResponse(socket, false, "Código OAuth não recebido.");
-                showError("O eWeLink não devolveu o código de autorização.");
-                return;
-            }
-
-            writeBrowserResponse(socket, true,
-                    "Autorização recebida. Volte ao aplicativo Chegada Casa.");
-
-            exchangeCodeForToken(code.trim(), region == null ? "" : region.trim());
-        } catch (java.net.SocketTimeoutException e) {
-            showError("O login eWeLink expirou. Toque em CONECTAR AO EWELINK e tente novamente.");
-        } catch (Exception e) {
-            showError("Falha ao receber o retorno do eWeLink: " + safeMessage(e));
-        } finally {
-            closeCallbackServer();
+        String oauthError = data.getQueryParameter("error");
+        if (oauthError != null && !oauthError.isEmpty()) {
+            showError("O eWeLink recusou a autorização: " + oauthError);
+            return;
         }
-    }
 
-    private void writeBrowserResponse(Socket socket, boolean ok, String message) {
-        try {
-            String title = ok ? "Chegada Casa — autorizado" : "Chegada Casa — erro";
-            String html = "<!doctype html><html><head><meta charset=\"utf-8\">" +
-                    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
-                    "<title>" + title + "</title></head>" +
-                    "<body style=\"font-family:sans-serif;padding:28px;line-height:1.5\">" +
-                    "<h2>" + title + "</h2><p>" + message + "</p>" +
-                    "<p>Você já pode fechar esta página.</p></body></html>";
-            byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
-            OutputStream out = socket.getOutputStream();
-            String headers = "HTTP/1.1 200 OK\r\n" +
-                    "Content-Type: text/html; charset=utf-8\r\n" +
-                    "Content-Length: " + bytes.length + "\r\n" +
-                    "Connection: close\r\n\r\n";
-            out.write(headers.getBytes(StandardCharsets.UTF_8));
-            out.write(bytes);
-            out.flush();
-        } catch (Exception ignored) {
+        String code = data.getQueryParameter("code");
+        String region = data.getQueryParameter("region");
+        if (region == null || region.isEmpty()) region = data.getQueryParameter("regin");
+        String returnedState = data.getQueryParameter("state");
+        String expectedState = getSharedPreferences("config", MODE_PRIVATE)
+                .getString(PREF_OAUTH_STATE, "");
+
+        if (returnedState == null || expectedState == null || expectedState.isEmpty() ||
+                !expectedState.equals(returnedState)) {
+            showError("Falha na validação de segurança do login eWeLink. Toque em CONECTAR AO EWELINK e tente novamente.");
+            return;
         }
+
+        if (code == null || code.trim().isEmpty()) {
+            showError("O eWeLink não devolveu o código de autorização.");
+            return;
+        }
+
+        getSharedPreferences("config", MODE_PRIVATE)
+                .edit()
+                .remove(PREF_OAUTH_STATE)
+                .apply();
+
+        exchangeCodeForToken(code.trim(), region == null ? "" : region.trim());
     }
 
     private void exchangeCodeForToken(String code, String region) {
@@ -283,22 +221,5 @@ public class FixedMainActivity extends MainActivity {
 
     private String safeMessage(Exception e) {
         return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-    }
-
-    private synchronized void closeCallbackServer() {
-        ServerSocket server = callbackServer;
-        callbackServer = null;
-        if (server != null) {
-            try {
-                server.close();
-            } catch (Exception ignored) {
-            }
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        closeCallbackServer();
-        super.onDestroy();
     }
 }
