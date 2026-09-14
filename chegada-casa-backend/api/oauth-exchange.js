@@ -1,13 +1,7 @@
 import crypto from 'crypto';
+import { resolveEwelinkCredentials } from '../lib/ewelink-config.js';
 
 const REDIRECT_URL = 'https://chegada-casa-api.vercel.app/api/auth/callback';
-
-function cleanEnv(value) {
-  return String(value || '')
-    .trim()
-    .replace(/^['"]|['"]$/g, '')
-    .trim();
-}
 
 function sign(secret, payload) {
   return crypto.createHmac('sha256', secret)
@@ -59,12 +53,17 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, message: 'Use POST.' });
   }
 
-  const clientId = cleanEnv(process.env.EWELINK_APP_ID);
-  const clientSecret = cleanEnv(process.env.EWELINK_APP_SECRET);
+  const { clientId, clientSecret, clientIdSource, clientSecretSource } = resolveEwelinkCredentials();
   const redirectUrl = REDIRECT_URL;
 
   if (!clientId || !clientSecret) {
-    return res.status(503).json({ ok: false, configured: false, message: 'Backend eWeLink não configurado.' });
+    return res.status(503).json({
+      ok: false,
+      configured: false,
+      message: 'Backend eWeLink não configurado.',
+      clientIdSource,
+      clientSecretSource
+    });
   }
 
   const code = String(req.body?.code || '').trim();
