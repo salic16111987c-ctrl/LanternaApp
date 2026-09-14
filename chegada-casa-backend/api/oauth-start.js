@@ -26,5 +26,9 @@ export default function handler(req, res) {
   url.searchParams.set('grantType', 'authorization_code');
   url.searchParams.set('showQRCode', 'false');
 
+  if (String(req.query.open || '') === '1') {
+    return res.redirect(302, url.toString());
+  }
+
   return res.status(200).json({ ok: true, url: url.toString() });
 }
