@@ -28,3 +28,5 @@ jobs:
           curl --fail-with-body --silent --show-error \
             'https://chegada-casa-api.vercel.app/api/health'
           echo
+
+# trigger 2: executar diagnóstico após o workflow já existir no branch main
