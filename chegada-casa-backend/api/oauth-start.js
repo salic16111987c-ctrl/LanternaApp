@@ -1,13 +1,11 @@
 import crypto from 'crypto';
 
-// Este endereço precisa ser EXATAMENTE o mesmo cadastrado no app OAuth do eWeLink.
-// O Chegada Casa já possui um servidor local nessa porta aguardando o retorno.
-const REDIRECT_URL = 'http://127.0.0.1:8787/ewelink/callback';
+const DEFAULT_REDIRECT_URL = 'http://127.0.0.1:8787/ewelink/callback';
 
 function cleanEnv(value) {
   return String(value || '')
     .trim()
-    .replace(/^['"]|['"]$/g, '')
+    .replace(/^[\'\"]|[\'\"]$/g, '')
     .trim();
 }
 
@@ -20,9 +18,11 @@ function nonce8() {
 }
 
 export default function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+
   const clientId = cleanEnv(process.env.EWELINK_APP_ID);
   const clientSecret = cleanEnv(process.env.EWELINK_APP_SECRET);
-  const redirectUrl = REDIRECT_URL;
+  const redirectUrl = cleanEnv(process.env.EWELINK_REDIRECT_URL) || DEFAULT_REDIRECT_URL;
 
   if (!clientId || !clientSecret) {
     return res.status(503).json({
@@ -34,30 +34,29 @@ export default function handler(req, res) {
 
   const state = String(req.query.state || 'chegada-casa');
   const seq = String(Date.now());
-  const nonce = nonce8();
   const authorization = crypto.createHmac('sha256', clientSecret)
     .update(`${clientId}_${seq}`)
     .digest('base64');
 
-  // Formato usado pelo OAuth2.0 do eWeLink. Os valores são codificados
-  // individualmente para preservar +, / e = da assinatura Base64.
-  const params = [
-    ['clientId', clientId],
-    ['seq', seq],
-    ['authorization', authorization],
-    ['redirectUrl', redirectUrl],
-    ['grantType', 'authorization_code'],
-    ['state', state],
-    ['nonce', nonce]
-  ];
+  // Replica o formato da biblioteca oficial ewelink-api-next.
+  // Importante: a página OAuth da CoolKit recebe a assinatura Base64 crua
+  // na query; não usamos URLSearchParams/encodeURIComponent aqui.
+  const params = {
+    clientId,
+    redirectUrl,
+    grantType: 'authorization_code',
+    state,
+    nonce: nonce8(),
+    seq,
+    showQRCode: false,
+    authorization
+  };
 
-  const query = params
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+  const query = Object.keys(params)
+    .map((key) => `${key}=${params[key]}`)
     .join('&');
 
   const url = `https://c2ccdn.coolkit.cc/oauth/index.html?${query}`;
-
-  res.setHeader('Cache-Control', 'no-store');
 
   if (String(req.query.open || '') === '1') {
     return res.redirect(302, url);
