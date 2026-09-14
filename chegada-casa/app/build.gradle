@@ -10,8 +10,8 @@ android {
         applicationId 'com.cilassouza.chegadacasa'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '1.1-teste'
+        versionCode 4
+        versionName '1.2-oauth-fix'
     }
 }
 
