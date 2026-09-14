@@ -1,4 +1,4 @@
-name: Diagnose eWeLink Secrets
+name: Diagnose eWeLink Backend
 
 on:
   push:
@@ -10,15 +10,12 @@ on:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    env:
-      ALL_REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
     steps:
-      - name: Listar somente nomes de secrets relacionados ao projeto
-        shell: bash
+      - name: Aguardar deploy Vercel
+        run: sleep 20
+
+      - name: Testar credenciais publicadas
         run: |
-          node <<'NODE'
-          let data = {};
-          try { data = JSON.parse(process.env.ALL_REPO_SECRETS_JSON || '{}'); } catch {}
-          const names = Object.keys(data).filter(n => /EWELINK|COOLKIT|API|APP|CLIENT|VERCEL/i.test(n));
-          console.log(JSON.stringify({matchingSecretNames:names,totalMatching:names.length}));
-          NODE
+          curl --fail-with-body --silent --show-error \
+            'https://chegada-casa-api.vercel.app/api/diagnose-region?countryCode=55'
+          echo
