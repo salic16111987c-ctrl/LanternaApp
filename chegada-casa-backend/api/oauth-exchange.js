@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-const REDIRECT_URL = 'https://chegada-casa-api.vercel.app/api/auth/callback';
+const REDIRECT_URL = 'http://127.0.0.1:8787/ewelink/callback';
 
 function cleanEnv(value) {
   return String(value || '')
