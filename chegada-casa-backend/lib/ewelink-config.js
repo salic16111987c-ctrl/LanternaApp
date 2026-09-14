@@ -1,5 +1,3 @@
-const FALLBACK_APP_ID = 'd4m62Z1qSN0le69A1rJqhUd7al3eA7qg';
-
 function clean(value) {
   return String(value || '')
     .trim()
@@ -55,10 +53,6 @@ export function resolveEwelinkCredentials(env = process.env) {
       related.filter(([name]) => /(APP.*ID|APPID|CLIENT.*ID|API.*KEY)/i.test(name) && !/SECRET/i.test(name)),
       validAppId
     );
-  }
-
-  if (!id && validAppId(FALLBACK_APP_ID)) {
-    id = { name: 'FALLBACK_APP_ID_FROM_EWELINK_PORTAL', value: FALLBACK_APP_ID };
   }
 
   if (!secret) {
