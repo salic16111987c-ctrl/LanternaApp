@@ -1,0 +1,30 @@
+name: Diagnose eWeLink Backend
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/diagnose-ewelink.yml'
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aguardar deploy Vercel
+        run: sleep 15
+
+      - name: Testar região +55 com credenciais do backend
+        run: |
+          set -e
+          echo '--- resposta diagnose-region ---'
+          curl --fail-with-body --silent --show-error \
+            'https://chegada-casa-api.vercel.app/api/diagnose-region?countryCode=55'
+          echo
+
+      - name: Testar health do backend
+        run: |
+          echo '--- resposta health ---'
+          curl --fail-with-body --silent --show-error \
+            'https://chegada-casa-api.vercel.app/api/health'
+          echo
