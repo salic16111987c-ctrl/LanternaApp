@@ -11,90 +11,14 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     env:
-      S_EWELINK_APP_ID: ${{ secrets.EWELINK_APP_ID }}
-      S_EWELINK_APPID: ${{ secrets.EWELINK_APPID }}
-      S_APP_ID: ${{ secrets.APP_ID }}
-      S_CLIENT_ID: ${{ secrets.CLIENT_ID }}
-      S_EWELINK_API_KEY: ${{ secrets.EWELINK_API_KEY }}
-      S_API_KEY: ${{ secrets.API_KEY }}
-      S_EWELINK_APP_SECRET: ${{ secrets.EWELINK_APP_SECRET }}
-      S_EWELINK_SECRET: ${{ secrets.EWELINK_SECRET }}
-      S_APP_SECRET: ${{ secrets.APP_SECRET }}
-      S_CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-      S_EWELINK_API_SECRET: ${{ secrets.EWELINK_API_SECRET }}
-      S_API_SECRET: ${{ secrets.API_SECRET }}
+      ALL_REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
     steps:
-      - name: Descobrir nomes dos secrets sem revelar valores
+      - name: Listar somente nomes de secrets relacionados ao projeto
         shell: bash
         run: |
           node <<'NODE'
-          const e = process.env;
-          const ids = [
-            ['EWELINK_APP_ID', e.S_EWELINK_APP_ID],
-            ['EWELINK_APPID', e.S_EWELINK_APPID],
-            ['APP_ID', e.S_APP_ID],
-            ['CLIENT_ID', e.S_CLIENT_ID],
-            ['EWELINK_API_KEY', e.S_EWELINK_API_KEY],
-            ['API_KEY', e.S_API_KEY]
-          ];
-          const secrets = [
-            ['EWELINK_APP_SECRET', e.S_EWELINK_APP_SECRET],
-            ['EWELINK_SECRET', e.S_EWELINK_SECRET],
-            ['APP_SECRET', e.S_APP_SECRET],
-            ['CLIENT_SECRET', e.S_CLIENT_SECRET],
-            ['EWELINK_API_SECRET', e.S_EWELINK_API_SECRET],
-            ['API_SECRET', e.S_API_SECRET]
-          ];
-          console.log(JSON.stringify({
-            idNamesPresent: ids.filter(([,v]) => !!v).map(([n]) => n),
-            secretNamesPresent: secrets.filter(([,v]) => !!v).map(([n]) => n)
-          }));
-
-          const idPair = ids.find(([,v]) => !!v);
-          const secPair = secrets.find(([,v]) => !!v);
-          const id = idPair?.[1] || '';
-          const secret = secPair?.[1] || '';
-          console.log(JSON.stringify({
-            chosenIdName: idPair?.[0] || null,
-            chosenSecretName: secPair?.[0] || null,
-            appIdLength: id.length,
-            appIdAlphanumeric: /^[A-Za-z0-9]+$/.test(id),
-            secretLength: secret.length
-          }));
-          NODE
-
-      - name: Testar o primeiro par encontrado diretamente na CoolKit
-        shell: bash
-        run: |
-          node <<'NODE'
-          const crypto = require('crypto');
-          const https = require('https');
-          const e = process.env;
-          const ids = [e.S_EWELINK_APP_ID,e.S_EWELINK_APPID,e.S_APP_ID,e.S_CLIENT_ID,e.S_EWELINK_API_KEY,e.S_API_KEY];
-          const secs = [e.S_EWELINK_APP_SECRET,e.S_EWELINK_SECRET,e.S_APP_SECRET,e.S_CLIENT_SECRET,e.S_EWELINK_API_SECRET,e.S_API_SECRET];
-          const appId = ids.find(Boolean) || '';
-          const secret = secs.find(Boolean) || '';
-          if (!appId || !secret) {
-            console.log(JSON.stringify({ok:false,message:'Nenhum par provável de App ID/Secret encontrado no GitHub Secrets'}));
-            process.exit(0);
-          }
-          if (!/^[A-Za-z0-9]+$/.test(appId)) {
-            console.log(JSON.stringify({ok:false,message:'O App ID encontrado não é alfanumérico'}));
-            process.exit(0);
-          }
-          const authorization = crypto.createHmac('sha256', secret).update('countryCode=55').digest('base64');
-          const req = https.request({hostname:'apia.coolkit.cn',path:'/v2/utils/get-region?countryCode=55',method:'GET',headers:{'X-CK-Appid':appId,'Authorization':`Sign ${authorization}`,'Accept':'application/json'}}, res => {
-            let body='';
-            res.on('data', c => body += c);
-            res.on('end', () => {
-              try {
-                const j=JSON.parse(body);
-                console.log(JSON.stringify({ok:Number(j.error)===0,httpStatus:res.statusCode,error:j.error,msg:j.msg,region:j?.data?.region||null}));
-              } catch {
-                console.log(JSON.stringify({ok:false,httpStatus:res.statusCode,message:'Resposta não JSON'}));
-              }
-            });
-          });
-          req.on('error', e => console.log(JSON.stringify({ok:false,message:e.message})));
-          req.end();
+          let data = {};
+          try { data = JSON.parse(process.env.ALL_REPO_SECRETS_JSON || '{}'); } catch {}
+          const names = Object.keys(data).filter(n => /EWELINK|COOLKIT|API|APP|CLIENT|VERCEL/i.test(n));
+          console.log(JSON.stringify({matchingSecretNames:names,totalMatching:names.length}));
           NODE
