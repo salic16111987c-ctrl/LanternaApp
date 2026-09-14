@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-const REDIRECT_URL = 'http://127.0.0.1:8787/ewelink/callback';
+const REDIRECT_URL = 'https://chegada-casa-api.vercel.app/api/auth/callback';
 
 function cleanEnv(value) {
   return String(value || '')
@@ -68,7 +68,7 @@ export default async function handler(req, res) {
   }
 
   const code = String(req.body?.code || '').trim();
-  const requestedRegion = String(req.body?.region || '').toLowerCase().trim();
+  const requestedRegion = String(req.body?.region || req.body?.regin || '').toLowerCase().trim();
 
   if (!code) {
     return res.status(400).json({ ok: false, message: 'Código OAuth ausente.' });
