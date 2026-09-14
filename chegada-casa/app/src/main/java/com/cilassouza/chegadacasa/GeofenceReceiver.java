@@ -40,9 +40,31 @@ public class GeofenceReceiver extends BroadcastReceiver {
         }
 
         prefs.edit().putBoolean("dentro", true).putLong("ultimo_alerta", agora).apply();
-        mostrarNotificacao(context,
-                "Você chegou perto de casa",
-                "O celular entrou no raio configurado. Quando o vínculo eWeLink estiver liberado, este evento enviará o comando para ligar as lâmpadas selecionadas.");
+
+        if (EwelinkApi.hasSession(context) && EwelinkApi.selectedCount(context) > 0) {
+            PendingResult pending = goAsync();
+            EwelinkApi.turnOnSelected(context.getApplicationContext(), new EwelinkApi.TextCallback() {
+                @Override
+                public void onSuccess(String message) {
+                    mostrarNotificacao(context,
+                            "Chegada detectada — luzes acionadas",
+                            message);
+                    pending.finish();
+                }
+
+                @Override
+                public void onError(String message) {
+                    mostrarNotificacao(context,
+                            "Chegada detectada — falha no eWeLink",
+                            message);
+                    pending.finish();
+                }
+            });
+        } else {
+            mostrarNotificacao(context,
+                    "Você chegou perto de casa",
+                    "O celular entrou no raio configurado. A detecção está funcionando; falta concluir a autorização OAuth do eWeLink e escolher as lâmpadas.");
+        }
     }
 
     public static void mostrarNotificacao(Context context, String titulo, String texto) {
