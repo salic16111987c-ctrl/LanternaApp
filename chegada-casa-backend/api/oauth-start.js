@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-const DEFAULT_REDIRECT_URL = 'http://127.0.0.1:8787/ewelink/callback';
+const REDIRECT_URL = 'https://chegada-casa-api.vercel.app/api/auth/callback';
 
 function cleanEnv(value) {
   return String(value || '')
@@ -22,7 +22,7 @@ export default function handler(req, res) {
 
   const clientId = cleanEnv(process.env.EWELINK_APP_ID);
   const clientSecret = cleanEnv(process.env.EWELINK_APP_SECRET);
-  const redirectUrl = cleanEnv(process.env.EWELINK_REDIRECT_URL) || DEFAULT_REDIRECT_URL;
+  const redirectUrl = REDIRECT_URL;
 
   if (!clientId || !clientSecret) {
     return res.status(503).json({
@@ -38,9 +38,6 @@ export default function handler(req, res) {
     .update(`${clientId}_${seq}`)
     .digest('base64');
 
-  // Replica o formato da biblioteca oficial ewelink-api-next.
-  // Importante: a página OAuth da CoolKit recebe a assinatura Base64 crua
-  // na query; não usamos URLSearchParams/encodeURIComponent aqui.
   const params = {
     clientId,
     redirectUrl,
@@ -52,6 +49,7 @@ export default function handler(req, res) {
     authorization
   };
 
+  // Mantém o mesmo formato utilizado pela biblioteca ewelink-api-next.
   const query = Object.keys(params)
     .map((key) => `${key}=${params[key]}`)
     .join('&');
