@@ -28,10 +28,9 @@ export default function handler(req, res) {
     .update(`${clientId}_${seq}`)
     .digest('base64');
 
-  // IMPORTANTE: a biblioteca oficial ewelink-api-next monta esta URL
-  // por concatenação simples. Não usar URLSearchParams aqui, pois ele
-  // codifica caracteres do HMAC Base64 (+, /, =) e o login OAuth pode
-  // ficar preso no carregamento.
+  // O eWeLink recebe estes valores pela query string. Codificar cada valor
+  // evita que caracteres especiais do HMAC Base64 (+, /, =) e da redirectUrl
+  // sejam interpretados de forma diferente pelo navegador/pagina OAuth.
   const params = {
     clientId,
     redirectUrl,
@@ -44,7 +43,7 @@ export default function handler(req, res) {
   };
 
   const query = Object.keys(params)
-    .map((key) => `${key}=${params[key]}`)
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
     .join('&');
 
   const url = `https://c2ccdn.coolkit.cc/oauth/index.html?${query}`;
