@@ -1,0 +1,1 @@
+Integração OAuth eWeLink em desenvolvimento. Nenhuma credencial privada é armazenada neste arquivo.
