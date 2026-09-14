@@ -1,4 +1,4 @@
-name: Diagnose eWeLink Backend
+name: Diagnose eWeLink OAuth
 
 on:
   push:
@@ -14,10 +14,8 @@ jobs:
       - name: Aguardar deploy Vercel
         run: sleep 25
 
-      - name: Testar credenciais publicadas
+      - name: Testar endpoint OAuth publicado
         run: |
           curl --fail-with-body --silent --show-error \
-            'https://chegada-casa-api.vercel.app/api/diagnose-region?countryCode=55'
+            'https://chegada-casa-api.vercel.app/api/oauth-start?state=diagnostico'
           echo
-
-# teste com APPID exato copiado do portal eWeLink
