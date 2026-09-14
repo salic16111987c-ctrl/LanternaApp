@@ -11,7 +11,7 @@ function nonce8() {
 export default function handler(req, res) {
   const clientId = process.env.EWELINK_APP_ID;
   const clientSecret = process.env.EWELINK_APP_SECRET;
-  const redirectUrl = process.env.EWELINK_REDIRECT_URL || 'http://127.0.0.1:8787/ewelink/callback';
+  const redirectUrl = process.env.EWELINK_REDIRECT_URL || 'https://chegada-casa-api.vercel.app/api/auth/callback';
 
   if (!clientId || !clientSecret) {
     return res.status(503).json({
@@ -28,9 +28,7 @@ export default function handler(req, res) {
     .update(`${clientId}_${seq}`)
     .digest('base64');
 
-  // O eWeLink recebe estes valores pela query string. Codificar cada valor
-  // evita que caracteres especiais do HMAC Base64 (+, /, =) e da redirectUrl
-  // sejam interpretados de forma diferente pelo navegador/pagina OAuth.
+  // Replica o formato usado pela biblioteca ewelink-api-next.
   const params = {
     clientId,
     redirectUrl,
@@ -43,7 +41,7 @@ export default function handler(req, res) {
   };
 
   const query = Object.keys(params)
-    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(String(params[key]))}`)
+    .map((key) => `${key}=${params[key]}`)
     .join('&');
 
   const url = `https://c2ccdn.coolkit.cc/oauth/index.html?${query}`;
