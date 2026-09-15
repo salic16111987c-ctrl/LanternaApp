@@ -10,11 +10,13 @@ android {
         applicationId 'com.cilassouza.chegadacasa'
         minSdk 26
         targetSdk 35
-        versionCode 4
-        versionName '1.2-oauth-fix'
+        versionCode 5
+        versionName '1.4-android-auto'
     }
 }
 
 dependencies {
     implementation 'com.google.android.gms:play-services-location:21.3.0'
+    implementation 'androidx.car.app:app:1.7.0'
+    implementation 'androidx.car.app:app-projected:1.7.0'
 }
