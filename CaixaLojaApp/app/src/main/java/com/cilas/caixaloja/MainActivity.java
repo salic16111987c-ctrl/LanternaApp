@@ -48,7 +48,8 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(20), dp(24), dp(20), dp(28));
         scroll.addView(root, new ScrollView.LayoutParams(
-                ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.WRAP_CONTENT));
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT));
         setContentView(scroll);
 
         TextView heading = new TextView(this);
@@ -58,10 +59,7 @@ public class MainActivity extends Activity {
         heading.setTypeface(null, 1);
         root.addView(heading);
 
-        TextView sub = new TextView(this);
-        sub.setText(subtitle);
-        sub.setTextSize(15);
-        sub.setTextColor(Color.DKGRAY);
+        TextView sub = body(subtitle);
         sub.setPadding(0, dp(6), 0, dp(20));
         root.addView(sub);
         return root;
@@ -71,23 +69,21 @@ public class MainActivity extends Activity {
         onHome = true;
         LinearLayout root = createScreen(
                 "Caixa da Loja",
-                "Escolha como este aparelho será usado.");
+                "Versão de teste do aplicativo Android.");
 
         addSectionTitle(root, "Telefone do caixa");
-        TextView caixaInfo = body("Lançamento simples do movimento do dia: dinheiro + cartão.");
-        root.addView(caixaInfo);
+        root.addView(body("Use esta área para lançar a entrada em dinheiro e cartão do dia."));
         Button caixa = primaryButton("ABRIR CAIXA");
         caixa.setOnClickListener(v -> showCaixa());
         root.addView(caixa, marginTop(12));
 
         addSectionTitle(root, "Telefone do administrador");
-        TextView adminInfo = body("Consulta por dia, semana, mês e ano, fechamento mensal, despesas e exportação para Excel.");
-        root.addView(adminInfo);
+        root.addView(body("Consulta de dia, semana, mês e ano, fechamento mensal, despesas e relatório Excel."));
         Button admin = primaryButton("ABRIR ADMINISTRADOR");
         admin.setOnClickListener(v -> showAdmin());
         root.addView(admin, marginTop(12));
 
-        TextView note = body("Versão 1.0: os dados ficam salvos neste aparelho. A sincronização entre os dois telefones será ligada ao banco na nuvem na próxima etapa.");
+        TextView note = body("Importante: nesta versão os dados ainda ficam somente neste aparelho. Dois celulares não sincronizam entre si até ligarmos o banco online.");
         note.setPadding(0, dp(28), 0, 0);
         root.addView(note);
     }
@@ -125,14 +121,15 @@ public class MainActivity extends Activity {
         Button save = primaryButton("SALVAR MOVIMENTO DO DIA");
         save.setOnClickListener(v -> {
             try {
-                LocalDate.parse(date.getText().toString().trim());
+                String d = date.getText().toString().trim();
+                LocalDate.parse(d);
                 double cashValue = parseMoney(cash.getText().toString());
                 double cardValue = parseMoney(card.getText().toString());
-                db.upsertMovement(date.getText().toString().trim(), cashValue, cardValue);
-                Toast.makeText(this, "Movimento salvo com sucesso.", Toast.LENGTH_LONG).show();
+                db.upsertMovement(d, cashValue, cardValue);
                 total.setText("Total do dia: " + money(cashValue + cardValue));
+                Toast.makeText(this, "Movimento salvo com sucesso.", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
-                Toast.makeText(this, "Confira a data. Use o formato AAAA-MM-DD.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Confira a data. Use AAAA-MM-DD.", Toast.LENGTH_LONG).show();
             }
         });
         root.addView(save, marginTop(18));
@@ -140,7 +137,6 @@ public class MainActivity extends Activity {
         Button today = secondaryButton("USAR DATA DE HOJE");
         today.setOnClickListener(v -> date.setText(LocalDate.now().toString()));
         root.addView(today, marginTop(10));
-
         addBack(root);
     }
 
@@ -150,12 +146,8 @@ public class MainActivity extends Activity {
                 "Administrador",
                 "Acompanhe o movimento e faça o fechamento mensal.");
 
-        TextView summary = bigValue("");
-
         LinearLayout filters = new LinearLayout(this);
         filters.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(filters);
-
         Button day = smallButton("DIA");
         Button week = smallButton("SEMANA");
         Button month = smallButton("MÊS");
@@ -164,7 +156,9 @@ public class MainActivity extends Activity {
         filters.addView(week, weighted());
         filters.addView(month, weighted());
         filters.addView(year, weighted());
+        root.addView(filters);
 
+        TextView summary = bigValue("");
         root.addView(summary, marginTop(18));
 
         Runnable showDay = () -> {
@@ -175,17 +169,15 @@ public class MainActivity extends Activity {
         week.setOnClickListener(v -> {
             LocalDate now = LocalDate.now();
             LocalDate start = now.with(DayOfWeek.MONDAY);
-            LocalDate end = start.plusDays(6);
-            renderSummary(summary, "Semana " + start + " a " + end, start, end);
+            renderSummary(summary, "Semana " + start + " a " + start.plusDays(6), start, start.plusDays(6));
         });
         month.setOnClickListener(v -> {
             YearMonth ym = YearMonth.now();
             renderSummary(summary, "Mês " + ym, ym.atDay(1), ym.atEndOfMonth());
         });
         year.setOnClickListener(v -> {
-            LocalDate now = LocalDate.now();
-            renderSummary(summary, "Ano " + now.getYear(),
-                    LocalDate.of(now.getYear(), 1, 1), LocalDate.of(now.getYear(), 12, 31));
+            int y = LocalDate.now().getYear();
+            renderSummary(summary, "Ano " + y, LocalDate.of(y, 1, 1), LocalDate.of(y, 12, 31));
         });
         showDay.run();
 
@@ -195,14 +187,13 @@ public class MainActivity extends Activity {
         root.addView(closing, marginTop(10));
 
         addSectionTitle(root, "Relatórios");
-        Button export = primaryButton("EXPORTAR PARA EXCEL");
+        Button export = primaryButton("SALVAR PLANILHA EXCEL (.XLSX)");
         export.setOnClickListener(v -> startExport());
         root.addView(export, marginTop(10));
 
-        TextView exportInfo = body("O arquivo exportado é CSV compatível com Excel e contém movimento diário, fechamentos mensais e despesas.");
-        exportInfo.setPadding(0, dp(8), 0, 0);
-        root.addView(exportInfo);
-
+        TextView info = body("Ao tocar no botão, o Android abrirá a tela Salvar como. Escolha Downloads, Documentos ou outra pasta. O arquivo será uma planilha .xlsx de verdade, com 3 abas: Movimento Diário, Fechamento Mensal e Despesas.");
+        info.setPadding(0, dp(8), 0, 0);
+        root.addView(info);
         addBack(root);
     }
 
@@ -218,7 +209,7 @@ public class MainActivity extends Activity {
         onHome = false;
         LinearLayout root = createScreen(
                 "Fechamento Mensal",
-                "Informe o lucro apurado no seu sistema e lance as despesas do mês.");
+                "Informe o lucro do seu sistema e lance as despesas do mês.");
 
         EditText month = field("Mês de referência (AAAA-MM)", InputType.TYPE_CLASS_DATETIME);
         month.setText(YearMonth.now().toString());
@@ -231,9 +222,9 @@ public class MainActivity extends Activity {
         TextView expensesTotal = bigValue("");
         TextView net = bigValue("");
 
-        Button loadMonth = secondaryButton("CARREGAR ESTE MÊS");
-        loadMonth.setOnClickListener(v -> refreshClosing(month, profit, expensesList, expensesTotal, net, true));
-        root.addView(loadMonth, marginTop(10));
+        Button load = secondaryButton("CARREGAR ESTE MÊS");
+        load.setOnClickListener(v -> refreshClosing(month, profit, expensesList, expensesTotal, net, true));
+        root.addView(load, marginTop(10));
 
         addSectionTitle(root, "Adicionar despesa");
         EditText expenseDate = field("Data da despesa (AAAA-MM-DD)", InputType.TYPE_CLASS_DATETIME);
@@ -256,7 +247,7 @@ public class MainActivity extends Activity {
                 String desc = description.getText().toString().trim();
                 double value = parseMoney(amount.getText().toString());
                 if (desc.isEmpty() || value <= 0) {
-                    Toast.makeText(this, "Informe a descrição e um valor maior que zero.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Informe descrição e valor maior que zero.", Toast.LENGTH_LONG).show();
                     return;
                 }
                 db.addExpense(d, desc, value, ref);
@@ -265,7 +256,7 @@ public class MainActivity extends Activity {
                 refreshClosing(month, profit, expensesList, expensesTotal, net, false);
                 Toast.makeText(this, "Despesa adicionada.", Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
-                Toast.makeText(this, "Confira o mês e a data informados.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Confira o mês e a data.", Toast.LENGTH_LONG).show();
             }
         });
         root.addView(addExpense, marginTop(12));
@@ -275,7 +266,7 @@ public class MainActivity extends Activity {
         root.addView(expensesTotal, marginTop(12));
         root.addView(net, marginTop(8));
 
-        TextWatcher profitWatcher = new TextWatcher() {
+        profit.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 String ref = month.getText().toString().trim();
@@ -283,23 +274,21 @@ public class MainActivity extends Activity {
                 net.setText("Resultado líquido: " + money(parseMoney(profit.getText().toString()) - exp));
             }
             @Override public void afterTextChanged(Editable s) {}
-        };
-        profit.addTextChangedListener(profitWatcher);
+        });
 
-        Button saveClosing = primaryButton("SALVAR FECHAMENTO DO MÊS");
-        saveClosing.setOnClickListener(v -> {
+        Button save = primaryButton("SALVAR FECHAMENTO DO MÊS");
+        save.setOnClickListener(v -> {
             try {
                 String ref = month.getText().toString().trim();
                 YearMonth.parse(ref);
-                double p = parseMoney(profit.getText().toString());
-                db.upsertClosing(ref, p);
+                db.upsertClosing(ref, parseMoney(profit.getText().toString()));
                 refreshClosing(month, profit, expensesList, expensesTotal, net, false);
                 Toast.makeText(this, "Fechamento mensal salvo.", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
-                Toast.makeText(this, "Confira o mês informado. Use AAAA-MM.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Confira o mês. Use AAAA-MM.", Toast.LENGTH_LONG).show();
             }
         });
-        root.addView(saveClosing, marginTop(18));
+        root.addView(save, marginTop(18));
 
         refreshClosing(month, profit, expensesList, expensesTotal, net, true);
         addBack(root);
@@ -328,8 +317,8 @@ public class MainActivity extends Activity {
     private void startExport() {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("text/csv");
-        intent.putExtra(Intent.EXTRA_TITLE, "caixa_loja_" + LocalDate.now() + ".csv");
+        intent.setType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        intent.putExtra(Intent.EXTRA_TITLE, "Caixa_da_Loja_" + LocalDate.now() + ".xlsx");
         startActivityForResult(intent, REQUEST_EXPORT);
     }
 
@@ -340,10 +329,10 @@ public class MainActivity extends Activity {
             Uri uri = data.getData();
             if (uri == null) return;
             try {
-                db.exportCsv(getContentResolver(), uri);
-                Toast.makeText(this, "Relatório exportado. Você pode abrir no Excel.", Toast.LENGTH_LONG).show();
+                XlsxExporter.export(db, getContentResolver(), uri);
+                Toast.makeText(this, "Planilha Excel salva com sucesso.", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
-                Toast.makeText(this, "Não foi possível exportar o relatório.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Não foi possível salvar a planilha Excel.", Toast.LENGTH_LONG).show();
             }
         }
     }
@@ -361,13 +350,13 @@ public class MainActivity extends Activity {
     }
 
     private void addSectionTitle(LinearLayout root, String title) {
-        TextView text = new TextView(this);
-        text.setText(title);
-        text.setTextSize(18);
-        text.setTextColor(COLOR_DARK);
-        text.setTypeface(null, 1);
-        text.setPadding(0, dp(24), 0, dp(8));
-        root.addView(text);
+        TextView view = new TextView(this);
+        view.setText(title);
+        view.setTextSize(18);
+        view.setTextColor(COLOR_DARK);
+        view.setTypeface(null, 1);
+        view.setPadding(0, dp(24), 0, dp(8));
+        root.addView(view);
     }
 
     private TextView body(String text) {
@@ -390,22 +379,24 @@ public class MainActivity extends Activity {
         return view;
     }
 
-    private EditText field(String hint, int type) {
+    private EditText field(String hint, int inputType) {
         EditText edit = new EditText(this);
         edit.setHint(hint);
         edit.setTextSize(17);
-        edit.setInputType(type);
-        edit.setSingleLine(true);
-        edit.setPadding(dp(12), dp(12), dp(12), dp(12));
+        edit.setTextColor(COLOR_DARK);
+        edit.setHintTextColor(Color.GRAY);
+        edit.setInputType(inputType);
+        edit.setPadding(dp(14), dp(10), dp(14), dp(10));
         edit.setBackgroundColor(Color.WHITE);
+        edit.setSingleLine(true);
         return edit;
     }
 
     private Button primaryButton(String text) {
         Button button = new Button(this);
         button.setText(text);
-        button.setTextColor(Color.WHITE);
         button.setTextSize(15);
+        button.setTextColor(Color.WHITE);
         button.setBackgroundColor(COLOR_PRIMARY);
         button.setGravity(Gravity.CENTER);
         button.setMinHeight(dp(52));
@@ -416,7 +407,6 @@ public class MainActivity extends Activity {
         Button button = new Button(this);
         button.setText(text);
         button.setTextColor(COLOR_DARK);
-        button.setTextSize(14);
         button.setBackgroundColor(Color.LTGRAY);
         button.setMinHeight(dp(48));
         return button;
@@ -424,46 +414,43 @@ public class MainActivity extends Activity {
 
     private Button smallButton(String text) {
         Button button = primaryButton(text);
-        button.setTextSize(11);
-        button.setMinHeight(dp(46));
+        button.setTextSize(12);
+        button.setMinWidth(0);
+        button.setPadding(dp(3), 0, dp(3), 0);
         return button;
     }
 
+    private LinearLayout.LayoutParams marginTop(int value) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        p.topMargin = dp(value);
+        return p;
+    }
+
     private LinearLayout.LayoutParams weighted() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(52), 1f);
-        params.setMargins(dp(2), 0, dp(2), 0);
-        return params;
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        p.setMargins(dp(2), 0, dp(2), 0);
+        return p;
     }
 
-    private LinearLayout.LayoutParams marginTop(int topDp) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.topMargin = dp(topDp);
-        return params;
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private double parseMoney(String raw) {
-        if (raw == null) return 0;
-        String value = raw.trim().replace("R$", "").replace(" ", "");
-        if (value.isEmpty()) return 0;
+    private double parseMoney(String value) {
+        if (value == null) return 0;
+        String clean = value.trim().replace("R$", "").replace(" ", "");
+        if (clean.isEmpty()) return 0;
         try {
-            if (value.contains(",") && value.contains(".")) {
-                value = value.replace(".", "").replace(",", ".");
-            } else if (value.contains(",")) {
-                value = value.replace(",", ".");
-            }
-            return Double.parseDouble(value);
+            if (clean.contains(",")) clean = clean.replace(".", "").replace(",", ".");
+            return Double.parseDouble(clean);
         } catch (Exception e) {
             return 0;
         }
     }
 
     private String money(double value) {
-        NumberFormat nf = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
-        return nf.format(value);
-    }
-
-    private int dp(int value) {
-        return Math.round(value * getResources().getDisplayMetrics().density);
+        return NumberFormat.getCurrencyInstance(new Locale("pt", "BR")).format(value);
     }
 }
