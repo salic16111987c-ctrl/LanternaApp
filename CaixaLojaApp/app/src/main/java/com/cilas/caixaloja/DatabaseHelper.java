@@ -1,22 +1,18 @@
 package com.cilas.caixaloja;
 
-import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
-import android.net.Uri;
 
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.UUID;
 
 public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "caixa_loja.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     public DatabaseHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -34,6 +30,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
         db.execSQL("CREATE TABLE expenses (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "cloud_id TEXT UNIQUE," +
                 "expense_date TEXT NOT NULL," +
                 "description TEXT NOT NULL," +
                 "amount REAL NOT NULL DEFAULT 0," +
@@ -51,10 +48,14 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        db.execSQL("DROP TABLE IF EXISTS monthly_closings");
-        db.execSQL("DROP TABLE IF EXISTS expenses");
-        db.execSQL("DROP TABLE IF EXISTS movements");
-        onCreate(db);
+        if (oldVersion < 2) {
+            try {
+                db.execSQL("ALTER TABLE expenses ADD COLUMN cloud_id TEXT");
+            } catch (Exception ignored) {}
+            try {
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_cloud_id ON expenses(cloud_id)");
+            } catch (Exception ignored) {}
+        }
     }
 
     public void upsertMovement(String date, double cash, double card) {
@@ -85,14 +86,29 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return new Summary(cash, card, total);
     }
 
-    public void addExpense(String date, String description, double amount, String monthRef) {
+    public String addExpense(String date, String description, double amount, String monthRef) {
+        String cloudId = UUID.randomUUID().toString();
         ContentValues values = new ContentValues();
+        values.put("cloud_id", cloudId);
         values.put("expense_date", date);
         values.put("description", description);
         values.put("amount", amount);
         values.put("month_ref", monthRef);
         values.put("created_at", LocalDateTime.now().toString());
         getWritableDatabase().insert("expenses", null, values);
+        return cloudId;
+    }
+
+    public void upsertExpenseFromCloud(String cloudId, String date, String description, double amount, String monthRef) {
+        ContentValues values = new ContentValues();
+        values.put("cloud_id", cloudId);
+        values.put("expense_date", date);
+        values.put("description", description);
+        values.put("amount", amount);
+        values.put("month_ref", monthRef);
+        values.put("created_at", LocalDateTime.now().toString());
+        getWritableDatabase().insertWithOnConflict(
+                "expenses", null, values, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
     public double getExpensesTotal(String monthRef) {
@@ -143,59 +159,6 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         if (cursor.moveToFirst()) value = cursor.getDouble(0);
         cursor.close();
         return value;
-    }
-
-    public void exportCsv(ContentResolver resolver, Uri uri) throws Exception {
-        try (OutputStream out = resolver.openOutputStream(uri);
-             OutputStreamWriter writer = new OutputStreamWriter(out, StandardCharsets.UTF_8)) {
-            writer.write('\uFEFF');
-            writer.write("MOVIMENTO DIARIO\n");
-            writer.write("Data;Dinheiro;Cartao;Total\n");
-
-            Cursor movements = getReadableDatabase().rawQuery(
-                    "SELECT movement_date, cash, card, total FROM movements ORDER BY movement_date", null);
-            while (movements.moveToNext()) {
-                writer.write(csv(movements.getString(0)) + ";" +
-                        formatNumber(movements.getDouble(1)) + ";" +
-                        formatNumber(movements.getDouble(2)) + ";" +
-                        formatNumber(movements.getDouble(3)) + "\n");
-            }
-            movements.close();
-
-            writer.write("\nFECHAMENTO MENSAL\n");
-            writer.write("Mes;Lucro informado;Despesas;Lucro liquido\n");
-            Cursor closings = getReadableDatabase().rawQuery(
-                    "SELECT month_ref, profit, expenses_total, net_profit FROM monthly_closings ORDER BY month_ref", null);
-            while (closings.moveToNext()) {
-                writer.write(csv(closings.getString(0)) + ";" +
-                        formatNumber(closings.getDouble(1)) + ";" +
-                        formatNumber(closings.getDouble(2)) + ";" +
-                        formatNumber(closings.getDouble(3)) + "\n");
-            }
-            closings.close();
-
-            writer.write("\nDESPESAS\n");
-            writer.write("Data;Descricao;Valor;Mes de referencia\n");
-            Cursor expenses = getReadableDatabase().rawQuery(
-                    "SELECT expense_date, description, amount, month_ref FROM expenses ORDER BY expense_date, id", null);
-            while (expenses.moveToNext()) {
-                writer.write(csv(expenses.getString(0)) + ";" +
-                        csv(expenses.getString(1)) + ";" +
-                        formatNumber(expenses.getDouble(2)) + ";" +
-                        csv(expenses.getString(3)) + "\n");
-            }
-            expenses.close();
-            writer.flush();
-        }
-    }
-
-    private static String csv(String value) {
-        if (value == null) return "";
-        String escaped = value.replace("\"", "\"\"");
-        if (escaped.contains(";") || escaped.contains("\n") || escaped.contains("\"")) {
-            return "\"" + escaped + "\"";
-        }
-        return escaped;
     }
 
     private static String formatNumber(double value) {
