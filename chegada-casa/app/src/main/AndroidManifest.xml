@@ -8,7 +8,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Chegada Casa"
+        android:label="Chegada Casa V2"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <meta-data
@@ -19,7 +19,7 @@
             android:value="1" />
 
         <service
-            android:name=".ChegadaCarAppService"
+            android:name="com.cilassouza.chegadacasa.ChegadaCarAppService"
             android:exported="true">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
@@ -28,15 +28,15 @@
         </service>
 
         <activity
-            android:name=".MapActivity"
+            android:name="com.cilassouza.chegadacasa.MapActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
         <activity
-            android:name=".MainActivity"
+            android:name="com.cilassouza.chegadacasa.MainActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
         <activity
-            android:name=".FixedMainActivity"
+            android:name="com.cilassouza.chegadacasa.FixedMainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:screenOrientation="portrait">
@@ -48,11 +48,11 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="chegadacasa" android:host="oauth" />
+                <data android:scheme="chegadacasav2" android:host="oauth" />
             </intent-filter>
         </activity>
         <receiver
-            android:name=".GeofenceReceiver"
+            android:name="com.cilassouza.chegadacasa.GeofenceReceiver"
             android:exported="false" />
     </application>
 </manifest>
