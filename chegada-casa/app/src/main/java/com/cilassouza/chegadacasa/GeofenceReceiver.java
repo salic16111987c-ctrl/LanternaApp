@@ -7,11 +7,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingEvent;
 
 import java.util.Calendar;
+import java.util.Locale;
 
 public class GeofenceReceiver extends BroadcastReceiver {
     @Override
@@ -46,6 +49,7 @@ public class GeofenceReceiver extends BroadcastReceiver {
             EwelinkApi.turnOnSelected(context.getApplicationContext(), new EwelinkApi.TextCallback() {
                 @Override
                 public void onSuccess(String message) {
+                    falarConfirmacao(context);
                     mostrarNotificacao(context,
                             "Chegada detectada — luzes acionadas",
                             message);
@@ -65,6 +69,48 @@ public class GeofenceReceiver extends BroadcastReceiver {
                     "Você chegou perto de casa",
                     "O celular entrou no raio configurado. A detecção está funcionando; falta concluir a autorização OAuth do eWeLink e escolher as lâmpadas.");
         }
+    }
+
+    private static void falarConfirmacao(Context context) {
+        Context app = context.getApplicationContext();
+        final TextToSpeech[] holder = new TextToSpeech[1];
+        holder[0] = new TextToSpeech(app, status -> {
+            TextToSpeech tts = holder[0];
+            if (tts == null) return;
+            if (status != TextToSpeech.SUCCESS) {
+                tts.shutdown();
+                return;
+            }
+
+            int lang = tts.setLanguage(new Locale("pt", "BR"));
+            if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
+                tts.setLanguage(Locale.getDefault());
+            }
+
+            tts.setSpeechRate(1.0f);
+            tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onStart(String utteranceId) { }
+
+                @Override
+                public void onDone(String utteranceId) {
+                    tts.shutdown();
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+                    tts.shutdown();
+                }
+            });
+
+            int result = tts.speak(
+                    "Lâmpadas acesas",
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    "chegada_lampadas_acesas"
+            );
+            if (result == TextToSpeech.ERROR) tts.shutdown();
+        });
     }
 
     public static void mostrarNotificacao(Context context, String titulo, String texto) {
