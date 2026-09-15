@@ -10,8 +10,8 @@ android {
         applicationId 'com.techcell.caixadaloja'
         minSdk 24
         targetSdk 35
-        versionCode 3
-        versionName '2.1'
+        versionCode 4
+        versionName '2.2'
     }
 
     buildTypes {
@@ -35,7 +35,6 @@ tasks.named('preBuild').configure {
         if (html.exists()) {
             def text = html.getText('UTF-8')
             text = text.replace('AIzaSyAcMqWWaeEKfdjIST0NSwkXWWsbSt6iY2k', 'AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbSt6iY2k')
-            text = text.replace('techcellacs1@gmail.com', 'techellacs1@gmail.com')
             html.write(text, 'UTF-8')
         }
     }
