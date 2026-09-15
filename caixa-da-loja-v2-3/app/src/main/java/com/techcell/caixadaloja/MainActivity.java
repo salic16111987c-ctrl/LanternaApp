@@ -19,9 +19,12 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
     private WebView webView;
@@ -75,6 +78,24 @@ public class MainActivity extends Activity {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
+            loadLocalApp();
+        }
+    }
+
+    private void loadLocalApp() {
+        try (InputStream in = getAssets().open("index.html"); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+            String html = new String(out.toByteArray(), StandardCharsets.UTF_8);
+            html = html.replace(
+                    "AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbst6iY2k",
+                    "AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbSt6iY2k"
+            );
+            webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null);
+        } catch (Exception e) {
             webView.loadUrl("file:///android_asset/index.html");
         }
     }
