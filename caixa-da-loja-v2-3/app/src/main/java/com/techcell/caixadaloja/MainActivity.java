@@ -1,8 +1,16 @@
 package com.techcell.caixadaloja;
 
+import android.Manifest;
 import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -19,19 +27,20 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
+    private static final String CHANNEL_ID = "caixa_lancamentos";
+    private static final int NOTIFICATION_PERMISSION_CODE = 9102;
     private WebView webView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        createNotificationChannel();
+        requestNotificationPermissionIfNeeded();
 
         webView = new WebView(this);
         webView.setLayoutParams(new ViewGroup.LayoutParams(
@@ -78,25 +87,27 @@ public class MainActivity extends Activity {
         if (savedInstanceState != null) {
             webView.restoreState(savedInstanceState);
         } else {
-            loadLocalApp();
+            webView.loadUrl("file:///android_asset/index.html");
         }
     }
 
-    private void loadLocalApp() {
-        try (InputStream in = getAssets().open("index.html"); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                out.write(buffer, 0, read);
-            }
-            String html = new String(out.toByteArray(), StandardCharsets.UTF_8);
-            html = html.replace(
-                    "AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbst6iY2k",
-                    "AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbSt6iY2k"
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "Lançamentos do Caixa",
+                    NotificationManager.IMPORTANCE_DEFAULT
             );
-            webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null);
-        } catch (Exception e) {
-            webView.loadUrl("file:///android_asset/index.html");
+            channel.setDescription("Avisos de novos lançamentos do caixa");
+            channel.enableVibration(true);
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager != null) manager.createNotificationChannel(channel);
+        }
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_CODE);
         }
     }
 
@@ -125,6 +136,49 @@ public class MainActivity extends Activity {
     }
 
     public class AndroidBridge {
+        @JavascriptInterface
+        public void playSuccessSound() {
+            new Thread(() -> {
+                try {
+                    ToneGenerator tone = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 38);
+                    tone.startTone(ToneGenerator.TONE_PROP_ACK, 140);
+                    Thread.sleep(220);
+                    tone.release();
+                } catch (Exception ignored) {}
+            }).start();
+        }
+
+        @JavascriptInterface
+        public void showNotification(String title, String message) {
+            runOnUiThread(() -> {
+                try {
+                    if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        return;
+                    }
+                    Intent intent = new Intent(MainActivity.this, MainActivity.class);
+                    intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    PendingIntent pendingIntent = PendingIntent.getActivity(
+                            MainActivity.this,
+                            0,
+                            intent,
+                            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                    );
+                    android.app.Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                            ? new android.app.Notification.Builder(MainActivity.this, CHANNEL_ID)
+                            : new android.app.Notification.Builder(MainActivity.this);
+                    builder.setSmallIcon(android.R.drawable.ic_dialog_info)
+                            .setContentTitle(title == null ? "Caixa da Loja" : title)
+                            .setContentText(message == null ? "Novo lançamento" : message)
+                            .setStyle(new android.app.Notification.BigTextStyle().bigText(message == null ? "Novo lançamento" : message))
+                            .setAutoCancel(true)
+                            .setContentIntent(pendingIntent)
+                            .setPriority(android.app.Notification.PRIORITY_DEFAULT);
+                    NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (manager != null) manager.notify((int) (System.currentTimeMillis() & 0x7fffffff), builder.build());
+                } catch (Exception ignored) {}
+            });
+        }
+
         @JavascriptInterface
         public void saveBase64File(String fileName, String mimeType, String base64Data) {
             try {
