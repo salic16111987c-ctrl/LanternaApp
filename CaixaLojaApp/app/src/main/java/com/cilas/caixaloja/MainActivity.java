@@ -9,7 +9,6 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -30,12 +29,14 @@ public class MainActivity extends Activity {
     private static final int COLOR_BG = Color.rgb(245, 247, 248);
 
     private DatabaseHelper db;
+    private CloudSyncManager cloud;
     private boolean onHome = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         db = new DatabaseHelper(this);
+        cloud = new CloudSyncManager(this);
         showHome();
     }
 
@@ -69,7 +70,37 @@ public class MainActivity extends Activity {
         onHome = true;
         LinearLayout root = createScreen(
                 "Caixa da Loja",
-                "Versão de teste do aplicativo Android.");
+                "Caixa local + sincronização em nuvem.");
+
+        addSectionTitle(root, "Nuvem");
+        if (!cloud.isConfigured()) {
+            root.addView(body("A nuvem ainda não foi configurada. O app continua funcionando localmente."));
+            Button config = primaryButton("CONFIGURAR NUVEM");
+            config.setOnClickListener(v -> showCloudConfig());
+            root.addView(config, marginTop(10));
+        } else if (!cloud.isLoggedIn()) {
+            root.addView(body("Projeto Firebase configurado. Faça login para sincronizar os dois celulares."));
+            Button login = primaryButton("ENTRAR NA NUVEM");
+            login.setOnClickListener(v -> showCloudLogin());
+            root.addView(login, marginTop(10));
+
+            Button config = secondaryButton("ALTERAR CONFIGURAÇÃO DA NUVEM");
+            config.setOnClickListener(v -> showCloudConfig());
+            root.addView(config, marginTop(8));
+        } else {
+            root.addView(body("Conectado: " + cloud.getEmail() + "\nPerfil: " + cloud.getRole() + "\nLoja: " + cloud.getStoreId()));
+            Button sync = primaryButton("SINCRONIZAR AGORA");
+            sync.setOnClickListener(v -> cloud.pullAll(db, (ok, message) -> runOnUiThread(() ->
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show())));
+            root.addView(sync, marginTop(10));
+
+            Button logout = secondaryButton("SAIR DA NUVEM");
+            logout.setOnClickListener(v -> {
+                cloud.logout();
+                showHome();
+            });
+            root.addView(logout, marginTop(8));
+        }
 
         addSectionTitle(root, "Telefone do caixa");
         root.addView(body("Use esta área para lançar a entrada em dinheiro e cartão do dia."));
@@ -80,12 +111,87 @@ public class MainActivity extends Activity {
         addSectionTitle(root, "Telefone do administrador");
         root.addView(body("Consulta de dia, semana, mês e ano, fechamento mensal, despesas e relatório Excel."));
         Button admin = primaryButton("ABRIR ADMINISTRADOR");
-        admin.setOnClickListener(v -> showAdmin());
+        if (cloud.isLoggedIn() && !cloud.isAdmin()) {
+            admin.setEnabled(false);
+            admin.setText("ADMINISTRADOR - ACESSO RESTRITO");
+        } else {
+            admin.setOnClickListener(v -> showAdmin());
+        }
         root.addView(admin, marginTop(12));
 
-        TextView note = body("Importante: nesta versão os dados ainda ficam somente neste aparelho. Dois celulares não sincronizam entre si até ligarmos o banco online.");
+        TextView note = body("Sem internet, os lançamentos continuam salvos neste aparelho. Quando a nuvem estiver configurada e conectada, os dados serão enviados para o Firebase.");
         note.setPadding(0, dp(28), 0, 0);
         root.addView(note);
+    }
+
+    private void showCloudConfig() {
+        onHome = false;
+        LinearLayout root = createScreen(
+                "Configurar Nuvem",
+                "Use os dados do aplicativo Android criado no Firebase.");
+
+        EditText projectId = field("Project ID", InputType.TYPE_CLASS_TEXT);
+        projectId.setText(cloud.getProjectId());
+        root.addView(projectId);
+
+        EditText appId = field("App ID", InputType.TYPE_CLASS_TEXT);
+        appId.setText(cloud.getAppId());
+        root.addView(appId, marginTop(10));
+
+        EditText apiKey = field("API Key", InputType.TYPE_CLASS_TEXT);
+        apiKey.setText(cloud.getApiKey());
+        root.addView(apiKey, marginTop(10));
+
+        TextView info = body("Esses identificadores vêm do projeto Firebase. Eles configuram qual banco o aplicativo deve usar. Senhas dos usuários não ficam gravadas nessa tela.");
+        info.setPadding(0, dp(12), 0, 0);
+        root.addView(info);
+
+        Button save = primaryButton("SALVAR CONFIGURAÇÃO");
+        save.setOnClickListener(v -> {
+            if (projectId.getText().toString().trim().isEmpty()
+                    || appId.getText().toString().trim().isEmpty()
+                    || apiKey.getText().toString().trim().isEmpty()) {
+                Toast.makeText(this, "Preencha Project ID, App ID e API Key.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            cloud.saveConfig(apiKey.getText().toString(), appId.getText().toString(), projectId.getText().toString());
+            Toast.makeText(this, "Configuração salva.", Toast.LENGTH_LONG).show();
+            showHome();
+        });
+        root.addView(save, marginTop(18));
+        addBack(root);
+    }
+
+    private void showCloudLogin() {
+        onHome = false;
+        LinearLayout root = createScreen(
+                "Entrar na Nuvem",
+                "Entre com o usuário criado no Firebase Authentication.");
+
+        EditText email = field("E-mail", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        root.addView(email);
+
+        EditText password = field("Senha", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        root.addView(password, marginTop(10));
+
+        Button login = primaryButton("ENTRAR");
+        login.setOnClickListener(v -> {
+            if (email.getText().toString().trim().isEmpty() || password.getText().toString().isEmpty()) {
+                Toast.makeText(this, "Informe e-mail e senha.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            login.setEnabled(false);
+            cloud.login(email.getText().toString(), password.getText().toString(), (ok, message) -> runOnUiThread(() -> {
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                if (ok) {
+                    cloud.pullAll(db, (syncOk, syncMessage) -> runOnUiThread(this::showHome));
+                } else {
+                    login.setEnabled(true);
+                }
+            }));
+        });
+        root.addView(login, marginTop(18));
+        addBack(root);
     }
 
     private void showCaixa() {
@@ -127,7 +233,11 @@ public class MainActivity extends Activity {
                 double cardValue = parseMoney(card.getText().toString());
                 db.upsertMovement(d, cashValue, cardValue);
                 total.setText("Total do dia: " + money(cashValue + cardValue));
-                Toast.makeText(this, "Movimento salvo com sucesso.", Toast.LENGTH_LONG).show();
+                cloud.uploadMovement(d, cashValue, cardValue, (ok, message) -> runOnUiThread(() ->
+                        Toast.makeText(this, ok ? "Movimento salvo e sincronizado." : message, Toast.LENGTH_LONG).show()));
+                if (!cloud.isLoggedIn()) {
+                    Toast.makeText(this, "Movimento salvo neste aparelho.", Toast.LENGTH_SHORT).show();
+                }
             } catch (Exception e) {
                 Toast.makeText(this, "Confira a data. Use AAAA-MM-DD.", Toast.LENGTH_LONG).show();
             }
@@ -141,6 +251,12 @@ public class MainActivity extends Activity {
     }
 
     private void showAdmin() {
+        if (cloud.isLoggedIn() && !cloud.isAdmin()) {
+            Toast.makeText(this, "Este usuário não tem acesso de administrador.", Toast.LENGTH_LONG).show();
+            showHome();
+            return;
+        }
+
         onHome = false;
         LinearLayout root = createScreen(
                 "Administrador",
@@ -181,6 +297,16 @@ public class MainActivity extends Activity {
         });
         showDay.run();
 
+        if (cloud.isLoggedIn()) {
+            Button sync = secondaryButton("ATUALIZAR DADOS DA NUVEM");
+            sync.setOnClickListener(v -> cloud.pullAll(db, (ok, message) -> runOnUiThread(() -> {
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                showDay.run();
+            })));
+            root.addView(sync, marginTop(10));
+            cloud.pullAll(db, (ok, message) -> runOnUiThread(showDay));
+        }
+
         addSectionTitle(root, "Fechamento do mês");
         Button closing = primaryButton("LUCRO E DESPESAS DO MÊS");
         closing.setOnClickListener(v -> showMonthlyClosing());
@@ -191,7 +317,7 @@ public class MainActivity extends Activity {
         export.setOnClickListener(v -> startExport());
         root.addView(export, marginTop(10));
 
-        TextView info = body("Ao tocar no botão, o Android abrirá a tela Salvar como. Escolha Downloads, Documentos ou outra pasta. O arquivo será uma planilha .xlsx de verdade, com 3 abas: Movimento Diário, Fechamento Mensal e Despesas.");
+        TextView info = body("Ao tocar no botão, o Android abrirá a tela Salvar como. A planilha tem 3 abas: Movimento Diário, Fechamento Mensal e Despesas.");
         info.setPadding(0, dp(8), 0, 0);
         root.addView(info);
         addBack(root);
@@ -206,6 +332,12 @@ public class MainActivity extends Activity {
     }
 
     private void showMonthlyClosing() {
+        if (cloud.isLoggedIn() && !cloud.isAdmin()) {
+            Toast.makeText(this, "Somente o administrador pode alterar o fechamento.", Toast.LENGTH_LONG).show();
+            showHome();
+            return;
+        }
+
         onHome = false;
         LinearLayout root = createScreen(
                 "Fechamento Mensal",
@@ -250,7 +382,10 @@ public class MainActivity extends Activity {
                     Toast.makeText(this, "Informe descrição e valor maior que zero.", Toast.LENGTH_LONG).show();
                     return;
                 }
-                db.addExpense(d, desc, value, ref);
+                String cloudId = db.addExpense(d, desc, value, ref);
+                cloud.uploadExpense(cloudId, d, desc, value, ref, (ok, message) -> runOnUiThread(() -> {
+                    if (!ok && cloud.isLoggedIn()) Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                }));
                 description.setText("");
                 amount.setText("");
                 refreshClosing(month, profit, expensesList, expensesTotal, net, false);
@@ -281,7 +416,12 @@ public class MainActivity extends Activity {
             try {
                 String ref = month.getText().toString().trim();
                 YearMonth.parse(ref);
-                db.upsertClosing(ref, parseMoney(profit.getText().toString()));
+                double p = parseMoney(profit.getText().toString());
+                db.upsertClosing(ref, p);
+                double expenses = db.getExpensesTotal(ref);
+                cloud.uploadClosing(ref, p, expenses, (ok, message) -> runOnUiThread(() -> {
+                    if (!ok && cloud.isLoggedIn()) Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                }));
                 refreshClosing(month, profit, expensesList, expensesTotal, net, false);
                 Toast.makeText(this, "Fechamento mensal salvo.", Toast.LENGTH_LONG).show();
             } catch (Exception e) {
