@@ -7,11 +7,11 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.cilassouza.chegadacasa'
+        applicationId 'com.cilassouza.chegadacasa.v2'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '1.4-android-auto'
+        versionCode 6
+        versionName '1.5-side-by-side'
     }
 }
 
