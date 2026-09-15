@@ -74,7 +74,7 @@ public class FixedMainActivity extends MainActivity {
             return;
         }
 
-        String state = UUID.randomUUID().toString();
+        String state = "v2-" + UUID.randomUUID();
         getSharedPreferences("config", MODE_PRIVATE)
                 .edit()
                 .putString(PREF_OAUTH_STATE, state)
@@ -88,7 +88,7 @@ public class FixedMainActivity extends MainActivity {
                 .build();
 
         Toast.makeText(this,
-                "Abrindo o login oficial do eWeLink. Após autorizar, o Chegada Casa abrirá sozinho.",
+                "Abrindo o login oficial do eWeLink. Após autorizar, o Chegada Casa V2 abrirá sozinho.",
                 Toast.LENGTH_LONG).show();
 
         startActivity(new Intent(Intent.ACTION_VIEW, loginUrl));
@@ -97,7 +97,7 @@ public class FixedMainActivity extends MainActivity {
     private void handleOAuthIntent(Intent intent) {
         if (intent == null || intent.getData() == null) return;
         Uri data = intent.getData();
-        if (!"chegadacasa".equalsIgnoreCase(data.getScheme()) ||
+        if (!"chegadacasav2".equalsIgnoreCase(data.getScheme()) ||
                 !"oauth".equalsIgnoreCase(data.getHost())) return;
 
         String oauthError = data.getQueryParameter("error");
