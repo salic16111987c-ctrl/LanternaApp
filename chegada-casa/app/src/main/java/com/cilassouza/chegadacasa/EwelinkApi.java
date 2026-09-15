@@ -19,9 +19,11 @@ import java.util.List;
 import java.util.Locale;
 
 public class EwelinkApi {
-    public static final String APP_ID = "d4m62Z1qSNOle69A1rJqhUd7al3eA7qg";
-    public static final String REDIRECT_URL = "http://127.0.0.1:8787/ewelink/callback";
+    public static final String APP_ID = "d4m62Z1qSNOIe69A1rJqhUd7al3eA7qg";
+    public static final String REDIRECT_URL = "https://chegada-casa-api.vercel.app/api/auth/callback";
     private static final String PREFS = "config";
+    private static final String PREF_SELECTED = "ewelink_selected";
+    private static final String PREF_GATE = "ewelink_gate";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public interface TextCallback {
@@ -65,16 +67,18 @@ public class EwelinkApi {
     public static void clearSession(Context context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .remove("ewelink_access_token")
+                .remove("ewelink_refresh_token")
                 .remove("ewelink_region")
                 .remove("ewelink_access_exp")
-                .remove("ewelink_selected")
+                .remove(PREF_SELECTED)
+                .remove(PREF_GATE)
                 .apply();
     }
 
     public static int selectedCount(Context context) {
         try {
             return new JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                    .getString("ewelink_selected", "[]")).length();
+                    .getString(PREF_SELECTED, "[]")).length();
         } catch (Exception e) {
             return 0;
         }
@@ -82,9 +86,11 @@ public class EwelinkApi {
 
     public static void saveSelected(Context context, List<Device> devices, boolean[] checked) {
         JSONArray out = new JSONArray();
+        String gateId = getGateDeviceId(context);
         for (int i = 0; i < devices.size(); i++) {
             if (!checked[i]) continue;
             Device d = devices.get(i);
+            if (!gateId.isEmpty() && gateId.equals(d.id)) continue;
             try {
                 JSONObject o = new JSONObject();
                 o.put("id", d.id);
@@ -94,7 +100,68 @@ public class EwelinkApi {
             } catch (Exception ignored) {}
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putString("ewelink_selected", out.toString()).apply();
+                .edit().putString(PREF_SELECTED, out.toString()).apply();
+    }
+
+    public static void saveGate(Context context, Device device, int outlet) {
+        try {
+            JSONObject gate = new JSONObject();
+            gate.put("id", device.id);
+            gate.put("name", device.name);
+            gate.put("channels", Math.max(1, device.channels));
+            gate.put("outlet", Math.max(0, outlet));
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .edit().putString(PREF_GATE, gate.toString()).apply();
+            removeDeviceFromSelected(context, device.id);
+        } catch (Exception ignored) {}
+    }
+
+    public static void clearGate(Context context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().remove(PREF_GATE).apply();
+    }
+
+    public static boolean hasGate(Context context) {
+        return !getGateDeviceId(context).isEmpty();
+    }
+
+    public static String getGateName(Context context) {
+        try {
+            JSONObject gate = new JSONObject(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .getString(PREF_GATE, "{}"));
+            String name = gate.optString("name", "Portão");
+            int channels = Math.max(1, gate.optInt("channels", 1));
+            int outlet = Math.max(0, gate.optInt("outlet", 0));
+            if (channels > 1) return name + " — canal " + (outlet + 1);
+            return name;
+        } catch (Exception e) {
+            return "Portão";
+        }
+    }
+
+    public static String getGateDeviceId(Context context) {
+        try {
+            JSONObject gate = new JSONObject(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .getString(PREF_GATE, "{}"));
+            return gate.optString("id", "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static void removeDeviceFromSelected(Context context, String deviceId) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            JSONArray current = new JSONArray(prefs.getString(PREF_SELECTED, "[]"));
+            JSONArray out = new JSONArray();
+            for (int i = 0; i < current.length(); i++) {
+                JSONObject item = current.optJSONObject(i);
+                if (item == null) continue;
+                if (deviceId.equals(item.optString("id", ""))) continue;
+                out.put(item);
+            }
+            prefs.edit().putString(PREF_SELECTED, out.toString()).apply();
+        } catch (Exception ignored) {}
     }
 
     public static void fetchDevices(Context context, DevicesCallback callback) {
@@ -161,54 +228,106 @@ public class EwelinkApi {
                     return;
                 }
 
-                JSONArray selected = new JSONArray(p.getString("ewelink_selected", "[]"));
+                JSONArray selected = new JSONArray(p.getString(PREF_SELECTED, "[]"));
                 if (selected.length() == 0) {
-                    callback.onError("Nenhum dispositivo foi selecionado.");
+                    callback.onError("Nenhuma lâmpada foi selecionada.");
                     return;
                 }
 
+                String gateId = getGateDeviceId(context);
                 int ok = 0;
                 for (int i = 0; i < selected.length(); i++) {
                     JSONObject d = selected.optJSONObject(i);
                     if (d == null) continue;
                     String id = d.optString("id", "");
+                    if (!gateId.isEmpty() && gateId.equals(id)) continue;
                     int channels = Math.max(1, d.optInt("channels", 1));
-
-                    JSONObject params = new JSONObject();
-                    if (channels == 1) {
-                        params.put("switch", "on");
-                    } else {
-                        JSONArray switches = new JSONArray();
-                        for (int ch = 0; ch < channels; ch++) {
-                            JSONObject sw = new JSONObject();
-                            sw.put("switch", "on");
-                            sw.put("outlet", ch);
-                            switches.put(sw);
-                        }
-                        params.put("switches", switches);
-                    }
-
-                    JSONObject body = new JSONObject();
-                    body.put("type", 1);
-                    body.put("id", id);
-                    body.put("params", params);
-
-                    HttpURLConnection c = open(baseUrl(region) + "/v2/device/thing/status", "POST", token);
-                    c.setDoOutput(true);
-                    try (OutputStream os = c.getOutputStream()) {
-                        os.write(body.toString().getBytes(StandardCharsets.UTF_8));
-                    }
-                    JSONObject response = new JSONObject(read(c));
-                    if (response.optInt("error", -1) == 0) ok++;
+                    if (sendSwitchState(region, token, id, channels, -1, "on")) ok++;
                     if (i < selected.length() - 1) Thread.sleep(1100L);
                 }
 
-                if (ok > 0) callback.onSuccess(ok + " dispositivo(s) acionado(s) pelo eWeLink.");
-                else callback.onError("O eWeLink não confirmou o acionamento dos dispositivos.");
+                if (ok > 0) callback.onSuccess(ok + " lâmpada/dispositivo(s) acionado(s) pelo eWeLink.");
+                else callback.onError("O eWeLink não confirmou o acionamento das lâmpadas.");
             } catch (Exception e) {
                 callback.onError("Erro ao acionar eWeLink: " + message(e));
             }
         }).start();
+    }
+
+    public static void pulseGate(Context context, TextCallback callback) {
+        new Thread(() -> {
+            try {
+                SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+                String token = p.getString("ewelink_access_token", "");
+                String region = p.getString("ewelink_region", "as");
+                if (token == null || token.isEmpty()) {
+                    callback.onError("eWeLink ainda não conectado.");
+                    return;
+                }
+
+                JSONObject gate = new JSONObject(p.getString(PREF_GATE, "{}"));
+                String id = gate.optString("id", "");
+                if (id.isEmpty()) {
+                    callback.onError("Nenhum portão foi configurado.");
+                    return;
+                }
+
+                int channels = Math.max(1, gate.optInt("channels", 1));
+                int outlet = Math.max(0, gate.optInt("outlet", 0));
+                boolean onOk = sendSwitchState(region, token, id, channels, outlet, "on");
+                if (!onOk) {
+                    callback.onError("O eWeLink não confirmou o comando de abertura do portão.");
+                    return;
+                }
+
+                Thread.sleep(800L);
+                boolean offOk = sendSwitchState(region, token, id, channels, outlet, "off");
+                if (!offOk) {
+                    callback.onError("O portão foi acionado, mas o desligamento do relé não foi confirmado. Confira o portão.");
+                    return;
+                }
+
+                callback.onSuccess("Comando de abertura do portão enviado.");
+            } catch (Exception e) {
+                callback.onError("Erro ao acionar o portão: " + message(e));
+            }
+        }).start();
+    }
+
+    private static boolean sendSwitchState(String region, String token, String id, int channels, int outlet, String state) throws Exception {
+        JSONObject params = new JSONObject();
+        if (channels <= 1) {
+            params.put("switch", state);
+        } else if (outlet >= 0) {
+            JSONArray switches = new JSONArray();
+            JSONObject sw = new JSONObject();
+            sw.put("switch", state);
+            sw.put("outlet", outlet);
+            switches.put(sw);
+            params.put("switches", switches);
+        } else {
+            JSONArray switches = new JSONArray();
+            for (int ch = 0; ch < channels; ch++) {
+                JSONObject sw = new JSONObject();
+                sw.put("switch", state);
+                sw.put("outlet", ch);
+                switches.put(sw);
+            }
+            params.put("switches", switches);
+        }
+
+        JSONObject body = new JSONObject();
+        body.put("type", 1);
+        body.put("id", id);
+        body.put("params", params);
+
+        HttpURLConnection c = open(baseUrl(region) + "/v2/device/thing/status", "POST", token);
+        c.setDoOutput(true);
+        try (OutputStream os = c.getOutputStream()) {
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        JSONObject response = new JSONObject(read(c));
+        return response.optInt("error", -1) == 0;
     }
 
     private static HttpURLConnection open(String url, String method, String token) throws Exception {
