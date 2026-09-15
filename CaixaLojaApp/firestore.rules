@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function sameStore(storeId) {
+      return signedIn() && userDoc().data.storeId == storeId;
+    }
+
+    function isAdmin() {
+      return signedIn() && userDoc().data.role == 'admin';
+    }
+
+    function isCashier() {
+      return signedIn() && userDoc().data.role == 'cashier';
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /stores/{storeId}/movements/{movementId} {
+      allow read: if sameStore(storeId);
+      allow create, update: if sameStore(storeId) && (isAdmin() || isCashier());
+      allow delete: if sameStore(storeId) && isAdmin();
+    }
+
+    match /stores/{storeId}/expenses/{expenseId} {
+      allow read: if sameStore(storeId);
+      allow create, update, delete: if sameStore(storeId) && isAdmin();
+    }
+
+    match /stores/{storeId}/closings/{closingId} {
+      allow read: if sameStore(storeId);
+      allow create, update, delete: if sameStore(storeId) && isAdmin();
+    }
+  }
+}
