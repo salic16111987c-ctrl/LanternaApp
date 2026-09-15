@@ -104,8 +104,8 @@ public class MainActivity extends Activity {
         raio = new Spinner(this);
         String[] opcoes = {"100 metros", "200 metros", "300 metros"};
         raio.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, opcoes));
-        int salvo = prefs.getInt("raio", 200);
-        raio.setSelection(salvo == 100 ? 0 : salvo == 300 ? 2 : 1);
+        int salvo = prefs.getInt("raio", 100);
+        raio.setSelection(salvo == 200 ? 1 : salvo == 300 ? 2 : 0);
         root.addView(raio);
 
         soNoite = new CheckBox(this);
@@ -136,6 +136,10 @@ public class MainActivity extends Activity {
         ativar.setOnClickListener(v -> ativarGeofence());
         root.addView(ativar, paramsBotao());
 
+        Button bateria = botao("CONFIGURAR SEGUNDO PLANO / BATERIA");
+        bateria.setOnClickListener(v -> abrirConfiguracaoBateria());
+        root.addView(bateria, paramsBotao());
+
         Button testar = botao("TESTAR ALERTA AGORA");
         testar.setOnClickListener(v -> GeofenceReceiver.mostrarNotificacao(this,
                 "Teste aprovado",
@@ -147,7 +151,7 @@ public class MainActivity extends Activity {
         status.setPadding(0, dp(18), 0, 0);
         root.addView(status);
 
-        TextView autor = texto("Cilas Souza — Chegada Casa v1.2", 12, false);
+        TextView autor = texto("Cilas Souza — Chegada Casa v1.3", 12, false);
         autor.setTextColor(Color.GRAY);
         autor.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -363,7 +367,7 @@ public class MainActivity extends Activity {
 
     private int raioSelecionado() {
         int p = raio.getSelectedItemPosition();
-        return p == 0 ? 100 : p == 2 ? 300 : 200;
+        return p == 1 ? 200 : p == 2 ? 300 : 100;
     }
 
     private boolean temBackground() {
@@ -374,6 +378,17 @@ public class MainActivity extends Activity {
     private void abrirPermissaoSempre() {
         Toast.makeText(this, "Em Localização, escolha PERMITIR O TEMPO TODO e volte ao aplicativo.", Toast.LENGTH_LONG).show();
         startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+    }
+
+    private void abrirConfiguracaoBateria() {
+        new AlertDialog.Builder(this)
+                .setTitle("Segundo plano")
+                .setMessage("Para a chegada funcionar com a tela apagada, deixe a localização como PERMITIR O TEMPO TODO e remova restrições de bateria do Chegada Casa. Na próxima tela procure Bateria / Economia de bateria e escolha SEM RESTRIÇÕES, se essa opção existir no aparelho.")
+                .setPositiveButton("ABRIR CONFIGURAÇÕES", (d, w) ->
+                        startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:" + getPackageName()))))
+                .setNegativeButton("DEPOIS", null)
+                .show();
     }
 
     private void ativarGeofence() {
@@ -414,7 +429,7 @@ public class MainActivity extends Activity {
                             .addOnSuccessListener(v -> {
                                 prefs.edit().putBoolean("ativa", true).apply();
                                 atualizarStatus();
-                                Toast.makeText(this, "Automação ativada!", Toast.LENGTH_LONG).show();
+                                Toast.makeText(this, "Automação ativada em " + metros + " m!", Toast.LENGTH_LONG).show();
                             })
                             .addOnFailureListener(e -> status.setText("Não foi possível ativar: " + e.getMessage()));
                 } catch (SecurityException e) {
@@ -440,7 +455,7 @@ public class MainActivity extends Activity {
         }
         String casa = prefs.getString("endereco", "Ponto salvo no mapa");
         if (prefs.getBoolean("ativa", false)) {
-            status.setText("AUTOMAÇÃO ATIVA — raio de " + prefs.getInt("raio", 200) + " m.\nCasa: " + casa);
+            status.setText("AUTOMAÇÃO ATIVA — raio de " + prefs.getInt("raio", 100) + " m.\nCasa: " + casa);
         } else {
             status.setText("Casa definida: " + casa + "\nConfira no mapa e depois ative a automação.");
         }
