@@ -36,6 +36,7 @@ import com.google.android.gms.location.Priority;
 import com.google.android.gms.tasks.CancellationTokenSource;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -123,9 +124,13 @@ public class MainActivity extends Activity {
         conectar.setOnClickListener(v -> mostrarEtapaOAuth());
         root.addView(conectar, paramsBotao());
 
-        Button escolher = botao("ESCOLHER LÂMPADAS / DISPOSITIVOS");
+        Button escolher = botao("ESCOLHER LÂMPADAS");
         escolher.setOnClickListener(v -> carregarDispositivos());
         root.addView(escolher, paramsBotao());
+
+        Button portao = botao("ESCOLHER PORTÃO");
+        portao.setOnClickListener(v -> carregarPortao());
+        root.addView(portao, paramsBotao());
 
         Button testarEw = botao("TESTAR LÂMPADAS EWELINK");
         testarEw.setOnClickListener(v -> testarEwelink());
@@ -151,7 +156,7 @@ public class MainActivity extends Activity {
         status.setPadding(0, dp(18), 0, 0);
         root.addView(status);
 
-        TextView autor = texto("Cilas Souza — Chegada Casa v1.3", 12, false);
+        TextView autor = texto("Cilas Souza — Chegada Casa v1.4", 12, false);
         autor.setTextColor(Color.GRAY);
         autor.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -167,7 +172,7 @@ public class MainActivity extends Activity {
         if (EwelinkApi.hasSession(this)) {
             new AlertDialog.Builder(this)
                     .setTitle("eWeLink conectado")
-                    .setMessage("A autorização da conta já está salva no aparelho. Agora você pode carregar seus dispositivos e escolher quais deverão ligar quando chegar em casa.")
+                    .setMessage("A autorização da conta já está salva no aparelho. Agora você pode escolher as lâmpadas e, separadamente, o portão.")
                     .setPositiveButton("OK", null)
                     .setNegativeButton("DESCONECTAR", (d, w) -> {
                         EwelinkApi.clearSession(this);
@@ -189,7 +194,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Primeiro precisamos concluir o login OAuth do eWeLink.", Toast.LENGTH_LONG).show();
             return;
         }
-        ewStatus.setText("Consultando seus dispositivos no eWeLink...");
+        ewStatus.setText("Consultando suas lâmpadas/dispositivos no eWeLink...");
         EwelinkApi.fetchDevices(this, new EwelinkApi.DevicesCallback() {
             @Override
             public void onSuccess(List<EwelinkApi.Device> devices) {
@@ -212,20 +217,94 @@ public class MainActivity extends Activity {
             return;
         }
 
+        String gateId = EwelinkApi.getGateDeviceId(this);
         String[] nomes = new String[devices.size()];
         boolean[] checked = new boolean[devices.size()];
         for (int i = 0; i < devices.size(); i++) {
             EwelinkApi.Device d = devices.get(i);
-            nomes[i] = d.name + (d.online ? "  • online" : "  • offline");
+            String marcaPortao = gateId.equals(d.id) ? "  • PORTÃO — não abre automaticamente" : "";
+            nomes[i] = d.name + (d.online ? "  • online" : "  • offline") + marcaPortao;
         }
 
         new AlertDialog.Builder(this)
-                .setTitle("O que deve ligar quando você chegar?")
+                .setTitle("Quais lâmpadas devem ligar automaticamente?")
                 .setMultiChoiceItems(nomes, checked, (dialog, which, isChecked) -> checked[which] = isChecked)
                 .setPositiveButton("SALVAR", (dialog, which) -> {
                     EwelinkApi.saveSelected(this, devices, checked);
                     atualizarEwelinkStatus();
-                    Toast.makeText(this, "Dispositivos selecionados salvos.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Lâmpadas automáticas salvas. O portão configurado é sempre ignorado aqui.", Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton("CANCELAR", null)
+                .show();
+    }
+
+    private void carregarPortao() {
+        if (!EwelinkApi.hasSession(this)) {
+            Toast.makeText(this, "Primeiro conecte sua conta eWeLink.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        ewStatus.setText("Consultando dispositivos para escolher o portão...");
+        EwelinkApi.fetchDevices(this, new EwelinkApi.DevicesCallback() {
+            @Override
+            public void onSuccess(List<EwelinkApi.Device> devices) {
+                runOnUiThread(() -> mostrarPortoes(devices));
+            }
+
+            @Override
+            public void onError(String message) {
+                runOnUiThread(() -> {
+                    ewStatus.setText(message);
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void mostrarPortoes(List<EwelinkApi.Device> devices) {
+        if (devices.isEmpty()) {
+            ewStatus.setText("Nenhum dispositivo compatível apareceu para configurar como portão.");
+            return;
+        }
+
+        List<String> labels = new ArrayList<>();
+        List<EwelinkApi.Device> targets = new ArrayList<>();
+        List<Integer> outlets = new ArrayList<>();
+
+        for (EwelinkApi.Device d : devices) {
+            int canais = Math.max(1, d.channels);
+            if (canais == 1) {
+                labels.add(d.name + (d.online ? "  • online" : "  • offline"));
+                targets.add(d);
+                outlets.add(0);
+            } else {
+                for (int ch = 0; ch < canais; ch++) {
+                    labels.add(d.name + " — canal " + (ch + 1) + (d.online ? "  • online" : "  • offline"));
+                    targets.add(d);
+                    outlets.add(ch);
+                }
+            }
+        }
+
+        int[] escolhido = {-1};
+        new AlertDialog.Builder(this)
+                .setTitle("Qual dispositivo abre o portão?")
+                .setSingleChoiceItems(labels.toArray(new String[0]), -1,
+                        (dialog, which) -> escolhido[0] = which)
+                .setPositiveButton("SALVAR PORTÃO", (dialog, which) -> {
+                    if (escolhido[0] < 0) {
+                        Toast.makeText(this, "Selecione o dispositivo/canal do portão.", Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    EwelinkApi.saveGate(this, targets.get(escolhido[0]), outlets.get(escolhido[0]));
+                    atualizarEwelinkStatus();
+                    Toast.makeText(this,
+                            "Portão salvo. Ele só será acionado depois que você tocar em ABRIR PORTÃO na confirmação de chegada.",
+                            Toast.LENGTH_LONG).show();
+                })
+                .setNeutralButton("REMOVER PORTÃO", (dialog, which) -> {
+                    EwelinkApi.clearGate(this);
+                    atualizarEwelinkStatus();
+                    Toast.makeText(this, "Portão removido da automação.", Toast.LENGTH_LONG).show();
                 })
                 .setNegativeButton("CANCELAR", null)
                 .show();
@@ -237,10 +316,10 @@ public class MainActivity extends Activity {
             return;
         }
         if (EwelinkApi.selectedCount(this) == 0) {
-            Toast.makeText(this, "Primeiro escolha as lâmpadas/dispositivos.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Primeiro escolha as lâmpadas.", Toast.LENGTH_LONG).show();
             return;
         }
-        ewStatus.setText("Enviando comando de teste ao eWeLink...");
+        ewStatus.setText("Enviando comando de teste às lâmpadas...");
         EwelinkApi.turnOnSelected(this, new EwelinkApi.TextCallback() {
             @Override
             public void onSuccess(String message) {
@@ -264,7 +343,8 @@ public class MainActivity extends Activity {
         if (ewStatus == null) return;
         if (EwelinkApi.hasSession(this)) {
             int n = EwelinkApi.selectedCount(this);
-            ewStatus.setText("✓ Conta eWeLink autorizada\n✓ APPID configurado\nDispositivos selecionados: " + n);
+            String portao = EwelinkApi.hasGate(this) ? EwelinkApi.getGateName(this) : "não configurado";
+            ewStatus.setText("✓ Conta eWeLink autorizada\n✓ APPID configurado\nLâmpadas automáticas: " + n + "\nPortão com confirmação: " + portao);
         } else {
             ewStatus.setText("✓ Conta de desenvolvedor aprovada\n✓ APPID configurado\n✓ OAuth 2.0 cadastrado\nAguardando concluir o login da conta eWeLink");
         }
