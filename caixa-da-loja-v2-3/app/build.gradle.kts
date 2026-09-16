@@ -7,11 +7,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.techcell.caixadaloja.v26teste"
+        applicationId = "com.techcell.caixadaloja"
         minSdk = 24
         targetSdk = 35
         versionCode = 8
-        versionName = "2.6-teste"
+        versionName = "2.6"
     }
 
     buildTypes {
