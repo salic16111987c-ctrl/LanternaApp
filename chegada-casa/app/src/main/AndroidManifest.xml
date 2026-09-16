@@ -13,40 +13,30 @@
         android:label="Chegada Casa Rápido"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
-        <meta-data
-            android:name="com.google.android.gms.car.application"
+        <meta-data android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
-        <meta-data
-            android:name="androidx.car.app.minCarApiLevel"
+        <meta-data android:name="androidx.car.app.minCarApiLevel"
             android:value="1" />
 
-        <service
-            android:name="com.cilassouza.chegadacasa.ArrivalMonitorService"
+        <service android:name=".ArrivalMonitorService"
             android:exported="false"
             android:foregroundServiceType="location" />
 
-        <service
-            android:name="com.cilassouza.chegadacasa.ChegadaCarAppService"
-            android:exported="true">
+        <service android:name=".ChegadaCarAppService" android:exported="true">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
                 <category android:name="androidx.car.app.category.IOT" />
             </intent-filter>
         </service>
 
-        <activity
-            android:name="com.cilassouza.chegadacasa.MapActivity"
-            android:exported="false"
+        <activity android:name=".MapActivity" android:exported="false"
             android:screenOrientation="portrait" />
-        <activity
-            android:name="com.cilassouza.chegadacasa.MainActivity"
-            android:exported="false"
+        <activity android:name=".MainActivity" android:exported="false"
             android:screenOrientation="portrait" />
-        <activity
-            android:name="com.cilassouza.chegadacasa.FixedMainActivity"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:screenOrientation="portrait">
+        <activity android:name=".FixedMainActivity" android:exported="false"
+            android:launchMode="singleTop" android:screenOrientation="portrait" />
+        <activity android:name=".ArrivalDiagnosticActivity" android:exported="true"
+            android:launchMode="singleTop" android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -58,8 +48,6 @@
                 <data android:scheme="chegadacasav2" android:host="oauth" />
             </intent-filter>
         </activity>
-        <receiver
-            android:name="com.cilassouza.chegadacasa.GeofenceReceiver"
-            android:exported="false" />
+        <receiver android:name=".GeofenceReceiver" android:exported="false" />
     </application>
 </manifest>
