@@ -23,6 +23,28 @@ import java.util.UUID;
 public class FixedMainActivity extends MainActivity {
     private static final String BACKEND_BASE = "https://chegada-casa-api.vercel.app";
     private static final String PREF_OAUTH_STATE = "ewelink_oauth_state";
+    private boolean monitorStartRequested = false;
+
+    private final Runnable monitorStarter = new Runnable() {
+        @Override
+        public void run() {
+            if (isFinishing() || isDestroyed()) return;
+
+            boolean ativa = getSharedPreferences("config", MODE_PRIVATE)
+                    .getBoolean("ativa", false);
+            if (ativa) {
+                if (!monitorStartRequested) {
+                    monitorStartRequested = true;
+                    ArrivalMonitorService.start(FixedMainActivity.this);
+                }
+                return;
+            }
+
+            // Permanece observando enquanto a tela estiver aberta. Assim, quando o
+            // usuario tocar em ATIVAR AUTOMACAO, o servico inicia em ate 1 segundo.
+            getWindow().getDecorView().postDelayed(this, 1000L);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,7 +52,25 @@ public class FixedMainActivity extends MainActivity {
         getWindow().getDecorView().post(() -> {
             wireOAuthButton();
             handleOAuthIntent(getIntent());
+            monitorStarter.run();
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (getSharedPreferences("config", MODE_PRIVATE).getBoolean("ativa", false)) {
+            ArrivalMonitorService.start(this);
+            monitorStartRequested = true;
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (getWindow() != null && getWindow().getDecorView() != null) {
+            getWindow().getDecorView().removeCallbacks(monitorStarter);
+        }
+        super.onDestroy();
     }
 
     @Override
