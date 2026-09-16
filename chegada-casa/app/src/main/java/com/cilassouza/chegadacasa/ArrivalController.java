@@ -35,9 +35,14 @@ public final class ArrivalController {
         long now = System.currentTimeMillis();
         long last = p.getLong("ultimo_alerta", 0L);
         if (now >= last && now - last < MIN_ALERT_INTERVAL_MS) {
-            p.edit().putBoolean("dentro", true).putBoolean("outside_observed", false)
-                    .putString("arrival_last_event", time() + " — chegada bloqueada: intervalo mínimo de 1 min")
-                    .apply();
+            // CRITICAL: keep "dentro" false and "outside_observed" true. The GPS
+            // callback runs repeatedly while within the radius, and must be free
+            // to retry after this interval. Previous versions marked "dentro"
+            // true here and permanently swallowed this arrival until another exit.
+            long secondsRemaining = (MIN_ALERT_INTERVAL_MS - (now - last) + 999L) / 1000L;
+            p.edit().putString("arrival_last_event", time()
+                    + " — aguardando " + secondsRemaining
+                    + " s para repetir chegada; tentativa continua armada").apply();
             return;
         }
         if (p.getBoolean("so_noite", false)) {
