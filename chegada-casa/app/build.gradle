@@ -10,8 +10,8 @@ android {
         applicationId 'com.cilassouza.chegadacasa.fast'
         minSdk 26
         targetSdk 35
-        versionCode 2
-        versionName '1.7-arrival-diagnostics'
+        versionCode 3
+        versionName '1.8-arrival-fixes'
     }
 }
 
