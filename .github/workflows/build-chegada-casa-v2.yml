@@ -22,11 +22,32 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Restaurar chave de assinatura de teste
-        uses: actions/cache@v4
+      - name: Restaurar chave de assinatura privada
+        id: signing_cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.android/debug.keystore
-          key: chegada-casa-fast-debug-keystore-v1
+          key: chegada-casa-fast-signing-key-v2
+
+      - name: Provisionar chave privada de assinatura se necessário
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -dname "CN=Chegada Casa Test,O=Chegada Casa,C=BR" \
+              -keyalg RSA -keysize 3072 -validity 10000 >/dev/null 2>&1
+          fi
+          test -s "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -alias androiddebugkey >/dev/null
+
+      - name: Guardar chave de assinatura para próximas atualizações
+        if: steps.signing_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: chegada-casa-fast-signing-key-v2
 
       - uses: android-actions/setup-android@v3
         with:
@@ -62,4 +83,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="chegada-casa-rapida-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido" --notes "Versão 1.9: simulação confirmada de chegada com acionamento real das luzes, diagnóstico, checagens estruturais e build Android. Teste do aparelho ainda necessário." || true
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido" --notes "Versão 1.9: simulação confirmada de chegada, diagnóstico, build Android e chave de assinatura privada persistente para próximas atualizações." || true
