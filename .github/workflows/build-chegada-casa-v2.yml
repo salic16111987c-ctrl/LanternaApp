@@ -22,6 +22,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Restaurar chave de assinatura de teste
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: chegada-casa-fast-debug-keystore-v1
+
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
@@ -40,17 +46,17 @@ jobs:
         run: gradle :app:assembleDebug --no-daemon
 
       - name: Preparar APK
-        run: cp chegada-casa/app/build/outputs/apk/debug/app-debug.apk ChegadaCasa-v2.apk
+        run: cp chegada-casa/app/build/outputs/apk/debug/app-debug.apk ChegadaCasa-Rapida.apk
 
       - name: Salvar artefato
         uses: actions/upload-artifact@v4
         with:
-          name: Chegada-Casa-V2-APK
-          path: ChegadaCasa-v2.apk
+          name: Chegada-Casa-Rapida-APK
+          path: ChegadaCasa-Rapida.apk
 
       - name: Criar release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="chegada-casa-v2-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-v2.apk --title "Chegada Casa V2" --notes "Versão com residência por endereço, mapa ou localização atual, geofence e integração OAuth eWeLink." || true
+          TAG="chegada-casa-rapida-${{ github.run_number }}"
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido" --notes "Versão de teste lado a lado com monitor de localização em primeiro plano para reduzir o atraso na chegada e áudio imediato." || true
