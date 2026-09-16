@@ -47,6 +47,20 @@ check('Geofence and live GPS use one state machine',
 check('GPS rejects stale/inaccurate fixes and watchdog retries',
       all(x in monitor for x in ['getElapsedRealtimeNanos()', 'accuracy >', 'WATCHDOG_MS',
                                 'STALE_MS', 'restartUpdates()', 'startForeground(']))
+
+# A prior regression marked the phone inside while suppressing an arrival during
+# the one-minute cooldown; no further GPS fix could fire an arrival until EXIT.
+cooldown = controller.split('if (now >= last && now - last < MIN_ALERT_INTERVAL_MS) {', 1)[1].split('if (p.getBoolean("so_noite", false))', 1)[0]
+check('Cooldown preserves outside/inside state so GPS retries after expiration',
+      'putBoolean("dentro"' not in cooldown and
+      'putBoolean("outside_observed"' not in cooldown and
+      'putLong("ultimo_alerta"' not in cooldown and
+      'secondsRemaining' in cooldown and 'return;' in cooldown and
+      'if (!inside && outside) ArrivalController.handleArrival(this)' in monitor)
+check('A real arrival marks inside and only then updates cooldown',
+      'putBoolean("dentro", true)' in controller and
+      'putLong("ultimo_alerta", now)' in controller and
+      'dispatchLights(app, p, gate, false);' in controller)
 check('Speech status reports start / completion / failure',
       all(x in speech for x in ['onStart(', 'onDone(', 'onError(', 'tts_state']))
 check('Boot receiver restores geofence without auto-starting restricted foreground service',
@@ -58,5 +72,5 @@ check('Required manifest permissions, services, boot and voice engine visibility
                                  '.ArrivalMonitorService', '.BootReceiver', '.GeofenceReceiver']))
 check('APK has expected separate identity and version',
       "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and
-      "versionName '1.9-simulacao-chegada'" in gradle and 'versionCode 4' in gradle)
+      "versionName '2.0-correcaochegada'" in gradle and 'versionCode 5' in gradle)
 print('STRUCTURAL CHECKS PASSED. Real GPS, Android power behavior, cloud and bulbs need device tests.')
