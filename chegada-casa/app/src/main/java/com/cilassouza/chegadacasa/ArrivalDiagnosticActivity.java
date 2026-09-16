@@ -1,6 +1,7 @@
 package com.cilassouza.chegadacasa;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -23,7 +24,7 @@ import java.text.DateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-/** Displays evidence of GPS, permissions, eWeLink and actual speech events. */
+/** Shows live GPS and the independently testable real light-command path. */
 public class ArrivalDiagnosticActivity extends FixedMainActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView diagnostics;
@@ -32,7 +33,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         @Override public void run() {
             if (!visible) return;
             updateDiagnostics();
-            handler.postDelayed(this, 10000L);
+            handler.postDelayed(this, 3000L);
         }
     };
 
@@ -44,8 +45,9 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         ScrollView scroll = (ScrollView) content.getChildAt(0);
         if (scroll.getChildCount() == 0 || !(scroll.getChildAt(0) instanceof LinearLayout)) return;
         LinearLayout root = (LinearLayout) scroll.getChildAt(0);
+
         TextView title = new TextView(this);
-        title.setText("DIAGNÓSTICO DA CHEGADA — v1.8");
+        title.setText("DIAGNÓSTICO E SIMULAÇÃO — v1.9");
         title.setTextSize(19);
         title.setTextColor(Color.rgb(25, 60, 110));
         title.setPadding(0, 10, 0, 8);
@@ -77,6 +79,11 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         });
         root.addView(speechButton, 4);
 
+        Button simulateButton = new Button(this);
+        simulateButton.setText("SIMULAR CHEGADA E ACENDER LUZES (TESTE REAL)");
+        simulateButton.setOnClickListener(v -> confirmSimulation(simulateButton));
+        root.addView(simulateButton, 5);
+
         Button startButton = new Button(this);
         startButton.setText("REINICIAR MONITOR DE CHEGADA");
         startButton.setOnClickListener(v -> {
@@ -89,8 +96,37 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
             Toast.makeText(this, "Monitor solicitado. Confira o estado do GPS abaixo.", Toast.LENGTH_LONG).show();
             handler.postDelayed(this::updateDiagnostics, 1600L);
         });
-        root.addView(startButton, 5);
+        root.addView(startButton, 6);
         updateDiagnostics();
+    }
+
+    /** Does not fake GPS, reset cooldown, change inside/outside or pulse the gate. */
+    private void confirmSimulation(Button button) {
+        boolean connected = EwelinkApi.hasSession(this);
+        int count = EwelinkApi.selectedCount(this);
+        if (!connected || count == 0) {
+            String reason = !connected ? "A eWeLink ainda não está conectada neste aplicativo."
+                    : "Nenhuma lâmpada está selecionada neste aplicativo.";
+            new AlertDialog.Builder(this).setTitle("Teste não disponível")
+                    .setMessage(reason + " Configure na seção eWeLink e tente novamente.")
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Simular chegada de verdade?")
+                .setMessage("Este teste vai falar o aviso, gerar uma notificação e ENVIAR AGORA o comando real para "
+                        + count + " dispositivo(s) selecionado(s). As lâmpadas podem acender. "
+                        + "O portão NÃO será acionado. GPS, raio, estado dentro/fora e próxima chegada NÃO serão alterados. "
+                        + "A resposta da API não comprova que a luz acendeu fisicamente. Confirmar?")
+                .setNegativeButton("CANCELAR", null)
+                .setPositiveButton("SIMULAR E ACENDER", (dialog, which) -> {
+                    button.setEnabled(false);
+                    ArrivalController.simulateArrival(this);
+                    updateDiagnostics();
+                    Toast.makeText(this, "Simulação iniciada. Confira SIMULAÇÃO no diagnóstico e observe as lâmpadas.",
+                            Toast.LENGTH_LONG).show();
+                    handler.postDelayed(() -> button.setEnabled(true), 15000L);
+                }).show();
     }
 
     @Override protected void onResume() {
@@ -141,6 +177,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
                 " | lâmpadas selecionadas: " + EwelinkApi.selectedCount(this) +
                 "\nÚltimo evento: " + p.getString("arrival_last_event", "nenhum") +
                 "\nÚltimo comando: " + p.getString("arrival_last_command", "nenhum") +
+                "\nSIMULAÇÃO: " + p.getString("simulation_last_result", "nenhuma simulação executada") +
                 "\nÁudio: " + p.getString("tts_state", "nenhum") +
                 " | horário: " + when(p.getLong("tts_at", 0L)) +
                 "\nErro GPS: " + p.getString("monitor_error", "nenhum") +
