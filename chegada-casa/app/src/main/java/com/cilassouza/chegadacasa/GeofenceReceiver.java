@@ -1,5 +1,6 @@
 package com.cilassouza.chegadacasa;
 
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -8,254 +9,143 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Build;
+import android.os.SystemClock;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
-
+import android.location.Location;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingEvent;
-
-import java.util.Calendar;
 import java.util.Locale;
 
+/** Geofence is the backup detector. It MUST use the same state machine as live GPS. */
 public class GeofenceReceiver extends BroadcastReceiver {
     public static final String ACTION_OPEN_GATE = "com.cilassouza.chegadacasa.OPEN_GATE";
     public static final String ACTION_CANCEL_GATE = "com.cilassouza.chegadacasa.CANCEL_GATE";
     private static final long GATE_CONFIRM_WINDOW_MS = 5 * 60 * 1000L;
+    private static final long MAX_EVENT_AGE_MS = 2 * 60 * 1000L;
     private static final int NOTIFICATION_ARRIVAL = 2001;
     private static final int NOTIFICATION_GATE = 2002;
 
-    @Override
-    public void onReceive(Context context, Intent intent) {
+    @Override public void onReceive(Context context, Intent intent) {
         if (intent == null) return;
-
         String action = intent.getAction();
-        if (ACTION_OPEN_GATE.equals(action)) {
-            abrirPortaoConfirmado(context);
-            return;
-        }
-        if (ACTION_CANCEL_GATE.equals(action)) {
-            cancelarAberturaPortao(context, true);
-            return;
-        }
-
+        if (ACTION_OPEN_GATE.equals(action)) { abrirPortaoConfirmado(context); return; }
+        if (ACTION_CANCEL_GATE.equals(action)) { cancelarAberturaPortao(context, true); return; }
+        SharedPreferences p = context.getSharedPreferences("config", Context.MODE_PRIVATE);
+        if (!p.getBoolean("ativa", false)) return;
         GeofencingEvent event = GeofencingEvent.fromIntent(intent);
-        if (event == null || event.hasError()) return;
-
-        int transition = event.getGeofenceTransition();
-        SharedPreferences prefs = context.getSharedPreferences("config", Context.MODE_PRIVATE);
-
-        if (transition == Geofence.GEOFENCE_TRANSITION_EXIT) {
-            prefs.edit()
-                    .putBoolean("dentro", false)
-                    .putBoolean("gate_pending", false)
-                    .remove("gate_pending_at")
-                    .apply();
-            cancelarNotificacaoPortao(context);
+        if (event == null) {
+            p.edit().putString("arrival_last_event", "Geofence sem evento válido").apply();
             return;
         }
-
-        if (transition != Geofence.GEOFENCE_TRANSITION_ENTER) return;
-        if (prefs.getBoolean("dentro", false)) return;
-
-        long agora = System.currentTimeMillis();
-        long ultimo = prefs.getLong("ultimo_alerta", 0);
-        if (agora - ultimo < 10 * 60 * 1000L) return;
-
-        if (prefs.getBoolean("so_noite", false)) {
-            int hora = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-            if (!(hora >= 18 || hora < 6)) return;
+        if (event.hasError()) {
+            p.edit().putString("arrival_last_event", "Erro geofence: " + event.getErrorCode()).apply();
+            return;
         }
-
-        boolean temPortao = EwelinkApi.hasSession(context) && EwelinkApi.hasGate(context);
-        SharedPreferences.Editor chegada = prefs.edit()
-                .putBoolean("dentro", true)
-                .putLong("ultimo_alerta", agora);
-        if (temPortao) {
-            chegada.putBoolean("gate_pending", true)
-                    .putLong("gate_pending_at", agora);
+        Location trigger = event.getTriggeringLocation();
+        if (trigger != null) {
+            long age = (SystemClock.elapsedRealtimeNanos() - trigger.getElapsedRealtimeNanos()) / 1000000L;
+            if (age < -5000L || age > MAX_EVENT_AGE_MS) {
+                p.edit().putString("arrival_last_event", "Geofence atrasado ignorado: " + (age / 1000L) + " s").apply();
+                return;
+            }
         }
-        chegada.apply();
-
-        if (temPortao) mostrarPerguntaPortao(context);
-
-        if (EwelinkApi.hasSession(context) && EwelinkApi.selectedCount(context) > 0) {
-            PendingResult pending = goAsync();
-            EwelinkApi.turnOnSelected(context.getApplicationContext(), new EwelinkApi.TextCallback() {
-                @Override
-                public void onSuccess(String message) {
-                    falar(context, temPortao
-                            ? "Lâmpadas acesas. Deseja abrir o portão?"
-                            : "Lâmpadas acesas");
-                    mostrarNotificacao(context,
-                            "Chegada detectada — luzes acionadas",
-                            message);
-                    pending.finish();
-                }
-
-                @Override
-                public void onError(String message) {
-                    if (temPortao) falar(context, "Deseja abrir o portão?");
-                    mostrarNotificacao(context,
-                            "Chegada detectada — falha nas luzes",
-                            message);
-                    pending.finish();
-                }
-            });
-        } else if (temPortao) {
-            falar(context, "Deseja abrir o portão?");
-        } else {
-            mostrarNotificacao(context,
-                    "Você chegou perto de casa",
-                    "O celular entrou no raio configurado.");
+        if (event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_EXIT) {
+            ArrivalController.handleExit(context);
+        } else if (event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_ENTER) {
+            ArrivalController.handleArrival(context);
         }
     }
 
     private void abrirPortaoConfirmado(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences("config", Context.MODE_PRIVATE);
-        boolean pendingFlag = prefs.getBoolean("gate_pending", false);
-        long pendingAt = prefs.getLong("gate_pending_at", 0L);
-        long age = System.currentTimeMillis() - pendingAt;
-
-        if (!pendingFlag || pendingAt <= 0 || age < 0 || age > GATE_CONFIRM_WINDOW_MS) {
-            prefs.edit().putBoolean("gate_pending", false).remove("gate_pending_at").apply();
+        SharedPreferences p = context.getSharedPreferences("config", Context.MODE_PRIVATE);
+        long at = p.getLong("gate_pending_at", 0L);
+        long age = System.currentTimeMillis() - at;
+        if (!p.getBoolean("ativa", false) || !p.getBoolean("gate_pending", false)
+                || at <= 0L || age < 0L || age > GATE_CONFIRM_WINDOW_MS) {
+            p.edit().putBoolean("gate_pending", false).remove("gate_pending_at").apply();
             cancelarNotificacaoPortao(context);
-            mostrarNotificacao(context,
-                    "Confirmação do portão expirada",
-                    "Por segurança, a chegada precisa ser detectada novamente antes de abrir o portão.");
+            mostrarNotificacao(context, "Confirmação do portão expirada",
+                    "Por segurança, aguarde uma nova chegada antes de abrir o portão.");
             return;
         }
-
-        prefs.edit().putBoolean("gate_pending", false).remove("gate_pending_at").apply();
+        p.edit().putBoolean("gate_pending", false).remove("gate_pending_at").apply();
         cancelarNotificacaoPortao(context);
-
-        PendingResult pending = goAsync();
-        EwelinkApi.pulseGate(context.getApplicationContext(), new EwelinkApi.TextCallback() {
-            @Override
-            public void onSuccess(String message) {
-                falar(context, "Portão acionado");
-                mostrarNotificacao(context, "Portão acionado", message);
-                pending.finish();
-            }
-
-            @Override
-            public void onError(String message) {
-                mostrarNotificacao(context, "Falha ao acionar o portão", message);
-                pending.finish();
-            }
-        });
+        final PendingResult pending = goAsync();
+        try {
+            EwelinkApi.pulseGate(context.getApplicationContext(), new EwelinkApi.TextCallback() {
+                @Override public void onSuccess(String message) {
+                    try {
+                        falar(context, "Portão acionado");
+                        mostrarNotificacao(context, "Portão acionado", message);
+                    } finally { pending.finish(); }
+                }
+                @Override public void onError(String message) {
+                    try { mostrarNotificacao(context, "Falha ao acionar o portão", message); }
+                    finally { pending.finish(); }
+                }
+            });
+        } catch (RuntimeException e) {
+            mostrarNotificacao(context, "Falha no comando do portão", e.getClass().getSimpleName());
+            pending.finish();
+        }
     }
 
     private void cancelarAberturaPortao(Context context, boolean avisar) {
-        context.getSharedPreferences("config", Context.MODE_PRIVATE)
-                .edit().putBoolean("gate_pending", false).remove("gate_pending_at").apply();
+        context.getSharedPreferences("config", Context.MODE_PRIVATE).edit()
+                .putBoolean("gate_pending", false).remove("gate_pending_at").apply();
         cancelarNotificacaoPortao(context);
-        if (avisar) {
-            mostrarNotificacao(context,
-                    "Portão não aberto",
-                    "A abertura foi cancelada. Nenhum comando foi enviado ao eWeLink.");
-        }
+        if (avisar) mostrarNotificacao(context, "Portão não aberto", "Nenhum comando foi enviado.");
     }
 
     public static boolean gateConfirmationIsPending(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences("config", Context.MODE_PRIVATE);
-        if (!prefs.getBoolean("gate_pending", false)) return false;
-        long at = prefs.getLong("gate_pending_at", 0L);
+        SharedPreferences p = context.getSharedPreferences("config", Context.MODE_PRIVATE);
+        long at = p.getLong("gate_pending_at", 0L);
         long age = System.currentTimeMillis() - at;
-        return at > 0 && age >= 0 && age <= GATE_CONFIRM_WINDOW_MS;
-    }
-
-    private static void mostrarPerguntaPortao(Context context) {
-        criarCanal(context);
-
-        Intent abrirIntent = new Intent(context, GeofenceReceiver.class).setAction(ACTION_OPEN_GATE);
-        Intent cancelarIntent = new Intent(context, GeofenceReceiver.class).setAction(ACTION_CANCEL_GATE);
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE;
-        PendingIntent abrir = PendingIntent.getBroadcast(context, 2201, abrirIntent, flags);
-        PendingIntent cancelar = PendingIntent.getBroadcast(context, 2202, cancelarIntent, flags);
-
-        String nome = EwelinkApi.getGateName(context);
-        android.app.Notification.Builder b = Build.VERSION.SDK_INT >= 26
-                ? new android.app.Notification.Builder(context, "chegada")
-                : new android.app.Notification.Builder(context);
-
-        b.setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentTitle("Deseja abrir o portão?")
-                .setContentText(nome + " — confirme a abertura")
-                .setAutoCancel(false)
-                .setPriority(android.app.Notification.PRIORITY_HIGH)
-                .setCategory(android.app.Notification.CATEGORY_ALARM)
-                .addAction(new android.app.Notification.Action.Builder(
-                        android.R.drawable.ic_menu_send, "ABRIR PORTÃO", abrir).build())
-                .addAction(new android.app.Notification.Action.Builder(
-                        android.R.drawable.ic_menu_close_clear_cancel, "NÃO ABRIR", cancelar).build());
-
-        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        nm.notify(NOTIFICATION_GATE, b.build());
+        return p.getBoolean("gate_pending", false) && at > 0L && age >= 0L
+                && age <= GATE_CONFIRM_WINDOW_MS;
     }
 
     private static void cancelarNotificacaoPortao(Context context) {
-        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        nm.cancel(NOTIFICATION_GATE);
+        ((NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE))
+                .cancel(NOTIFICATION_GATE);
     }
 
-    private static void falar(Context context, String texto) {
+    private static void falar(Context context, String text) {
         Context app = context.getApplicationContext();
-        final TextToSpeech[] holder = new TextToSpeech[1];
-        holder[0] = new TextToSpeech(app, status -> {
-            TextToSpeech tts = holder[0];
+        final TextToSpeech[] ref = new TextToSpeech[1];
+        ref[0] = new TextToSpeech(app, status -> {
+            TextToSpeech tts = ref[0];
             if (tts == null) return;
-            if (status != TextToSpeech.SUCCESS) {
-                tts.shutdown();
-                return;
-            }
-
-            int lang = tts.setLanguage(new Locale("pt", "BR"));
-            if (lang == TextToSpeech.LANG_MISSING_DATA || lang == TextToSpeech.LANG_NOT_SUPPORTED) {
-                tts.setLanguage(Locale.getDefault());
-            }
-
-            tts.setSpeechRate(1.0f);
+            if (status != TextToSpeech.SUCCESS) { tts.shutdown(); return; }
+            tts.setLanguage(new Locale("pt", "BR"));
             tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                @Override
-                public void onStart(String utteranceId) { }
-
-                @Override
-                public void onDone(String utteranceId) { tts.shutdown(); }
-
-                @Override
-                public void onError(String utteranceId) { tts.shutdown(); }
+                @Override public void onStart(String id) { }
+                @Override public void onDone(String id) { tts.shutdown(); }
+                @Override public void onError(String id) { tts.shutdown(); }
             });
-
-            int result = tts.speak(texto, TextToSpeech.QUEUE_FLUSH, null,
-                    "chegada_" + System.currentTimeMillis());
-            if (result == TextToSpeech.ERROR) tts.shutdown();
+            if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, null,
+                    "gate_" + System.currentTimeMillis()) == TextToSpeech.ERROR) tts.shutdown();
         });
     }
 
     private static void criarCanal(Context context) {
-        if (Build.VERSION.SDK_INT >= 26) {
-            NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-            NotificationChannel ch = new NotificationChannel(
-                    "chegada", "Chegada em casa", NotificationManager.IMPORTANCE_HIGH);
-            ch.setDescription("Avisos do acionamento por proximidade e confirmação do portão");
-            nm.createNotificationChannel(ch);
-        }
+        if (Build.VERSION.SDK_INT < 26) return;
+        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationChannel channel = new NotificationChannel("chegada", "Chegada em casa",
+                NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Avisos de proximidade e confirmação manual do portão");
+        nm.createNotificationChannel(channel);
     }
 
-    public static void mostrarNotificacao(Context context, String titulo, String texto) {
+    public static void mostrarNotificacao(Context context, String title, String text) {
         criarCanal(context);
-        android.app.Notification.Builder b = Build.VERSION.SDK_INT >= 26
-                ? new android.app.Notification.Builder(context, "chegada")
-                : new android.app.Notification.Builder(context);
-
-        b.setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(titulo)
-                .setContentText(texto)
-                .setStyle(new android.app.Notification.BigTextStyle().bigText(texto))
-                .setAutoCancel(true)
-                .setPriority(android.app.Notification.PRIORITY_HIGH);
-
-        NotificationManager nm = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        nm.notify(NOTIFICATION_ARRIVAL, b.build());
+        Notification.Builder b = Build.VERSION.SDK_INT >= 26
+                ? new Notification.Builder(context, "chegada") : new Notification.Builder(context);
+        b.setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle(title).setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text)).setAutoCancel(true)
+                .setPriority(Notification.PRIORITY_HIGH);
+        ((NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE))
+                .notify(NOTIFICATION_ARRIVAL, b.build());
     }
 }
