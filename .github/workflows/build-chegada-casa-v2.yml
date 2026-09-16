@@ -41,6 +41,9 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Validar invariantes de segurança e caminhos de chegada
+        run: python3 chegada-casa/tools/check_arrival_invariants.py
+
       - name: Compilar APK
         working-directory: chegada-casa
         run: gradle :app:assembleDebug --no-daemon
@@ -59,4 +62,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="chegada-casa-rapida-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido" --notes "Versão de teste lado a lado com monitor de localização em primeiro plano para reduzir o atraso na chegada e áudio imediato." || true
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido" --notes "Versão 1.9: simulação confirmada de chegada com acionamento real das luzes, diagnóstico, checagens estruturais e build Android. Teste do aparelho ainda necessário." || true
