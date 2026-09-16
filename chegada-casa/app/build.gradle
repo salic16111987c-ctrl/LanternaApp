@@ -7,11 +7,11 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.cilassouza.chegadacasa.v2'
+        applicationId 'com.cilassouza.chegadacasa.fast'
         minSdk 26
         targetSdk 35
-        versionCode 7
-        versionName '1.6-fast-arrival'
+        versionCode 1
+        versionName '1.6-fast-arrival-test'
     }
 }
 
