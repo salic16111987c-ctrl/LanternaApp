@@ -10,7 +10,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="Chegada Casa V2"
+        android:label="Chegada Casa Rápido"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <meta-data
