@@ -62,8 +62,8 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Aplicar otimização de bateria de forma verificável
-        run: python3 chegada-casa/tools/apply_battery_optimization.py
+      - name: Aplicar nova lógica GPS 2 km e portão 24 horas
+        run: python3 chegada-casa/tools/apply_gps_2km_gate_24h.py
 
       - name: Validar invariantes de segurança e caminhos de chegada
         run: python3 chegada-casa/tools/check_arrival_invariants.py
@@ -81,19 +81,20 @@ jobs:
           name: Chegada-Casa-Rapida-APK
           path: ChegadaCasa-Rapida.apk
 
-      - name: Persistir otimização após compilação aprovada
+      - name: Persistir código somente após testes e compilação
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalMonitorService.java chegada-casa/tools/check_arrival_invariants.py
+          git add chegada-casa/app chegada-casa/tools/check_arrival_invariants.py
           if ! git diff --cached --quiet; then
-            git commit -m "Persist adaptive 2.3 GPS optimization after passing build"
+            git commit -m "Persist verified v2.4 GPS and independent lamp/gate behavior"
+            git pull --rebase origin main
             git push origin HEAD:main
           fi
 
-      - name: Criar release
+      - name: Criar release de teste
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="chegada-casa-rapida-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido" --notes "Versão 2.3: GPS econômico 6h–18h, econômico em casa e GPS rápido fora de casa à noite; configure 200 m e Somente à noite no app." || true
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.4 TESTE" --notes "GPS por movimento e distância de 2 km, preparação a 2,5 km, lâmpadas 18h–6h opcional e confirmação do portão 24h. GPS fictício somente para testar localização/lâmpadas; portão bloqueado. Android Auto e acionamento físico exigem teste real supervisionado." || true
