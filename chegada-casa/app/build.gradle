@@ -10,12 +10,11 @@ android {
         applicationId 'com.cilassouza.chegadacasa.fast'
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName '2.1-voz-portao-volume'
+        versionCode 7
+        versionName '2.2-android-auto-portao'
     }
 
-    // The keystore itself is private and restored securely by GitHub Actions.
-    // Never commit it to this public repository or generate a new key per build.
+    // Private key is restored through Actions; never commit it to this repository.
     signingConfigs {
         debug {
             storeFile file(System.getenv('HOME') + '/.android/debug.keystore')
@@ -36,4 +35,5 @@ dependencies {
     implementation 'com.google.android.gms:play-services-location:21.3.0'
     implementation 'androidx.car.app:app:1.7.0'
     implementation 'androidx.car.app:app-projected:1.7.0'
+    implementation 'androidx.core:core:1.15.0'
 }
