@@ -10,9 +10,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <queries>
-        <intent>
-            <action android:name="android.intent.action.TTS_SERVICE" />
-        </intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+        <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent>
     </queries>
 
     <application
@@ -22,13 +21,10 @@
 
         <meta-data android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
-        <meta-data android:name="androidx.car.app.minCarApiLevel"
-            android:value="1" />
+        <meta-data android:name="androidx.car.app.minCarApiLevel" android:value="1" />
 
         <service android:name=".ArrivalMonitorService"
-            android:exported="false"
-            android:foregroundServiceType="location" />
-
+            android:exported="false" android:foregroundServiceType="location" />
         <service android:name=".ChegadaCarAppService" android:exported="true">
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
@@ -42,6 +38,8 @@
             android:screenOrientation="portrait" />
         <activity android:name=".FixedMainActivity" android:exported="false"
             android:launchMode="singleTop" android:screenOrientation="portrait" />
+        <activity android:name=".GateVoiceActivity" android:exported="false"
+            android:screenOrientation="portrait" />
         <activity android:name=".ArrivalDiagnosticActivity" android:exported="true"
             android:launchMode="singleTop" android:screenOrientation="portrait">
             <intent-filter>
