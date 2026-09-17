@@ -10,8 +10,8 @@ android {
         applicationId 'com.cilassouza.chegadacasa.fast'
         minSdk 26
         targetSdk 35
-        versionCode 7
-        versionName '2.2-android-auto-portao'
+        versionCode 8
+        versionName '2.3-gps-economico'
     }
 
     // Private key is restored through Actions; never commit it to this repository.
