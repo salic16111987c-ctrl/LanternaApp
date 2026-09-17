@@ -42,12 +42,17 @@ public final class GateCarNotification {
                 new Intent(app, GateVoiceActivity.class), normalFlags);
 
         String name = EwelinkApi.getGateName(app);
+        boolean fakeTest = GateTestMode.isAuthorizedPending(
+                app.getSharedPreferences("config", Context.MODE_PRIVATE));
+        String question = fakeTest ? "TESTE GPS: abrir portão REAL?" : "Deseja abrir o portão?";
         NotificationCompat.Builder notice = new NotificationCompat.Builder(app, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_alert)
-                .setContentTitle("Deseja abrir o portão?")
-                .setContentText(name + " — escolha SIM ou NÃO")
+                .setContentTitle(question)
+                .setContentText(name + (fakeTest ? " — TESTE: SIM abre fisicamente" : " — escolha SIM ou NÃO"))
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(
-                        "Chegada detectada. Confirme apenas se for seguro abrir " + name + "."))
+                        (fakeTest ? "MODO TESTE COM GPS FICTÍCIO. SIM abrirá o portão REAL. "
+                                : "Chegada detectada. ")
+                                + "Confirme apenas se for seguro abrir " + name + "."))
                 .setAutoCancel(false).setOngoing(false)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -62,8 +67,9 @@ public final class GateCarNotification {
             if (Build.VERSION.SDK_INT >= 31) carFlags |= PendingIntent.FLAG_MUTABLE;
             PendingIntent carPi = CarPendingIntent.getCarApp(app, 2210, carIntent, carFlags);
             notice.extend(new CarAppExtender.Builder()
-                    .setContentTitle("Chegada em casa — portão")
-                    .setContentText("Abrir " + name + "? Confirmação obrigatória.")
+                    .setContentTitle(fakeTest ? "TESTE GPS — PORTÃO REAL" : "Chegada em casa — portão")
+                    .setContentText("Abrir " + name + "? "
+                            + (fakeTest ? "SIM abre fisicamente!" : "Confirmação obrigatória."))
                     .setContentIntent(carPi)
                     .setImportance(NotificationManager.IMPORTANCE_HIGH)
                     .addAction(android.R.drawable.ic_menu_send, "SIM, ABRIR", openPi)

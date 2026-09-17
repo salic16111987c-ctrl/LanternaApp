@@ -3,6 +3,7 @@ package com.cilassouza.chegadacasa;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.app.KeyguardManager;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -48,7 +49,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         LinearLayout root = (LinearLayout) scroll.getChildAt(0);
 
         TextView title = new TextView(this);
-        title.setText("DIAGNÓSTICO E VOZ — v2.4");
+        title.setText("DIAGNÓSTICO E VOZ — v2.5");
         title.setTextSize(19);
         title.setTextColor(Color.rgb(25, 60, 110));
         title.setPadding(0, 10, 0, 8);
@@ -104,6 +105,20 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         simulateButton.setOnClickListener(v -> confirmSimulation(simulateButton));
         root.addView(simulateButton, 6);
 
+        Button gateTestButton = new Button(this);
+        gateTestButton.setText("🧪 ARMAR TESTE DO PORTÃO COM FAKE GPS (10 MIN / 1 VEZ)");
+        gateTestButton.setOnClickListener(v -> armFakeGpsGateTest());
+        root.addView(gateTestButton, 7);
+
+        Button cancelGateTestButton = new Button(this);
+        cancelGateTestButton.setText("CANCELAR TESTE DO PORTÃO");
+        cancelGateTestButton.setOnClickListener(v -> {
+            GateTestMode.cancel(this);
+            updateDiagnostics();
+            Toast.makeText(this, "Teste do portão cancelado.", Toast.LENGTH_LONG).show();
+        });
+        root.addView(cancelGateTestButton, 8);
+
         Button startButton = new Button(this);
         startButton.setText("REINICIAR MONITOR DE CHEGADA");
         startButton.setOnClickListener(v -> {
@@ -116,8 +131,39 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
             Toast.makeText(this, "Monitor solicitado. Confira o estado do GPS abaixo.", Toast.LENGTH_LONG).show();
             handler.postDelayed(this::updateDiagnostics, 1600L);
         });
-        root.addView(startButton, 7);
+        root.addView(startButton, 9);
         updateDiagnostics();
+    }
+
+    private void armFakeGpsGateTest() {
+        SharedPreferences p = getSharedPreferences("config", Context.MODE_PRIVATE);
+        KeyguardManager lock = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
+        if (lock != null && lock.isDeviceLocked()) {
+            Toast.makeText(this, "Desbloqueie o celular antes de armar o teste.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!p.getBoolean("ativa", false) || !EwelinkApi.hasSession(this)
+                || !EwelinkApi.hasGate(this)) {
+            new AlertDialog.Builder(this).setTitle("Teste não disponível")
+                    .setMessage("Ative a automação e configure a conta eWeLink e o portão primeiro.")
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("TESTE REAL DO PORTÃO COM GPS FICTÍCIO")
+                .setMessage("ATENÇÃO: ao simular a rota de saída e retorno, o app mostrará a pergunta SIM/NÃO. "
+                        + "Se você confirmar SIM, o portão FÍSICO poderá abrir de verdade! "
+                        + "Arme apenas estando diante do portão, com a passagem desimpedida, "
+                        + "observando o equipamento e sem crianças, pessoas ou veículos na trajetória. "
+                        + "Este modo autoriza uma ÚNICA chegada simulada durante 10 minutos. "
+                        + "Sem o seu SIM, nenhum comando será enviado. Confirmar que está no local e armar?")
+                .setNegativeButton("CANCELAR", null)
+                .setPositiveButton("ESTOU NO LOCAL — ARMAR TESTE", (dialog, which) -> {
+                    GateTestMode.arm(this);
+                    updateDiagnostics();
+                    Toast.makeText(this, "TESTE ARMADO por 10 minutos e 1 chegada. SIM abre o portão REAL!",
+                            Toast.LENGTH_LONG).show();
+                }).show();
     }
 
     /** Does not fake GPS, reset cooldown, change inside/outside or pulse the gate. */
@@ -194,7 +240,9 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
                 "\nÚltimo GPS: " + gps +
                 "\nDistância: " + p.getInt("monitor_distance", -1) + " m" +
                 " | precisão: ±" + p.getInt("monitor_accuracy", -1) + " m" +
-                "\nGPS fictício: " + (p.getBoolean("monitor_mock", false) ? "SIM — portão BLOQUEADO" : "não") +
+                "\nGPS fictício: " + (p.getBoolean("monitor_mock", false) ? "SIM" : "não") +
+                " | teste portão: " + (GateTestMode.isAuthorizedPending(p) ? "PERGUNTA PENDENTE — SIM ABRE REAL"
+                        : GateTestMode.isArmed(p) ? "ARMADO 10 MIN / 1 VEZ" : "DESARMADO") +
                 "\nEstado: " + (p.getBoolean("dentro", false) ? "DENTRO" : "FORA") +
                 " | saída confirmada: " + (p.getBoolean("outside_observed", false) ? "SIM" : "NÃO") +
                 "\nSomente LÂMPADAS 18h–6h: " + (p.getBoolean("so_noite", false) ? "SIM" : "NÃO") +
@@ -203,7 +251,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
                 " | portão: " + (EwelinkApi.hasGate(this) ? "configurado" : "não configurado") +
                 "\nVolume do áudio (MÍDIA): " + SpeechEngine.mediaVolumePercent(this) + "%" +
                 " — ajuste no botão abaixo ou nas teclas de volume; Bluetooth pode mudar a saída." +
-                "\nPortão por voz: somente após chegada REAL; toque RESPONDER POR VOZ na notificação, "
+                "\nPortão por voz: chegada REAL ou teste GPS temporariamente armado; toque RESPONDER POR VOZ na notificação, "
                     + "depois no microfone e diga SIM, ABRIR PORTÃO ou NÃO." +
                 "\nStatus portão: " + p.getString("gate_voice_status", "sem confirmação por voz") +
                 "\nÚltimo evento: " + p.getString("arrival_last_event", "nenhum") +

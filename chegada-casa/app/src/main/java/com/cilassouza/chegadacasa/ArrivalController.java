@@ -36,7 +36,12 @@ public final class ArrivalController {
             return;
         }
         // "Somente à noite" filters LAMPS only, never the arrival or gate.
-        boolean gate = !mockLocation && !p.getBoolean("monitor_mock", false)
+        // A fake location may offer the REAL gate confirmation ONLY if the user
+        // explicitly armed a short, single-use test while watching the physical gate.
+        long fixAge = now - p.getLong("monitor_fix_at", 0L);
+        boolean fakeTest = mockLocation && p.getBoolean("monitor_mock", false)
+                && fixAge >= 0L && fixAge <= 60000L && GateTestMode.isArmed(p);
+        boolean gate = ((!mockLocation && !p.getBoolean("monitor_mock", false)) || fakeTest)
                 && EwelinkApi.hasSession(app) && EwelinkApi.hasGate(app);
         SharedPreferences.Editor editor = p.edit().putBoolean("dentro", true)
                 .putBoolean("outside_observed", false).putLong("ultimo_alerta", now)
@@ -44,6 +49,8 @@ public final class ArrivalController {
                 .putString("arrival_last_event", time() + (mockLocation
                         ? " — CHEGADA GPS FICTÍCIO: apenas lâmpadas; portão bloqueado"
                         : " — CHEGADA DETECTADA"));
+        editor.putBoolean("gate_test_pending", gate && fakeTest);
+        if (gate && fakeTest) editor.putBoolean("gate_test_armed", false); // one arrival only
         if (gate) editor.putBoolean("gate_pending", true).putLong("gate_pending_at", now);
         else editor.putBoolean("gate_pending", false).remove("gate_pending_at");
         editor.apply();
@@ -132,7 +139,8 @@ public final class ArrivalController {
         SharedPreferences p = app.getSharedPreferences("config", Context.MODE_PRIVATE);
         if (!p.getBoolean("ativa", false)) return;
         p.edit().putBoolean("dentro", false).putBoolean("outside_observed", true)
-                .putBoolean("gate_pending", false).putBoolean("gate_origin_mock", true)
+                .putBoolean("gate_pending", false).putBoolean("gate_test_pending", false)
+                .putBoolean("gate_origin_mock", true)
                 .remove("gate_pending_at")
                 .putString("arrival_last_event", time() + " — SAÍDA CONFIRMADA; próxima chegada armada")
                 .apply();

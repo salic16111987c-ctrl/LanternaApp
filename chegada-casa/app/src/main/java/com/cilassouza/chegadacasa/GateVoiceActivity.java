@@ -73,10 +73,11 @@ public final class GateVoiceActivity extends Activity {
     private boolean valid() {
         SharedPreferences p = getSharedPreferences("config", MODE_PRIVATE);
         if (!GeofenceReceiver.gateConfirmationIsPending(this)
-                || !p.getBoolean("ativa", false) || p.getBoolean("gate_origin_mock", true)
+                || !p.getBoolean("ativa", false)
+                || (p.getBoolean("gate_origin_mock", true) && !GateTestMode.isAuthorizedPending(p))
                 || !EwelinkApi.hasSession(this) || !EwelinkApi.hasGate(this)) {
             status.setText("Confirmação indisponível ou expirada. Nenhum comando enviado. "
-                    + "GPS fictício nunca habilita a confirmação do portão.");
+                    + "GPS fictício exige MODO TESTE ativado, válido e de uso único.");
             return false;
         }
         KeyguardManager kg = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);

@@ -10,8 +10,8 @@ android {
         applicationId 'com.cilassouza.chegadacasa.fast'
         minSdk 26
         targetSdk 35
-        versionCode 9
-        versionName '2.4-gps-2km-portao24h'
+        versionCode 10
+        versionName '2.5-teste-portao-fake-gps'
     }
 
     // Private key is restored through Actions; never commit it to this repository.

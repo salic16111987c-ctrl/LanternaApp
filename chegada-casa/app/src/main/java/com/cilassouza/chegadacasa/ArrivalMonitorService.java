@@ -273,10 +273,15 @@ public class ArrivalMonitorService extends Service {
         boolean mock = loc.isFromMockProvider();
         // Disable any previously pending gate action immediately when fake GPS starts.
         SharedPreferences.Editor evidence = prefs.edit().putBoolean("monitor_mock", mock);
-        if (mock) evidence.putBoolean("gate_pending", false)
-                .putBoolean("gate_origin_mock", true).remove("gate_pending_at");
+        // Never clear an explicitly armed, still-valid ONE-SHOT gate-test prompt.
+        // Normal fake GPS continues to cancel all ordinary gate confirmations.
+        boolean authorizedTestPrompt = mock && GateTestMode.isAuthorizedPending(prefs);
+        if (mock && !authorizedTestPrompt) evidence.putBoolean("gate_pending", false)
+                .putBoolean("gate_origin_mock", true)
+                .putBoolean("gate_test_pending", false).remove("gate_pending_at");
         evidence.apply();
-        if (mock) ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).cancel(2002);
+        if (mock && !authorizedTestPrompt)
+            ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).cancel(2002);
         if (!prefs.getBoolean("casa_definida", false)) {
             prefs.edit().putString("monitor_state", "ERRO: residência não configurada").apply();
             return;
@@ -319,7 +324,7 @@ public class ArrivalMonitorService extends Service {
             motion.putBoolean("motion_toward", false);
         motion.apply();
         String status = profileName(profileMode) + " — "
-                + (mock ? "GPS FICTÍCIO — portão bloqueado — " : "GPS OK — ")
+                + (mock ? "GPS FICTÍCIO — portão bloqueado, exceto TESTE armado — " : "GPS OK — ")
                 + dist + " m da casa (±" + acc + " m)";
         prefs.edit().putLong("monitor_fix_at", System.currentTimeMillis())
                 .putInt("monitor_distance", dist).putInt("monitor_accuracy", acc)

@@ -65,7 +65,12 @@ public class GeofenceReceiver extends BroadcastReceiver {
         if (event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_EXIT) {
             ArrivalController.handleExit(context);
         } else if (event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_ENTER) {
-            // Unknown origin is treated as untrusted for gate safety. Lights still work.
+            // An early mock geofence event must wait for the GPS monitor to verify it.
+            if (GateTestMode.isArmed(p) && (trigger == null || trigger.isFromMockProvider())
+                    && !p.getBoolean("monitor_mock", false)) {
+                p.edit().putString("arrival_last_event", "Teste fake GPS: aguardando posição do monitor").apply();
+                return;
+            }
             ArrivalController.handleArrival(context, trigger == null || trigger.isFromMockProvider());
         }
     }
@@ -74,8 +79,10 @@ public class GeofenceReceiver extends BroadcastReceiver {
         SharedPreferences p = context.getSharedPreferences("config", Context.MODE_PRIVATE);
         long at = p.getLong("gate_pending_at", 0L);
         long age = System.currentTimeMillis() - at;
+        boolean mockTest = p.getBoolean("gate_origin_mock", true)
+                && GateTestMode.isAuthorizedPending(p);
         if (!p.getBoolean("ativa", false) || !p.getBoolean("gate_pending", false)
-                || p.getBoolean("gate_origin_mock", true)
+                || (p.getBoolean("gate_origin_mock", true) && !mockTest)
                 || !EwelinkApi.hasSession(context) || !EwelinkApi.hasGate(context)
                 || at <= 0L || age < 0L || age > GATE_CONFIRM_WINDOW_MS) {
             p.edit().putBoolean("gate_pending", false).remove("gate_pending_at")
@@ -86,7 +93,13 @@ public class GeofenceReceiver extends BroadcastReceiver {
                     "Confirmação inválida ou expirada. Espere uma nova chegada real.");
             return;
         }
-        // User explicitly tapped ABRIR or spoke the exact phrase after opening microphone.
+        // Even in test mode, mock GPS alone never sends a pulse: an explicit SIM
+        // is mandatory, and the temporary permit is CONSUMED before any hardware call.
+        if (mockTest && !GateTestMode.consume(p)) {
+            cancelarNotificacaoPortao(context);
+            mostrarNotificacao(context, "Teste cancelado", "Autorização de teste expirada ou não pôde ser consumida.");
+            return;
+        }
         p.edit().putBoolean("gate_pending", false).remove("gate_pending_at")
                 .putString("gate_voice_status", "Autorização explícita recebida; enviando comando")
                 .apply();
@@ -117,7 +130,9 @@ public class GeofenceReceiver extends BroadcastReceiver {
 
     private void cancelarAberturaPortao(Context context, boolean avisar) {
         context.getSharedPreferences("config", Context.MODE_PRIVATE).edit()
-                .putBoolean("gate_pending", false).remove("gate_pending_at")
+                .putBoolean("gate_pending", false).putBoolean("gate_test_pending", false)
+                .putBoolean("gate_test_armed", false).putLong("gate_test_until", 0L)
+                .remove("gate_pending_at")
                 .putString("gate_voice_status", "Resposta NÃO; nenhum comando enviado").apply();
         cancelarNotificacaoPortao(context);
         if (avisar) mostrarNotificacao(context, "Portão não aberto", "Nenhum comando foi enviado.");
@@ -127,7 +142,8 @@ public class GeofenceReceiver extends BroadcastReceiver {
         SharedPreferences p = context.getSharedPreferences("config", Context.MODE_PRIVATE);
         long at = p.getLong("gate_pending_at", 0L);
         long age = System.currentTimeMillis() - at;
-        return p.getBoolean("ativa", false) && !p.getBoolean("gate_origin_mock", true)
+        return p.getBoolean("ativa", false)
+                && (!p.getBoolean("gate_origin_mock", true) || GateTestMode.isAuthorizedPending(p))
                 && p.getBoolean("gate_pending", false) && at > 0L && age >= 0L
                 && age <= GATE_CONFIRM_WINDOW_MS;
     }

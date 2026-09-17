@@ -118,10 +118,31 @@ check('Outer geofence never triggers the gate or lights',
       and 'addGeofence(geofence).addGeofence(outer)' in boot
       and 'if (!homeFence) return;' in receiver
       and '"aproximacao_2500m".equals(fence.getRequestId())' in receiver)
-check('Mock GPS drives lamp route but cannot authorize gate',
-      '!mockLocation && !p.getBoolean("monitor_mock", false)' in controller
-      and 'dispatchLights(app, p, gate, false)' in controller
-      and 'gate_origin_mock' in receiver)
+gate_test = read('GateTestMode.java')
+check('Fake GPS can authorize gate ONLY with explicit short one-shot test',
+      all(s in gate_test for s in ['WINDOW_MS = 10L * 60L * 1000L',
+                                   'isArmed(SharedPreferences p)',
+                                   'isAuthorizedPending(SharedPreferences p)',
+                                   'gate_test_pending', 'gate_origin_mock',
+                                   'monitor_mock', 'MAX_MOCK_FIX_AGE_MS',
+                                   'boolean consume(SharedPreferences p)', '.commit()'])
+      and 'GateTestMode.isArmed(p)' in controller
+      and 'gate && fakeTest' in controller
+      and 'GateTestMode.isAuthorizedPending(prefs)' in monitor
+      and 'GateTestMode.consume(p)' in receiver
+      and 'if (mockTest && !GateTestMode.consume(p))' in receiver)
+check('Gate test needs an onsite user opt-in, has cancel, and physical YES only',
+      all(s in diagnostic for s in ['armFakeGpsGateTest()', 'ESTOU NO LOCAL — ARMAR TESTE',
+                                    'GateTestMode.arm(this)', 'GateTestMode.cancel(this)',
+                                    'SIM, o portão FÍSICO'])
+      and 'EwelinkApi.pulseGate(' not in diagnostic
+      and 'if (mockTest && !GateTestMode.consume(p))' in receiver
+      and 'EwelinkApi.pulseGate(' in receiver)
+check('Car and voice explain physical mock test; normal mock cannot open',
+      'TESTE GPS: abrir portão REAL?' in car_notice
+      and 'GateTestMode.isAuthorizedPending(p)' in voice
+      and 'GateTestMode.isAuthorizedPending(p)' in receiver
+      and '(!mockLocation && !p.getBoolean("monitor_mock", false)) || fakeTest' in controller)
 check('Speech emits start/done/error diagnostic',
       all(text in speech for text in ['onStart(', 'onDone(', 'onError(', 'tts_state']))
 check('Boot restores geofence without restricted microphone start',
@@ -135,6 +156,6 @@ check('Manifest contains required permissions and services',
                                        'androidx.car.app.category.IOT']))
 check('APK version and package stay update-compatible',
       "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and
-      "versionName '2.4-gps-2km-portao24h'" in gradle and 'versionCode 9' in gradle and
+      "versionName '2.5-teste-portao-fake-gps'" in gradle and 'versionCode 10' in gradle and
       "implementation 'androidx.core:core:1.15.0'" in gradle)
 print('STRUCTURAL CHECKS PASSED. Car host display rules, real gate and driving behavior need supervised tests.')
