@@ -25,12 +25,16 @@ import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
+import java.util.Calendar;
 
 /** Visible location service; failures and last fix are retained for diagnosis. */
 public class ArrivalMonitorService extends Service {
     private static final String CHANNEL_ID = "chegada_monitor";
     private static final int NOTIFICATION_ID = 3101;
     private static final long INTERVAL_MS = 5000L;
+    private static final long HOME_INTERVAL_MS = 30000L;
+    private static final long DAY_INTERVAL_MS = 120000L;
+    private static final int MODE_DAY = 0, MODE_HOME = 1, MODE_FAST = 2;
     private static final long WATCHDOG_MS = 30000L;
     private static final long STALE_MS = 90000L;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -43,6 +47,7 @@ public class ArrivalMonitorService extends Service {
     private boolean foreground;
     private boolean firstFix = true;
     private int consecutiveOutside;
+    private int profileMode = -1;
 
     public static void start(Context context) {
         Context app = context.getApplicationContext();
@@ -87,27 +92,54 @@ public class ArrivalMonitorService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (!prefs.getBoolean("ativa", false)) { stopSelf(); return START_NOT_STICKY; }
-        if (foreground && callback == null) beginUpdates();
+        if (foreground) ensureProfile();
         return START_STICKY;
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
+
+    private int desiredProfile() {
+        int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+        boolean night = hour >= 18 || hour < 6;
+        if (prefs.getBoolean("so_noite", false) && !night) return MODE_DAY;
+        if (prefs.getBoolean("dentro", false)) return MODE_HOME;
+        // Never throttle the proven 5-second GPS on the way home at night.
+        return MODE_FAST;
+    }
+
+    private long profileInterval(int mode) {
+        return mode == MODE_DAY ? DAY_INTERVAL_MS
+                : mode == MODE_HOME ? HOME_INTERVAL_MS : INTERVAL_MS;
+    }
+
+    private String profileName(int mode) {
+        return mode == MODE_DAY ? "ECONÔMICO DIA (6h–18h)"
+                : mode == MODE_HOME ? "ECONÔMICO EM CASA"
+                : "GPS RÁPIDO FORA DE CASA";
+    }
+
+    private void ensureProfile() {
+        if (!foreground || !prefs.getBoolean("ativa", false)) return;
+        if (callback == null) beginUpdates();
+        else if (profileMode != desiredProfile()) restartUpdates();
+    }
 
     private final Runnable watchdog = new Runnable() {
         @Override public void run() {
             if (!prefs.getBoolean("ativa", false)) { stopSelf(); return; }
             if (!foreground) return;
             long elapsed = SystemClock.elapsedRealtime();
-            if (callback == null) beginUpdates();
-            else if (lastFixElapsed == 0L && elapsed - serviceStartedElapsed > STALE_MS) {
-                prefs.edit().putString("monitor_state", "Sem posição GPS há mais de 90 segundos; reiniciando")
-                        .putString("monitor_error", "GPS não retornou posição").apply();
+            if (callback == null || profileMode != desiredProfile()) {
+                // Clock transitions at 06:00/18:00 are checked every 30 seconds.
                 restartUpdates();
-            } else if (lastFixElapsed > 0L && elapsed - lastFixElapsed > STALE_MS) {
-                prefs.edit().putString("monitor_state", "GPS parou de atualizar; tentando recuperar")
-                        .putString("monitor_error", "Sem posição por "
-                                + ((elapsed - lastFixElapsed) / 1000L) + " segundos").apply();
-                restartUpdates();
+            } else {
+                long staleLimit = Math.max(STALE_MS, profileInterval(profileMode) * 3L);
+                if ((lastFixElapsed == 0L && elapsed - serviceStartedElapsed > staleLimit)
+                        || (lastFixElapsed > 0L && elapsed - lastFixElapsed > staleLimit)) {
+                    prefs.edit().putString("monitor_state", "Localização atrasada; tentando recuperar")
+                            .putString("monitor_error", "Sem localização recente").apply();
+                    restartUpdates();
+                }
             }
             handler.postDelayed(this, WATCHDOG_MS);
         }
@@ -115,6 +147,7 @@ public class ArrivalMonitorService extends Service {
 
     private void restartUpdates() {
         if (callback != null) { fused.removeLocationUpdates(callback); callback = null; }
+        profileMode = -1;
         lastFixElapsed = 0L;
         serviceStartedElapsed = SystemClock.elapsedRealtime();
         beginUpdates();
@@ -172,9 +205,14 @@ public class ArrivalMonitorService extends Service {
             notifyStatus("GPS desligado — ative a localização");
             return;
         }
-        LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, INTERVAL_MS)
-                .setMinUpdateIntervalMillis(3000L).setMinUpdateDistanceMeters(0f)
-                .setMaxUpdateDelayMillis(INTERVAL_MS).build();
+        int mode = desiredProfile();
+        long period = profileInterval(mode);
+        int priority = mode == MODE_FAST ? Priority.PRIORITY_HIGH_ACCURACY
+                : Priority.PRIORITY_BALANCED_POWER_ACCURACY;
+        LocationRequest request = new LocationRequest.Builder(priority, period)
+                .setMinUpdateIntervalMillis(mode == MODE_FAST ? 3000L : period)
+                .setMinUpdateDistanceMeters(0f)
+                .setMaxUpdateDelayMillis(period).build();
         LocationCallback next = new LocationCallback() {
             @Override public void onLocationResult(LocationResult result) {
                 if (result == null) return;
@@ -188,6 +226,10 @@ public class ArrivalMonitorService extends Service {
             }
         };
         callback = next;
+        profileMode = mode;
+        prefs.edit().putString("monitor_profile", profileName(mode))
+                .putString("monitor_state", "Monitor: " + profileName(mode)).apply();
+        notifyStatus(profileName(mode));
         try {
             fused.requestLocationUpdates(request, next, Looper.getMainLooper())
                     .addOnSuccessListener(unused -> {
@@ -238,7 +280,8 @@ public class ArrivalMonitorService extends Service {
         float accuracy = loc.hasAccuracy() ? loc.getAccuracy() : 9999f;
         int dist = Math.round(distance);
         int acc = Math.round(accuracy);
-        String status = (mock ? "GPS FICTÍCIO — portão bloqueado — " : "GPS OK — ")
+        String status = profileName(profileMode) + " — "
+                + (mock ? "GPS FICTÍCIO — portão bloqueado — " : "GPS OK — ")
                 + dist + " m da casa (±" + acc + " m)";
         prefs.edit().putLong("monitor_fix_at", System.currentTimeMillis())
                 .putInt("monitor_distance", dist).putInt("monitor_accuracy", acc)
@@ -258,6 +301,8 @@ public class ArrivalMonitorService extends Service {
                             .putString("arrival_last_event", "Saída confirmada: " + dist + " m").apply();
                 }
             }
+            // Home -> outside: switch to fast immediately after two reliable outside fixes.
+            handler.post(this::ensureProfile);
             firstFix = false;
             return;
         }
@@ -270,6 +315,8 @@ public class ArrivalMonitorService extends Service {
                 prefs.edit().putBoolean("dentro", true)
                         .putString("arrival_last_event", "Iniciou dentro da casa: saia e volte para testar").apply();
             }
+            // Arrival -> home: drop the continuous high-accuracy GPS request.
+            handler.post(this::ensureProfile);
         }
         firstFix = false;
     }

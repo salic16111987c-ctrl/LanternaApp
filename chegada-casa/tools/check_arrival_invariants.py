@@ -92,6 +92,12 @@ check('Volume changed only through explicit user action',
       'SpeechEngine.mediaVolumePercent(this)' in diagnostic and
       'TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f' in speech and
       'AudioAttributes.USAGE_MEDIA' in speech)
+check('Daytime and home use low-power location; nighttime outside retains fast GPS',
+      all(x in monitor for x in ['DAY_INTERVAL_MS = 120000L', 'HOME_INTERVAL_MS = 30000L',
+                                'INTERVAL_MS = 5000L', 'PRIORITY_BALANCED_POWER_ACCURACY',
+                                'PRIORITY_HIGH_ACCURACY', 'desiredProfile()',
+                                'profileMode != desiredProfile()', 'handler.post(this::ensureProfile)',
+                                'profileInterval(profileMode) * 3L']))
 check('GPS rejects stale/inaccurate fixes and watchdog retries',
       all(text in monitor for text in ['getElapsedRealtimeNanos()', 'accuracy >', 'WATCHDOG_MS',
                                       'STALE_MS', 'restartUpdates()', 'startForeground(']))
@@ -113,6 +119,6 @@ check('Manifest contains required permissions and services',
                                        'androidx.car.app.category.IOT']))
 check('APK version and package stay update-compatible',
       "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and
-      "versionName '2.2-android-auto-portao'" in gradle and 'versionCode 7' in gradle and
+      "versionName '2.3-gps-economico'" in gradle and 'versionCode 8' in gradle and
       "implementation 'androidx.core:core:1.15.0'" in gradle)
 print('STRUCTURAL CHECKS PASSED. Car host display rules, real gate and driving behavior need supervised tests.')
