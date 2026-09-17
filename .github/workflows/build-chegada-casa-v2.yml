@@ -62,10 +62,10 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Aplicar nova lógica GPS 2 km e portão 24 horas
-        run: python3 chegada-casa/tools/apply_gps_2km_gate_24h.py
+      - name: Aplicar teste explícito portão com fake GPS 10 min 1 vez
+        run: python3 chegada-casa/tools/apply_fake_gps_gate_test.py
 
-      - name: Validar invariantes de segurança e caminhos de chegada
+      - name: Validar invariantes de segurança, teste e chegada
         run: python3 chegada-casa/tools/check_arrival_invariants.py
 
       - name: Compilar APK
@@ -87,7 +87,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add chegada-casa/app chegada-casa/tools/check_arrival_invariants.py
           if ! git diff --cached --quiet; then
-            git commit -m "Persist verified v2.4 GPS and independent lamp/gate behavior"
+            git commit -m "Persist v2.5 verified fake-GPS gate test safeguards"
             git pull --rebase origin main
             git push origin HEAD:main
           fi
@@ -97,4 +97,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="chegada-casa-rapida-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.4 TESTE" --notes "GPS por movimento e distância de 2 km, preparação a 2,5 km, lâmpadas 18h–6h opcional e confirmação do portão 24h. GPS fictício somente para testar localização/lâmpadas; portão bloqueado. Android Auto e acionamento físico exigem teste real supervisionado." || true
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.5 — TESTE" --notes "v2.5: mantém GPS adaptativo 2 km, lâmpadas 18h–6h opcionais e portão 24h. Novo modo TESTE COM FAKE GPS: usuário arma conscientemente na tela Diagnóstico por 10 min e 1 chegada; SIM na confirmação PODE ABRIR O PORTÃO FÍSICO de verdade. Fora do teste, fake GPS continua bloqueado. Teste somente parado e diante do portão com caminho livre. Compilação/checagens automáticas não substituem teste físico supervisionado." || true
