@@ -1,7 +1,6 @@
 package com.cilassouza.chegadacasa;
 
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -15,150 +14,123 @@ import androidx.car.app.model.Action;
 import androidx.car.app.model.MessageTemplate;
 import androidx.car.app.model.Template;
 import androidx.car.app.validation.HostValidator;
+import androidx.lifecycle.DefaultLifecycleObserver;
+import androidx.lifecycle.LifecycleOwner;
 
+/** Android Auto IoT screen. Visibility in front of Maps is controlled by the host. */
 public class ChegadaCarAppService extends CarAppService {
-
-    @NonNull
-    @Override
-    public HostValidator createHostValidator() {
-        // O APK atual é de teste/sideload. Antes de publicar na Play Store,
-        // restringir aos hosts oficiais conforme a validação exigida pela Google.
+    @NonNull @Override public HostValidator createHostValidator() {
+        // Test APK only. Before production, allow-list approved host certificates.
         return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR;
     }
 
-    @NonNull
-    @Override
-    public Session onCreateSession() {
+    @NonNull @Override public Session onCreateSession() {
         return new Session() {
-            @NonNull
-            @Override
-            public Screen onCreateScreen(@NonNull Intent intent) {
+            @NonNull @Override public Screen onCreateScreen(@NonNull Intent intent) {
                 return new GateHomeScreen(getCarContext());
             }
         };
     }
 
-    private static class GateHomeScreen extends Screen {
+    private static final class GateHomeScreen extends Screen {
+        private final Handler main = new Handler(Looper.getMainLooper());
+        private boolean active;
+        private boolean lastPending;
+        private final Runnable refresh = new Runnable() {
+            @Override public void run() {
+                if (!active) return;
+                boolean pending = GeofenceReceiver.gateConfirmationIsPending(getCarContext());
+                if (lastPending != pending) {
+                    lastPending = pending;
+                    invalidate();
+                }
+                // Check only while this app is visible on the car screen.
+                main.postDelayed(this, 1500L);
+            }
+        };
+
         GateHomeScreen(@NonNull CarContext carContext) {
             super(carContext);
+            getLifecycle().addObserver(new DefaultLifecycleObserver() {
+                @Override public void onStart(@NonNull LifecycleOwner owner) {
+                    active = true;
+                    lastPending = GeofenceReceiver.gateConfirmationIsPending(getCarContext());
+                    invalidate();
+                    main.removeCallbacks(refresh);
+                    main.postDelayed(refresh, 1500L);
+                }
+                @Override public void onStop(@NonNull LifecycleOwner owner) {
+                    active = false;
+                    main.removeCallbacks(refresh);
+                }
+                @Override public void onDestroy(@NonNull LifecycleOwner owner) {
+                    active = false;
+                    main.removeCallbacks(refresh);
+                }
+            });
         }
 
-        @NonNull
-        @Override
-        public Template onGetTemplate() {
+        @NonNull @Override public Template onGetTemplate() {
             CarContext ctx = getCarContext();
-
             if (!EwelinkApi.hasSession(ctx)) {
                 return new MessageTemplate.Builder(
-                        "Conecte sua conta eWeLink pelo aplicativo Chegada Casa no celular.")
-                        .setTitle("Chegada Casa")
-                        .build();
+                        "Conecte sua conta eWeLink no Chegada Casa do celular.")
+                        .setTitle("Chegada Casa").build();
             }
-
             if (!EwelinkApi.hasGate(ctx)) {
                 return new MessageTemplate.Builder(
-                        "Abra o Chegada Casa no celular e use ESCOLHER PORTÃO para definir o dispositivo do eWeLink.")
-                        .setTitle("Portão não configurado")
-                        .build();
+                        "Configure o dispositivo do portão no aplicativo do celular.")
+                        .setTitle("Portão não configurado").build();
             }
-
-            String nome = EwelinkApi.getGateName(ctx);
+            String name = EwelinkApi.getGateName(ctx);
             if (GeofenceReceiver.gateConfirmationIsPending(ctx)) {
                 return new MessageTemplate.Builder(
-                        "Chegada detectada perto de casa. Deseja abrir " + nome + "?")
-                        .setTitle("Confirmar abertura")
+                        "Chegada REAL detectada. Deseja abrir " + name + "? "
+                        + "Confirme somente se o portão estiver livre e for seguro.")
+                        .setTitle("Abrir portão? SIM ou NÃO")
                         .addAction(new Action.Builder()
-                                .setTitle("ABRIR PORTÃO")
-                                .setOnClickListener(this::confirmarChegada)
+                                .setTitle("SIM, ABRIR")
+                                .setOnClickListener(this::approve)
                                 .build())
                         .addAction(new Action.Builder()
                                 .setTitle("NÃO ABRIR")
-                                .setOnClickListener(this::cancelarChegada)
+                                .setOnClickListener(this::decline)
                                 .build())
                         .build();
             }
-
             return new MessageTemplate.Builder(
-                    nome + " está configurado. A abertura sempre exige uma confirmação antes de enviar o comando.")
-                    .setTitle("Chegada Casa")
-                    .addAction(new Action.Builder()
-                            .setTitle("ABRIR PORTÃO")
-                            .setOnClickListener(() -> getScreenManager().push(
-                                    new GateConfirmScreen(getCarContext())))
-                            .build())
+                    name + " configurado. Aguarde uma nova chegada real para responder "
+                    + "SIM ou NÃO. Testes simulados não permitem abrir o portão.")
+                    .setTitle("Chegada Casa — aguardando")
                     .build();
         }
 
-        private void confirmarChegada() {
-            Intent i = new Intent(getCarContext(), GeofenceReceiver.class)
-                    .setAction(GeofenceReceiver.ACTION_OPEN_GATE);
-            getCarContext().sendBroadcast(i);
-            CarToast.makeText(getCarContext(), "Comando do portão enviado", CarToast.LENGTH_SHORT).show();
-            new Handler(Looper.getMainLooper()).postDelayed(this::invalidate, 900L);
-        }
-
-        private void cancelarChegada() {
-            Intent i = new Intent(getCarContext(), GeofenceReceiver.class)
-                    .setAction(GeofenceReceiver.ACTION_CANCEL_GATE);
-            getCarContext().sendBroadcast(i);
-            CarToast.makeText(getCarContext(), "Portão não será aberto", CarToast.LENGTH_SHORT).show();
-            invalidate();
-        }
-    }
-
-    private static class GateConfirmScreen extends Screen {
-        private boolean enviando = false;
-        private String status = "Confirme somente se for seguro abrir o portão agora.";
-
-        GateConfirmScreen(@NonNull CarContext carContext) {
-            super(carContext);
-        }
-
-        @NonNull
-        @Override
-        public Template onGetTemplate() {
-            MessageTemplate.Builder b = new MessageTemplate.Builder(status)
-                    .setTitle("Abrir " + EwelinkApi.getGateName(getCarContext()));
-
-            if (!enviando) {
-                b.addAction(new Action.Builder()
-                        .setTitle("CONFIRMAR ABERTURA")
-                        .setOnClickListener(this::abrir)
-                        .build());
-                b.addAction(new Action.Builder()
-                        .setTitle("CANCELAR")
-                        .setOnClickListener(() -> getScreenManager().pop())
-                        .build());
+        private void approve() {
+            // Never call EwelinkApi.pulseGate directly from the car UI.
+            // Recheck freshness, origin, account and one-time authorization in receiver.
+            if (!GeofenceReceiver.gateConfirmationIsPending(getCarContext())) {
+                CarToast.makeText(getCarContext(), "Confirmação expirada; portão não aberto",
+                        CarToast.LENGTH_SHORT).show();
+                invalidate();
+                return;
             }
-            return b.build();
+            getCarContext().sendBroadcast(new Intent(getCarContext(), GeofenceReceiver.class)
+                    .setAction(GeofenceReceiver.ACTION_OPEN_GATE));
+            CarToast.makeText(getCarContext(), "Solicitação enviada; confira o resultado",
+                    CarToast.LENGTH_SHORT).show();
+            main.postDelayed(this::invalidate, 800L);
         }
 
-        private void abrir() {
-            if (enviando) return;
-            enviando = true;
-            status = "Enviando comando ao eWeLink...";
-            invalidate();
-
-            EwelinkApi.pulseGate(getCarContext().getApplicationContext(), new EwelinkApi.TextCallback() {
-                @Override
-                public void onSuccess(String message) {
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        status = "Portão acionado.";
-                        CarToast.makeText(getCarContext(), "Portão acionado", CarToast.LENGTH_SHORT).show();
-                        invalidate();
-                    });
-                }
-
-                @Override
-                public void onError(String message) {
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        enviando = false;
-                        status = "Falha: " + message;
-                        CarToast.makeText(getCarContext(), "Falha ao acionar o portão", CarToast.LENGTH_SHORT).show();
-                        invalidate();
-                    });
-                }
-            });
+        private void decline() {
+            if (!GeofenceReceiver.gateConfirmationIsPending(getCarContext())) {
+                invalidate();
+                return;
+            }
+            getCarContext().sendBroadcast(new Intent(getCarContext(), GeofenceReceiver.class)
+                    .setAction(GeofenceReceiver.ACTION_CANCEL_GATE));
+            CarToast.makeText(getCarContext(), "NÃO: portão não será aberto",
+                    CarToast.LENGTH_SHORT).show();
+            main.postDelayed(this::invalidate, 300L);
         }
     }
 }
