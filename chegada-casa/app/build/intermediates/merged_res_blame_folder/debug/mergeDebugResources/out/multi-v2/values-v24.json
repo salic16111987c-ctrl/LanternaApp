@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.cilassouza.chegadacasa.app-mergeDebugResources-20:/values-v24/values-v24.xml",
+            "map": [
+                {
+                    "source": "/home/runner/.gradle/caches/8.9/transforms/6fdc12dc81f9864d502a11b750d219c6/transformed/media-1.6.0/res/values-v24/values-v24.xml",
+                    "from": {
+                        "startLines": "2,3,4,5",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,121,182,248",
+                        "endColumns": "65,60,65,66",
+                        "endOffsets": "116,177,243,310"
+                    }
+                }
+            ]
+        }
+    ]
+}

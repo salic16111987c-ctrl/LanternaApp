@@ -92,20 +92,36 @@ check('Volume changed only through explicit user action',
       'SpeechEngine.mediaVolumePercent(this)' in diagnostic and
       'TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f' in speech and
       'AudioAttributes.USAGE_MEDIA' in speech)
-check('Daytime and home use low-power location; nighttime outside retains fast GPS',
-      all(x in monitor for x in ['DAY_INTERVAL_MS = 120000L', 'HOME_INTERVAL_MS = 30000L',
-                                'INTERVAL_MS = 5000L', 'PRIORITY_BALANCED_POWER_ACCURACY',
-                                'PRIORITY_HIGH_ACCURACY', 'desiredProfile()',
-                                'profileMode != desiredProfile()', 'handler.post(this::ensureProfile)',
-                                'profileInterval(profileMode) * 3L']))
+check('2km motion-based adaptive GPS independently of time schedule',
+      all(x in monitor for x in ['FAR_INTERVAL_MS = 60000L', 'NEAR_INTERVAL_MS = 20000L',
+                                'HOME_INTERVAL_MS = 30000L', 'INTERVAL_MS = 5000L',
+                                'PRIORITY_BALANCED_POWER_ACCURACY', 'PRIORITY_HIGH_ACCURACY',
+                                'motion_until', 'motion_toward', 'distance > 2600',
+                                'distance <= 2000', 'distance <= 250', 'desiredProfile()',
+                                'profileMode != desiredProfile()', 'handler.post(this::ensureProfile)'])
+      and 'so_noite' not in monitor)
 check('GPS rejects stale/inaccurate fixes and watchdog retries',
       all(text in monitor for text in ['getElapsedRealtimeNanos()', 'accuracy >', 'WATCHDOG_MS',
                                       'STALE_MS', 'restartUpdates()', 'startForeground(']))
-cooldown = controller.split('if (now >= last && now - last < MIN_ALERT_INTERVAL_MS) {', 1)[1].split('if (p.getBoolean("so_noite", false))', 1)[0]
+cooldown = controller.split('if (now >= last && now - last < MIN_ALERT_INTERVAL_MS) {', 1)[1].split('boolean gate =', 1)[0]
 check('Cooldown cannot swallow arrival',
       'putBoolean("dentro"' not in cooldown and 'putBoolean("outside_observed"' not in cooldown and
       'putLong("ultimo_alerta"' not in cooldown and 'secondsRemaining' in cooldown and
       'if (!inside && outside) ArrivalController.handleArrival(this, mock)' in monitor)
+check('Night setting affects only lamps; portão prompt remains 24h',
+      'boolean lampTime = !p.getBoolean("so_noite", false) || hour >= 18 || hour < 6;' in controller
+      and 'if (!simulated && !lampTime)' in controller
+      and 'if (gate) showGateConfirmation(app)' in controller
+      and 'if (p.getBoolean("so_noite", false))' not in controller.split('public static synchronized void handleArrival',1)[1].split('public static synchronized void simulateArrival',1)[0])
+check('Outer geofence never triggers the gate or lights',
+      'addGeofence(g).addGeofence(outer)' in (root / 'app/src/main/java/com/cilassouza/chegadacasa/MainActivity.java').read_text(encoding='utf-8')
+      and 'addGeofence(geofence).addGeofence(outer)' in boot
+      and 'if (!homeFence) return;' in receiver
+      and '"aproximacao_2500m".equals(fence.getRequestId())' in receiver)
+check('Mock GPS drives lamp route but cannot authorize gate',
+      '!mockLocation && !p.getBoolean("monitor_mock", false)' in controller
+      and 'dispatchLights(app, p, gate, false)' in controller
+      and 'gate_origin_mock' in receiver)
 check('Speech emits start/done/error diagnostic',
       all(text in speech for text in ['onStart(', 'onDone(', 'onError(', 'tts_state']))
 check('Boot restores geofence without restricted microphone start',
@@ -119,6 +135,6 @@ check('Manifest contains required permissions and services',
                                        'androidx.car.app.category.IOT']))
 check('APK version and package stay update-compatible',
       "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and
-      "versionName '2.3-gps-economico'" in gradle and 'versionCode 8' in gradle and
+      "versionName '2.4-gps-2km-portao24h'" in gradle and 'versionCode 9' in gradle and
       "implementation 'androidx.core:core:1.15.0'" in gradle)
 print('STRUCTURAL CHECKS PASSED. Car host display rules, real gate and driving behavior need supervised tests.')

@@ -110,10 +110,11 @@ public class MainActivity extends Activity {
         root.addView(raio);
 
         soNoite = new CheckBox(this);
-        soNoite.setText("Somente à noite (18h às 6h)");
+        soNoite.setText("Somente LÂMPADAS à noite (18h às 6h) — portão 24 horas");
         soNoite.setTextSize(17);
         soNoite.setChecked(prefs.getBoolean("so_noite", false));
         root.addView(soNoite);
+        root.addView(texto("GPS inteligente: econômico em casa e longe; precisão durante o movimento na aproximação de 2 km. Portão somente com SIM explícito.", 13, false));
 
         root.addView(texto("3. eWeLink", 20, true), sec);
         ewStatus = texto("", 16, false);
@@ -501,7 +502,14 @@ public class MainActivity extends Activity {
                 .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
                 .build();
 
-        GeofencingRequest req = new GeofencingRequest.Builder().addGeofence(g).build();
+        Geofence outer = new Geofence.Builder()
+                .setRequestId("aproximacao_2500m")
+                .setCircularRegion(lat, lon, 2500f)
+                .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
+                .build();
+        GeofencingRequest req = new GeofencingRequest.Builder()
+                .addGeofence(g).addGeofence(outer).build();
         try {
             geofencing.removeGeofences(getPendingIntent()).addOnCompleteListener(t -> {
                 try {

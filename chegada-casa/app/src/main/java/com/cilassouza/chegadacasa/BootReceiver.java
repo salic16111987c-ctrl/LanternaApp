@@ -38,8 +38,13 @@ public class BootReceiver extends BroadcastReceiver {
                 .setExpirationDuration(Geofence.NEVER_EXPIRE)
                 .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
                 .build();
+        Geofence outer = new Geofence.Builder().setRequestId("aproximacao_2500m")
+                .setCircularRegion(lat, lon, 2500f)
+                .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_EXIT)
+                .build();
         GeofencingRequest request = new GeofencingRequest.Builder()
-                .setInitialTrigger(0).addGeofence(geofence).build();
+                .setInitialTrigger(0).addGeofence(geofence).addGeofence(outer).build();
         Intent receiver = new Intent(app, GeofenceReceiver.class);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 31) flags |= PendingIntent.FLAG_MUTABLE;

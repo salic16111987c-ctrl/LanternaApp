@@ -33,8 +33,9 @@ public class ArrivalMonitorService extends Service {
     private static final int NOTIFICATION_ID = 3101;
     private static final long INTERVAL_MS = 5000L;
     private static final long HOME_INTERVAL_MS = 30000L;
-    private static final long DAY_INTERVAL_MS = 120000L;
-    private static final int MODE_DAY = 0, MODE_HOME = 1, MODE_FAST = 2;
+    private static final long FAR_INTERVAL_MS = 60000L;
+    private static final long NEAR_INTERVAL_MS = 20000L;
+    private static final int MODE_FAR = 0, MODE_HOME = 1, MODE_NEAR = 2, MODE_FAST = 3;
     private static final long WATCHDOG_MS = 30000L;
     private static final long STALE_MS = 90000L;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -48,6 +49,8 @@ public class ArrivalMonitorService extends Service {
     private boolean firstFix = true;
     private int consecutiveOutside;
     private int profileMode = -1;
+    private Location lastMotionFix;
+    private float lastMotionDistance = -1f;
 
     public static void start(Context context) {
         Context app = context.getApplicationContext();
@@ -98,24 +101,35 @@ public class ArrivalMonitorService extends Service {
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
+    /** No clock-based throttling: the gate must remain available 24 hours. */
     private int desiredProfile() {
-        int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-        boolean night = hour >= 18 || hour < 6;
-        if (prefs.getBoolean("so_noite", false) && !night) return MODE_DAY;
         if (prefs.getBoolean("dentro", false)) return MODE_HOME;
-        // Never throttle the proven 5-second GPS on the way home at night.
-        return MODE_FAST;
+        int distance = prefs.getInt("monitor_distance", -1);
+        int accuracy = prefs.getInt("monitor_accuracy", 9999);
+        long fixAt = prefs.getLong("monitor_fix_at", 0L);
+        // Missing/stale/coarse position: sample economically but more often until known.
+        if (distance < 0 || accuracy > 600 || fixAt <= 0L
+                || Math.abs(System.currentTimeMillis() - fixAt) > 180000L) return MODE_NEAR;
+        if (distance > 2600) return MODE_FAR;
+        if (distance <= 250) return MODE_FAST; // Never miss the final approach.
+        boolean moving = System.currentTimeMillis() < prefs.getLong("motion_until", 0L);
+        boolean approaching = prefs.getBoolean("motion_toward", false);
+        if (moving && (distance <= 2000 || (distance <= 2500 && approaching))) return MODE_FAST;
+        return MODE_NEAR;
     }
 
     private long profileInterval(int mode) {
-        return mode == MODE_DAY ? DAY_INTERVAL_MS
-                : mode == MODE_HOME ? HOME_INTERVAL_MS : INTERVAL_MS;
+        if (mode == MODE_FAR) return FAR_INTERVAL_MS;
+        if (mode == MODE_HOME) return HOME_INTERVAL_MS;
+        if (mode == MODE_NEAR) return NEAR_INTERVAL_MS;
+        return INTERVAL_MS;
     }
 
     private String profileName(int mode) {
-        return mode == MODE_DAY ? "ECONÔMICO DIA (6h–18h)"
-                : mode == MODE_HOME ? "ECONÔMICO EM CASA"
-                : "GPS RÁPIDO FORA DE CASA";
+        if (mode == MODE_FAR) return "ECONÔMICO: ALÉM DE 2 KM";
+        if (mode == MODE_HOME) return "ECONÔMICO: EM CASA";
+        if (mode == MODE_NEAR) return "OBSERVANDO MOVIMENTO / APROXIMAÇÃO";
+        return "GPS PRECISO: APROXIMAÇÃO";
     }
 
     private void ensureProfile() {
@@ -280,6 +294,30 @@ public class ArrivalMonitorService extends Service {
         float accuracy = loc.hasAccuracy() ? loc.getAccuracy() : 9999f;
         int dist = Math.round(distance);
         int acc = Math.round(accuracy);
+        // Motion inferred from speed or successive fresh locations; no permanent sensor polling.
+        long nowMotion = System.currentTimeMillis();
+        boolean moving = loc.hasSpeed() && accuracy <= 250f && loc.getSpeed() >= 1.3f;
+        boolean toward = false;
+        if (lastMotionFix != null) {
+            long dtMs = (loc.getElapsedRealtimeNanos() - lastMotionFix.getElapsedRealtimeNanos()) / 1000000L;
+            float step = loc.distanceTo(lastMotionFix);
+            float threshold = Math.max(35f, (accuracy + lastMotionFix.getAccuracy()) * 0.8f);
+            if (dtMs > 0L && dtMs <= 300000L && accuracy <= 400f
+                    && lastMotionFix.hasAccuracy() && lastMotionFix.getAccuracy() <= 400f
+                    && step >= threshold) {
+                moving = true;
+                toward = lastMotionDistance >= 0f
+                        && lastMotionDistance - distance >= Math.max(25f, accuracy * 0.35f);
+            }
+        }
+        lastMotionFix = new Location(loc);
+        lastMotionDistance = distance;
+        SharedPreferences.Editor motion = prefs.edit();
+        if (moving) motion.putLong("motion_until", nowMotion + 120000L)
+                .putBoolean("motion_toward", toward);
+        else if (nowMotion > prefs.getLong("motion_until", 0L))
+            motion.putBoolean("motion_toward", false);
+        motion.apply();
         String status = profileName(profileMode) + " — "
                 + (mock ? "GPS FICTÍCIO — portão bloqueado — " : "GPS OK — ")
                 + dist + " m da casa (±" + acc + " m)";
@@ -287,6 +325,8 @@ public class ArrivalMonitorService extends Service {
                 .putInt("monitor_distance", dist).putInt("monitor_accuracy", acc)
                 .putString("monitor_state", status).putString("monitor_error", "nenhum").apply();
         notifyStatus(status);
+        // Switching to high precision must not wait for a fine-accuracy fix.
+        handler.post(this::ensureProfile);
         if (accuracy > Math.max(75f, radius * 0.6f)) {
             prefs.edit().putString("monitor_state", "Aguardando GPS mais preciso: ±" + acc + " m").apply();
             return;

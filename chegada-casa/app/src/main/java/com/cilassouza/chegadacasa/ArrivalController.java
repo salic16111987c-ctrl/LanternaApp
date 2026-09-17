@@ -35,16 +35,9 @@ public final class ArrivalController {
                     + " s para repetir chegada; tentativa continua armada").apply();
             return;
         }
-        if (p.getBoolean("so_noite", false)) {
-            int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-            if (!(hour >= 18 || hour < 6)) {
-                p.edit().putBoolean("dentro", true).putBoolean("outside_observed", false)
-                        .putString("arrival_last_event", time() + " — chegada detectada, mas SOMENTE À NOITE ativado")
-                        .apply();
-                return;
-            }
-        }
-        boolean gate = !mockLocation && EwelinkApi.hasSession(app) && EwelinkApi.hasGate(app);
+        // "Somente à noite" filters LAMPS only, never the arrival or gate.
+        boolean gate = !mockLocation && !p.getBoolean("monitor_mock", false)
+                && EwelinkApi.hasSession(app) && EwelinkApi.hasGate(app);
         SharedPreferences.Editor editor = p.edit().putBoolean("dentro", true)
                 .putBoolean("outside_observed", false).putLong("ultimo_alerta", now)
                 .putBoolean("gate_origin_mock", mockLocation)
@@ -72,6 +65,16 @@ public final class ArrivalController {
     private static void dispatchLights(Context app, SharedPreferences p, boolean gate,
                                        boolean simulated) {
         String origin = simulated ? "SIMULAÇÃO" : "CHEGADA";
+        int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+        boolean lampTime = !p.getBoolean("so_noite", false) || hour >= 18 || hour < 6;
+        if (!simulated && !lampTime) {
+            p.edit().putString("arrival_last_command", time()
+                    + " — Lâmpadas não acionadas: somente 18h–6h; portão independente").apply();
+            if (gate) SpeechEngine.speak(app,
+                    "Chegada detectada. Lâmpadas fora do horário. Deseja abrir o portão? Responda SIM ou NÃO na notificação.");
+            else SpeechEngine.speak(app, "Chegada detectada. Lâmpadas fora do horário configurado.");
+            return;
+        }
         boolean session = EwelinkApi.hasSession(app);
         boolean lights = session && EwelinkApi.selectedCount(app) > 0;
         if (!lights) {

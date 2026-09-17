@@ -10,6 +10,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.SystemClock;
 import android.location.Location;
+import java.util.List;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingEvent;
 
@@ -46,6 +47,21 @@ public class GeofenceReceiver extends BroadcastReceiver {
                 return;
             }
         }
+        List<Geofence> fences = event.getTriggeringGeofences();
+        boolean homeFence = false;
+        boolean outerFence = false;
+        if (fences != null) for (Geofence fence : fences) {
+            if ("casa".equals(fence.getRequestId())) homeFence = true;
+            if ("aproximacao_2500m".equals(fence.getRequestId())) outerFence = true;
+        }
+        if (outerFence) {
+            boolean entered = event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_ENTER;
+            p.edit().putBoolean("outer_inside", entered)
+                    .putString("outer_geofence_status", entered
+                            ? "Entrou na preparação 2,5 km" : "Saiu da preparação 2,5 km").apply();
+        }
+        // Outer 2.5-km fence is NEVER a lamp or gate arrival trigger.
+        if (!homeFence) return;
         if (event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_EXIT) {
             ArrivalController.handleExit(context);
         } else if (event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_ENTER) {

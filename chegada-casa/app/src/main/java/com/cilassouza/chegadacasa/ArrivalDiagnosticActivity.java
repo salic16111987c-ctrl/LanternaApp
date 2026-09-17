@@ -48,7 +48,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         LinearLayout root = (LinearLayout) scroll.getChildAt(0);
 
         TextView title = new TextView(this);
-        title.setText("DIAGNÓSTICO E VOZ — v2.1");
+        title.setText("DIAGNÓSTICO E VOZ — v2.4");
         title.setTextSize(19);
         title.setTextColor(Color.rgb(25, 60, 110));
         title.setPadding(0, 10, 0, 8);
@@ -186,6 +186,10 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
                 " | raio: " + p.getInt("raio", 100) + " m" +
                 "\nLocalização precisa: " + precise + " | em segundo plano: " + background +
                 "\nPermissão notificação: " + notifications +
+                "\nPerfil GPS: " + p.getString("monitor_profile", "ainda não definido") +
+                " | movimento: " + (System.currentTimeMillis() < p.getLong("motion_until", 0L) ? "detectado" : "parado/indefinido") +
+                " | aproximando: " + (p.getBoolean("motion_toward", false) ? "sim" : "não/indefinido") +
+                "\nCerca 2,5 km: " + p.getString("outer_geofence_status", "sem evento ainda") +
                 "\nMonitor: " + p.getString("monitor_state", "ainda não iniciou") +
                 "\nÚltimo GPS: " + gps +
                 "\nDistância: " + p.getInt("monitor_distance", -1) + " m" +
@@ -193,7 +197,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
                 "\nGPS fictício: " + (p.getBoolean("monitor_mock", false) ? "SIM — portão BLOQUEADO" : "não") +
                 "\nEstado: " + (p.getBoolean("dentro", false) ? "DENTRO" : "FORA") +
                 " | saída confirmada: " + (p.getBoolean("outside_observed", false) ? "SIM" : "NÃO") +
-                "\nSomente à noite: " + (p.getBoolean("so_noite", false) ? "SIM — bloqueia 6h–18h" : "não") +
+                "\nSomente LÂMPADAS 18h–6h: " + (p.getBoolean("so_noite", false) ? "SIM" : "NÃO") +
                 "\neWeLink: " + (EwelinkApi.hasSession(this) ? "conectada" : "NÃO CONECTADA") +
                 " | lâmpadas selecionadas: " + EwelinkApi.selectedCount(this) +
                 " | portão: " + (EwelinkApi.hasGate(this) ? "configurado" : "não configurado") +
