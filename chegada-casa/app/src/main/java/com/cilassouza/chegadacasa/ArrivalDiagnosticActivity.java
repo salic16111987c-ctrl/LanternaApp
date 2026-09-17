@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.location.Location;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -24,7 +25,7 @@ import java.text.DateFormat;
 import java.util.Date;
 import java.util.Locale;
 
-/** Shows live GPS and the independently testable real light-command path. */
+/** Live diagnostics, safely isolated manual simulation and user-controlled voice volume. */
 public class ArrivalDiagnosticActivity extends FixedMainActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private TextView diagnostics;
@@ -47,7 +48,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         LinearLayout root = (LinearLayout) scroll.getChildAt(0);
 
         TextView title = new TextView(this);
-        title.setText("DIAGNÓSTICO E SIMULAÇÃO — v1.9");
+        title.setText("DIAGNÓSTICO E VOZ — v2.1");
         title.setTextSize(19);
         title.setTextColor(Color.rgb(25, 60, 110));
         title.setPadding(0, 10, 0, 8);
@@ -71,18 +72,37 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         gpsButton.setOnClickListener(v -> testGps());
         root.addView(gpsButton, 3);
 
+        Button volumeButton = new Button(this);
+        volumeButton.setText("🔊 AUMENTAR VOLUME DO AVISO (MÍDIA)");
+        volumeButton.setOnClickListener(v -> {
+            AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
+            if (audio != null) {
+                try {
+                    audio.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                            AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI);
+                } catch (SecurityException e) {
+                    Toast.makeText(this, "Ajuste o volume de mídia nas configurações do celular.",
+                            Toast.LENGTH_LONG).show();
+                }
+            }
+            Toast.makeText(this, "Volume de mídia: " + SpeechEngine.mediaVolumePercent(this)
+                    + "%. Toque novamente para aumentar.", Toast.LENGTH_SHORT).show();
+            updateDiagnostics();
+        });
+        root.addView(volumeButton, 4);
+
         Button speechButton = new Button(this);
         speechButton.setText("TESTAR ÁUDIO AGORA (SEM ACENDER LUZES)");
         speechButton.setOnClickListener(v -> {
             SpeechEngine.speak(this, "Teste de áudio do Chegada Casa. O aviso de chegada está funcionando.");
             handler.postDelayed(this::updateDiagnostics, 1500L);
         });
-        root.addView(speechButton, 4);
+        root.addView(speechButton, 5);
 
         Button simulateButton = new Button(this);
         simulateButton.setText("SIMULAR CHEGADA E ACENDER LUZES (TESTE REAL)");
         simulateButton.setOnClickListener(v -> confirmSimulation(simulateButton));
-        root.addView(simulateButton, 5);
+        root.addView(simulateButton, 6);
 
         Button startButton = new Button(this);
         startButton.setText("REINICIAR MONITOR DE CHEGADA");
@@ -96,7 +116,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
             Toast.makeText(this, "Monitor solicitado. Confira o estado do GPS abaixo.", Toast.LENGTH_LONG).show();
             handler.postDelayed(this::updateDiagnostics, 1600L);
         });
-        root.addView(startButton, 6);
+        root.addView(startButton, 7);
         updateDiagnostics();
     }
 
@@ -170,11 +190,18 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
                 "\nÚltimo GPS: " + gps +
                 "\nDistância: " + p.getInt("monitor_distance", -1) + " m" +
                 " | precisão: ±" + p.getInt("monitor_accuracy", -1) + " m" +
+                "\nGPS fictício: " + (p.getBoolean("monitor_mock", false) ? "SIM — portão BLOQUEADO" : "não") +
                 "\nEstado: " + (p.getBoolean("dentro", false) ? "DENTRO" : "FORA") +
                 " | saída confirmada: " + (p.getBoolean("outside_observed", false) ? "SIM" : "NÃO") +
                 "\nSomente à noite: " + (p.getBoolean("so_noite", false) ? "SIM — bloqueia 6h–18h" : "não") +
                 "\neWeLink: " + (EwelinkApi.hasSession(this) ? "conectada" : "NÃO CONECTADA") +
                 " | lâmpadas selecionadas: " + EwelinkApi.selectedCount(this) +
+                " | portão: " + (EwelinkApi.hasGate(this) ? "configurado" : "não configurado") +
+                "\nVolume do áudio (MÍDIA): " + SpeechEngine.mediaVolumePercent(this) + "%" +
+                " — ajuste no botão abaixo ou nas teclas de volume; Bluetooth pode mudar a saída." +
+                "\nPortão por voz: somente após chegada REAL; toque RESPONDER POR VOZ na notificação, "
+                    + "depois no microfone e diga SIM, ABRIR PORTÃO ou NÃO." +
+                "\nStatus portão: " + p.getString("gate_voice_status", "sem confirmação por voz") +
                 "\nÚltimo evento: " + p.getString("arrival_last_event", "nenhum") +
                 "\nÚltimo comando: " + p.getString("arrival_last_command", "nenhum") +
                 "\nSIMULAÇÃO: " + p.getString("simulation_last_result", "nenhuma simulação executada") +
@@ -210,8 +237,9 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
                                         Double.longBitsToDouble(p.getLong("lon", 0L)), out);
                                 distance = Math.round(out[0]);
                             }
-                            message = "GPS OK — " + distance + " m da casa; precisão ±" +
-                                    Math.round(loc.getAccuracy()) + " m. Lâmpadas não acionadas.";
+                            message = "GPS " + (loc.isFromMockProvider() ? "FICTÍCIO" : "OK")
+                                    + " — " + distance + " m da casa; precisão ±"
+                                    + Math.round(loc.getAccuracy()) + " m. Lâmpadas não acionadas.";
                         }
                         p.edit().putString("probe_gps", message).apply();
                         updateDiagnostics();
