@@ -31,7 +31,7 @@ jobs:
       - name: Aplicar correcoes v0.2
         run: |
           cp oncar_v02_upgrade.py /tmp/oncar-src/OnCarDiagnostico/upgrade_v02.py
-          python3 /tmp/oncar-src/OnCarDiagnostico/upgrade_v02.py
+          (cd /tmp/oncar-src && python3 OnCarDiagnostico/upgrade_v02.py)
       - name: Compilar APK
         working-directory: /tmp/oncar-src/OnCarDiagnostico/android
         run: gradle assembleDebug --no-daemon
