@@ -26,7 +26,7 @@ import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
 
-/** A visible location service. Failures and last fix are retained for diagnosis. */
+/** Visible location service; failures and last fix are retained for diagnosis. */
 public class ArrivalMonitorService extends Service {
     private static final String CHANNEL_ID = "chegada_monitor";
     private static final int NOTIFICATION_ID = 3101;
@@ -39,6 +39,7 @@ public class ArrivalMonitorService extends Service {
     private SharedPreferences prefs;
     private long lastFixElapsed;
     private long lastNotification;
+    private long serviceStartedElapsed = SystemClock.elapsedRealtime();
     private boolean foreground;
     private boolean firstFix = true;
     private int consecutiveOutside;
@@ -85,10 +86,7 @@ public class ArrivalMonitorService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (!prefs.getBoolean("ativa", false)) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
+        if (!prefs.getBoolean("ativa", false)) { stopSelf(); return START_NOT_STICKY; }
         if (foreground && callback == null) beginUpdates();
         return START_STICKY;
     }
@@ -100,27 +98,23 @@ public class ArrivalMonitorService extends Service {
             if (!prefs.getBoolean("ativa", false)) { stopSelf(); return; }
             if (!foreground) return;
             long elapsed = SystemClock.elapsedRealtime();
-            if (callback == null) {
-                beginUpdates();
-            } else if (lastFixElapsed == 0L && elapsed - serviceStartedElapsed > STALE_MS) {
+            if (callback == null) beginUpdates();
+            else if (lastFixElapsed == 0L && elapsed - serviceStartedElapsed > STALE_MS) {
                 prefs.edit().putString("monitor_state", "Sem posição GPS há mais de 90 segundos; reiniciando")
                         .putString("monitor_error", "GPS não retornou posição").apply();
                 restartUpdates();
             } else if (lastFixElapsed > 0L && elapsed - lastFixElapsed > STALE_MS) {
                 prefs.edit().putString("monitor_state", "GPS parou de atualizar; tentando recuperar")
-                        .putString("monitor_error", "Sem posição por " + ((elapsed - lastFixElapsed) / 1000L) + " segundos").apply();
+                        .putString("monitor_error", "Sem posição por "
+                                + ((elapsed - lastFixElapsed) / 1000L) + " segundos").apply();
                 restartUpdates();
             }
             handler.postDelayed(this, WATCHDOG_MS);
         }
     };
-    private long serviceStartedElapsed = SystemClock.elapsedRealtime();
 
     private void restartUpdates() {
-        if (callback != null) {
-            fused.removeLocationUpdates(callback);
-            callback = null;
-        }
+        if (callback != null) { fused.removeLocationUpdates(callback); callback = null; }
         lastFixElapsed = 0L;
         serviceStartedElapsed = SystemClock.elapsedRealtime();
         beginUpdates();
@@ -176,7 +170,7 @@ public class ArrivalMonitorService extends Service {
             prefs.edit().putString("monitor_state", "GPS desligado; aguardando ativação")
                     .putString("monitor_error", "Ative Localização nas configurações do celular").apply();
             notifyStatus("GPS desligado — ative a localização");
-            return; // watchdog will retry every 30 seconds
+            return;
         }
         LocationRequest request = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, INTERVAL_MS)
                 .setMinUpdateIntervalMillis(3000L).setMinUpdateDistanceMeters(0f)
@@ -220,6 +214,13 @@ public class ArrivalMonitorService extends Service {
             return;
         }
         lastFixElapsed = SystemClock.elapsedRealtime();
+        boolean mock = loc.isFromMockProvider();
+        // Disable any previously pending gate action immediately when fake GPS starts.
+        SharedPreferences.Editor evidence = prefs.edit().putBoolean("monitor_mock", mock);
+        if (mock) evidence.putBoolean("gate_pending", false)
+                .putBoolean("gate_origin_mock", true).remove("gate_pending_at");
+        evidence.apply();
+        if (mock) ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).cancel(2002);
         if (!prefs.getBoolean("casa_definida", false)) {
             prefs.edit().putString("monitor_state", "ERRO: residência não configurada").apply();
             return;
@@ -237,7 +238,8 @@ public class ArrivalMonitorService extends Service {
         float accuracy = loc.hasAccuracy() ? loc.getAccuracy() : 9999f;
         int dist = Math.round(distance);
         int acc = Math.round(accuracy);
-        String status = "GPS OK — " + dist + " m da casa (±" + acc + " m)";
+        String status = (mock ? "GPS FICTÍCIO — portão bloqueado — " : "GPS OK — ")
+                + dist + " m da casa (±" + acc + " m)";
         prefs.edit().putLong("monitor_fix_at", System.currentTimeMillis())
                 .putInt("monitor_distance", dist).putInt("monitor_accuracy", acc)
                 .putString("monitor_state", status).putString("monitor_error", "nenhum").apply();
@@ -263,7 +265,7 @@ public class ArrivalMonitorService extends Service {
         if (distance <= radius) {
             boolean inside = prefs.getBoolean("dentro", false);
             boolean outside = prefs.getBoolean("outside_observed", false);
-            if (!inside && outside) ArrivalController.handleArrival(this);
+            if (!inside && outside) ArrivalController.handleArrival(this, mock);
             else if (firstFix && !outside && !inside) {
                 prefs.edit().putBoolean("dentro", true)
                         .putString("arrival_last_event", "Iniciou dentro da casa: saia e volte para testar").apply();
