@@ -8,6 +8,10 @@ on:
       - '.github/workflows/build-chegada-casa-v2.yml'
   workflow_dispatch:
 
+concurrency:
+  group: chegada-casa-release-main
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -81,13 +85,21 @@ jobs:
           name: Chegada-Casa-Rapida-APK
           path: ChegadaCasa-Rapida.apk
 
-      - name: Persistir código somente após testes e compilação
+      - name: Persistir somente fontes verificadas (nunca arquivos de build)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add chegada-casa/app chegada-casa/tools/check_arrival_invariants.py
+          git add chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalMonitorService.java \
+                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalController.java \
+                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GeofenceReceiver.java \
+                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GateVoiceActivity.java \
+                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GateCarNotification.java \
+                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalDiagnosticActivity.java \
+                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GateTestMode.java \
+                  chegada-casa/app/build.gradle chegada-casa/tools/check_arrival_invariants.py
           if ! git diff --cached --quiet; then
-            git commit -m "Persist v2.5 verified fake-GPS gate test safeguards"
+            git commit -m "Persist verified v2.5 one-shot fake GPS gate test"
+            git restore --worktree chegada-casa/app/build
             git pull --rebase origin main
             git push origin HEAD:main
           fi
@@ -97,4 +109,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="chegada-casa-rapida-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.5 — TESTE" --notes "v2.5: mantém GPS adaptativo 2 km, lâmpadas 18h–6h opcionais e portão 24h. Novo modo TESTE COM FAKE GPS: usuário arma conscientemente na tela Diagnóstico por 10 min e 1 chegada; SIM na confirmação PODE ABRIR O PORTÃO FÍSICO de verdade. Fora do teste, fake GPS continua bloqueado. Teste somente parado e diante do portão com caminho livre. Compilação/checagens automáticas não substituem teste físico supervisionado." || true
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.5 — TESTE" --notes "v2.5: GPS adaptativo 2 km, lâmpadas 18h–6h opcionais, portão 24h. MODO TESTE COM FAKE GPS: usuário arma conscientemente no diagnóstico por 10 min e para 1 chegada. SIM na confirmação PODE ABRIR O PORTÃO FÍSICO de verdade. Fora do teste, fake GPS bloqueado. Teste somente parado diante do portão e com caminho livre. Compilação não substitui teste físico supervisionado." || true
