@@ -1,0 +1,44 @@
+name: Build OnCar Diagnostico v0.2
+
+on:
+  push:
+    branches: [ oncar-v02-build ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Preparar Android SDK
+        shell: bash
+        run: |
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true
+          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - name: Restaurar projeto original
+        shell: bash
+        run: |
+          base64 -d oncar_source.b64 > /tmp/oncar.zip
+          mkdir -p /tmp/oncar-src
+          unzip -q /tmp/oncar.zip -d /tmp/oncar-src
+      - name: Aplicar correcoes v0.2
+        run: |
+          cp oncar_v02_upgrade.py /tmp/oncar-src/OnCarDiagnostico/upgrade_v02.py
+          python3 /tmp/oncar-src/OnCarDiagnostico/upgrade_v02.py
+      - name: Compilar APK
+        working-directory: /tmp/oncar-src/OnCarDiagnostico/android
+        run: gradle assembleDebug --no-daemon
+      - name: Preparar APK
+        run: cp /tmp/oncar-src/OnCarDiagnostico/android/app/build/outputs/apk/debug/app-debug.apk OnCarDiagnostico_v0.2.apk
+      - name: Salvar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OnCar-Diagnostico-v02-APK
+          path: OnCarDiagnostico_v0.2.apk
