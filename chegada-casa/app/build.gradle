@@ -10,8 +10,8 @@ android {
         applicationId 'com.cilassouza.chegadacasa.fast'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '2.0-correcaochegada'
+        versionCode 6
+        versionName '2.1-voz-portao-volume'
     }
 
     // The keystore itself is private and restored securely by GitHub Actions.
