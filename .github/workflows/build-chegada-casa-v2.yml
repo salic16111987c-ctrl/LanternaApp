@@ -62,6 +62,9 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Aplicar otimização de bateria de forma verificável
+        run: python3 chegada-casa/tools/apply_battery_optimization.py
+
       - name: Validar invariantes de segurança e caminhos de chegada
         run: python3 chegada-casa/tools/check_arrival_invariants.py
 
@@ -78,9 +81,19 @@ jobs:
           name: Chegada-Casa-Rapida-APK
           path: ChegadaCasa-Rapida.apk
 
+      - name: Persistir otimização após compilação aprovada
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalMonitorService.java chegada-casa/tools/check_arrival_invariants.py
+          if ! git diff --cached --quiet; then
+            git commit -m "Persist adaptive 2.3 GPS optimization after passing build"
+            git push origin HEAD:main
+          fi
+
       - name: Criar release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="chegada-casa-rapida-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido" --notes "Versão 1.9: simulação confirmada de chegada, diagnóstico, build Android e chave de assinatura privada persistente para próximas atualizações." || true
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido" --notes "Versão 2.3: GPS econômico 6h–18h, econômico em casa e GPS rápido fora de casa à noite; configure 200 m e Somente à noite no app." || true
