@@ -1,0 +1,64 @@
+name: Build OnCar Referencia Samsung
+
+on:
+  push:
+    branches: [oncar-samsung-referencia]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Instalar SDK Android
+        shell: bash
+        run: |
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null || true
+          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - name: Reconstruir projeto isolado
+        shell: bash
+        run: |
+          base64 -d oncar_source.b64 > /tmp/oncar-samsung-original.zip
+          mkdir -p /tmp/oncar-samsung-build
+          unzip -q /tmp/oncar-samsung-original.zip -d /tmp/oncar-samsung-build
+          cp oncar-samsung/MainActivity.kt /tmp/oncar-samsung-build/OnCarDiagnostico/android/app/src/main/java/com/cilas/oncardiagnostico/MainActivity.kt
+          cp oncar-samsung/CaptureService.kt /tmp/oncar-samsung-build/OnCarDiagnostico/android/app/src/main/java/com/cilas/oncardiagnostico/CaptureService.kt
+          cp oncar-samsung/AndroidManifest.xml /tmp/oncar-samsung-build/OnCarDiagnostico/android/app/src/main/AndroidManifest.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('/tmp/oncar-samsung-build/OnCarDiagnostico/android/app/build.gradle.kts')
+          s=p.read_text()
+          assert 'applicationId = "com.cilas.oncardiagnostico"' in s
+          assert 'versionName = "0.1"' in s
+          s=s.replace('applicationId = "com.cilas.oncardiagnostico"', 'applicationId = "com.cilas.oncarreferencia"')
+          s=s.replace('minSdk = 26', 'minSdk = 29').replace('versionCode = 1', 'versionCode = 1').replace('versionName = "0.1"', 'versionName = "1.0"')
+          p.write_text(s)
+          print('Pacote independente e versao conferidos')
+          PY
+      - name: Compilar e testar APK
+        working-directory: /tmp/oncar-samsung-build/OnCarDiagnostico/android
+        run: gradle clean assembleDebug --no-daemon --stacktrace
+      - name: Preparar APK e codigo-fonte
+        shell: bash
+        run: |
+          cp /tmp/oncar-samsung-build/OnCarDiagnostico/android/app/build/outputs/apk/debug/app-debug.apk OnCar_Referencia_Samsung_v1.0.apk
+          test -s OnCar_Referencia_Samsung_v1.0.apk
+          unzip -t OnCar_Referencia_Samsung_v1.0.apk | tail -1
+          (cd /tmp/oncar-samsung-build && zip -qr "$GITHUB_WORKSPACE/OnCar_Referencia_Samsung_Fonte.zip" OnCarDiagnostico)
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OnCar-Referencia-Samsung-APK
+          path: OnCar_Referencia_Samsung_v1.0.apk
+      - name: Disponibilizar fonte
+        uses: actions/upload-artifact@v4
+        with:
+          name: OnCar-Referencia-Samsung-Fonte
+          path: OnCar_Referencia_Samsung_Fonte.zip
