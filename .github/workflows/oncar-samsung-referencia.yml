@@ -31,6 +31,7 @@ jobs:
           cp oncar-samsung/MainActivity.kt /tmp/oncar-samsung-build/OnCarDiagnostico/android/app/src/main/java/com/cilas/oncardiagnostico/MainActivity.kt
           cp oncar-samsung/CaptureService.kt /tmp/oncar-samsung-build/OnCarDiagnostico/android/app/src/main/java/com/cilas/oncardiagnostico/CaptureService.kt
           cp oncar-samsung/AndroidManifest.xml /tmp/oncar-samsung-build/OnCarDiagnostico/android/app/src/main/AndroidManifest.xml
+          python3 oncar-samsung/compat.py
           python3 - <<'PY'
           from pathlib import Path
           p=Path('/tmp/oncar-samsung-build/OnCarDiagnostico/android/app/build.gradle.kts')
