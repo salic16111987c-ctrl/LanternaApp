@@ -1,4 +1,4 @@
-name: Build OnCar Diagnostico v0.2
+name: Build OnCar Diagnostico v0.3
 
 on:
   push:
@@ -32,13 +32,15 @@ jobs:
         run: |
           cp oncar_v02_upgrade.py /tmp/oncar-src/OnCarDiagnostico/upgrade_v02.py
           (cd /tmp/oncar-src && python3 OnCarDiagnostico/upgrade_v02.py)
+      - name: Corrigir Wi-Fi Direct v0.3
+        run: python3 oncar_v03_upgrade.py
       - name: Compilar APK
         working-directory: /tmp/oncar-src/OnCarDiagnostico/android
         run: gradle assembleDebug --no-daemon
       - name: Preparar APK
-        run: cp /tmp/oncar-src/OnCarDiagnostico/android/app/build/outputs/apk/debug/app-debug.apk OnCarDiagnostico_v0.2.apk
+        run: cp /tmp/oncar-src/OnCarDiagnostico/android/app/build/outputs/apk/debug/app-debug.apk OnCarDiagnostico_v0.3.apk
       - name: Salvar APK
         uses: actions/upload-artifact@v4
         with:
-          name: OnCar-Diagnostico-v02-APK
-          path: OnCarDiagnostico_v0.2.apk
+          name: OnCar-Diagnostico-v03-APK
+          path: OnCarDiagnostico_v0.3.apk
