@@ -42,9 +42,9 @@ check('Lamp test checks session and selection, logs result',
       all(text in diagnostic for text in ['EwelinkApi.hasSession(this)', 'EwelinkApi.selectedCount(this)',
                                            'simulation_last_result']) and 'simulation_last_result' in controller)
 check('GPS and geofence share state machine with mock flag',
-      'ArrivalController.handleArrival(context, trigger == null || trigger.isFromMockProvider())' in receiver and
+      'ArrivalController.handleArrival(context, trigger.isFromMockProvider())' in receiver and
       'ArrivalController.handleArrival(this, mock)' in monitor and
-      'ArrivalController.handleExit(context)' in receiver and 'ArrivalController.handleExit(this)' in monitor)
+      'ArrivalController.handleExit(context)' not in receiver and 'ArrivalController.handleExit(this)' in monitor)
 check('Live GPS flags mock positions and cancels existing gate confirmation',
       all(text in monitor for text in ['loc.isFromMockProvider()', 'putBoolean("monitor_mock", mock)',
                                       'putBoolean("gate_pending", false)', 'putBoolean("gate_origin_mock", true)',
@@ -107,7 +107,7 @@ cooldown = controller.split('if (now >= last && now - last < MIN_ALERT_INTERVAL_
 check('Cooldown cannot swallow arrival',
       'putBoolean("dentro"' not in cooldown and 'putBoolean("outside_observed"' not in cooldown and
       'putLong("ultimo_alerta"' not in cooldown and 'secondsRemaining' in cooldown and
-      'if (!inside && outside) ArrivalController.handleArrival(this, mock)' in monitor)
+      'if (!inside && outside && consecutiveInside >= 2)' in monitor)
 check('Night setting affects only lamps; portão prompt remains 24h',
       'boolean lampTime = !p.getBoolean("so_noite", false) || hour >= 18 || hour < 6;' in controller
       and 'if (!simulated && !lampTime)' in controller
@@ -156,6 +156,17 @@ check('Manifest contains required permissions and services',
                                        'androidx.car.app.category.IOT']))
 check('APK version and package stay update-compatible',
       "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and
-      "versionName '2.5-teste-portao-fake-gps'" in gradle and 'versionCode 10' in gradle and
+      "versionName '2.6-antifalsas-chegadas'" in gradle and 'versionCode 11' in gradle and
       "implementation 'androidx.core:core:1.15.0'" in gradle)
-print('STRUCTURAL CHECKS PASSED. Car host display rules, real gate and driving behavior need supervised tests.')
+check('Fence exit alone cannot rearm arrival',
+      'ArrivalController.handleExit(context)' not in receiver
+      and 'Cerca sinalizou saída; aguardando GPS confirmar afastamento' in receiver)
+check('False departures need sustained GPS and a hysteresis margin',
+      'outsideCandidateElapsed' in monitor and 'consecutiveOutside >= 3' in monitor
+      and '>= 90000L' in monitor and 'Math.max(100f, Math.min(250f, radius * 0.5f))' in monitor)
+check('Arrival needs two inside GPS fixes and a confirmed exit',
+      'consecutiveInside >= 2' in monitor and 'outside_observed' in receiver)
+check('Gate notifications have a bounded lifetime',
+      '.setTimeoutAfter(5L * 60L * 1000L)' in car_notice
+      and 'Confirmação expirada; portão não acionado' in monitor)
+print('STRUCTURAL CHECKS PASSED. Real GPS, car host and physical gate still need supervised tests.')

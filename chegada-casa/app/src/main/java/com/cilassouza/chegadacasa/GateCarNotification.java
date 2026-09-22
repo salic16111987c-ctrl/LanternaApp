@@ -53,6 +53,7 @@ public final class GateCarNotification {
                         (fakeTest ? "MODO TESTE COM GPS FICTÍCIO. SIM abrirá o portão REAL. "
                                 : "Chegada detectada. ")
                                 + "Confirme apenas se for seguro abrir " + name + "."))
+                .setTimeoutAfter(5L * 60L * 1000L)
                 .setAutoCancel(false).setOngoing(false)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)

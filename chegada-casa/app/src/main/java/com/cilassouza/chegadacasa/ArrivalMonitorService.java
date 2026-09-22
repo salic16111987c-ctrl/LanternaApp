@@ -48,6 +48,8 @@ public class ArrivalMonitorService extends Service {
     private boolean foreground;
     private boolean firstFix = true;
     private int consecutiveOutside;
+    private long outsideCandidateElapsed;
+    private int consecutiveInside;
     private int profileMode = -1;
     private Location lastMotionFix;
     private float lastMotionDistance = -1f;
@@ -142,6 +144,16 @@ public class ArrivalMonitorService extends Service {
         @Override public void run() {
             if (!prefs.getBoolean("ativa", false)) { stopSelf(); return; }
             if (!foreground) return;
+            // A five-minute confirmation must not linger in notifications for 22 minutes.
+            if (prefs.getBoolean("gate_pending", false)
+                    && !GeofenceReceiver.gateConfirmationIsPending(ArrivalMonitorService.this)) {
+                prefs.edit().putBoolean("gate_pending", false)
+                        .putBoolean("gate_test_pending", false)
+                        .remove("gate_pending_at")
+                        .putString("gate_voice_status", "Confirmação expirada; portão não acionado")
+                        .apply();
+                GateCarNotification.cancel(ArrivalMonitorService.this);
+            }
             long elapsed = SystemClock.elapsedRealtime();
             if (callback == null || profileMode != desiredProfile()) {
                 // Clock transitions at 06:00/18:00 are checked every 30 seconds.
@@ -333,29 +345,39 @@ public class ArrivalMonitorService extends Service {
         // Switching to high precision must not wait for a fine-accuracy fix.
         handler.post(this::ensureProfile);
         if (accuracy > Math.max(75f, radius * 0.6f)) {
+            consecutiveOutside = 0;
+            outsideCandidateElapsed = 0L;
+            consecutiveInside = 0;
             prefs.edit().putString("monitor_state", "Aguardando GPS mais preciso: ±" + acc + " m").apply();
             return;
         }
-        float margin = Math.max(60f, Math.min(120f, radius * 0.3f));
+        // Hysteresis: a brief location jump beyond the home circle must not
+        // rearm arrival and toggle actual lights while the owner remains home.
+        float margin = Math.max(100f, Math.min(250f, radius * 0.5f));
         if (distance > radius + margin) {
+            if (consecutiveOutside == 0) outsideCandidateElapsed = SystemClock.elapsedRealtime();
             consecutiveOutside++;
-            if (consecutiveOutside >= 2) {
+            consecutiveInside = 0;
+            if (consecutiveOutside >= 3 && outsideCandidateElapsed > 0L
+                    && SystemClock.elapsedRealtime() - outsideCandidateElapsed >= 90000L) {
                 if (prefs.getBoolean("dentro", false)) ArrivalController.handleExit(this);
                 else if (!prefs.getBoolean("outside_observed", false)) {
                     prefs.edit().putBoolean("outside_observed", true)
-                            .putString("arrival_last_event", "Saída confirmada: " + dist + " m").apply();
+                            .putString("arrival_last_event", "Saída sustentada confirmada: " + dist + " m").apply();
                 }
             }
-            // Home -> outside: switch to fast immediately after two reliable outside fixes.
             handler.post(this::ensureProfile);
             firstFix = false;
             return;
         }
         consecutiveOutside = 0;
+        outsideCandidateElapsed = 0L;
+        consecutiveInside = distance <= radius ? consecutiveInside + 1 : 0;
         if (distance <= radius) {
             boolean inside = prefs.getBoolean("dentro", false);
             boolean outside = prefs.getBoolean("outside_observed", false);
-            if (!inside && outside) ArrivalController.handleArrival(this, mock);
+            if (!inside && outside && consecutiveInside >= 2)
+                ArrivalController.handleArrival(this, mock);
             else if (firstFix && !outside && !inside) {
                 prefs.edit().putBoolean("dentro", true)
                         .putString("arrival_last_event", "Iniciou dentro da casa: saia e volte para testar").apply();

@@ -63,7 +63,10 @@ public class GeofenceReceiver extends BroadcastReceiver {
         // Outer 2.5-km fence is NEVER a lamp or gate arrival trigger.
         if (!homeFence) return;
         if (event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_EXIT) {
-            ArrivalController.handleExit(context);
+            // A geofence EXIT alone can be GPS drift while the owner is at home.
+            // Only the monitor may rearm a real arrival after sustained outside fixes.
+            p.edit().putString("arrival_last_event",
+                    "Cerca sinalizou saída; aguardando GPS confirmar afastamento").apply();
         } else if (event.getGeofenceTransition() == Geofence.GEOFENCE_TRANSITION_ENTER) {
             // An early mock geofence event must wait for the GPS monitor to verify it.
             if (GateTestMode.isArmed(p) && (trigger == null || trigger.isFromMockProvider())
@@ -71,7 +74,22 @@ public class GeofenceReceiver extends BroadcastReceiver {
                 p.edit().putString("arrival_last_event", "Teste fake GPS: aguardando posição do monitor").apply();
                 return;
             }
-            ArrivalController.handleArrival(context, trigger == null || trigger.isFromMockProvider());
+            // ENTER is only a backup after the monitor confirmed a genuine exit.
+            // Never turn on lights or prompt a physical gate on an unverified fence bounce.
+            if (!p.getBoolean("outside_observed", false) || trigger == null
+                    || !trigger.hasAccuracy()
+                    || trigger.getAccuracy() > Math.max(60f, p.getInt("raio", 100) * 0.4f)) {
+                p.edit().putString("arrival_last_event",
+                        "Cerca entrou; chegada sem saída confirmada/posição precisa: ignorada").apply();
+                return;
+            }
+            float[] homeDistance = new float[1];
+            Location.distanceBetween(trigger.getLatitude(), trigger.getLongitude(),
+                    Double.longBitsToDouble(p.getLong("lat", 0L)),
+                    Double.longBitsToDouble(p.getLong("lon", 0L)), homeDistance);
+            if (!p.getBoolean("casa_definida", false)
+                    || homeDistance[0] > Math.max(50, p.getInt("raio", 100))) return;
+            ArrivalController.handleArrival(context, trigger.isFromMockProvider());
         }
     }
 

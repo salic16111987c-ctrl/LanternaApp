@@ -49,7 +49,7 @@ public class ArrivalDiagnosticActivity extends FixedMainActivity {
         LinearLayout root = (LinearLayout) scroll.getChildAt(0);
 
         TextView title = new TextView(this);
-        title.setText("DIAGNÓSTICO E VOZ — v2.5");
+        title.setText("DIAGNÓSTICO E VOZ — v2.6");
         title.setTextSize(19);
         title.setTextColor(Color.rgb(25, 60, 110));
         title.setPadding(0, 10, 0, 8);
