@@ -66,8 +66,11 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Aplicar teste explícito portão com fake GPS 10 min 1 vez
+      - name: Preservar modo seguro do teste GPS anterior
         run: python3 chegada-casa/tools/apply_fake_gps_gate_test.py
+
+      - name: Corrigir falsas saídas, chegadas e confirmações antigas
+        run: python3 chegada-casa/tools/apply_false_arrival_fix.py
 
       - name: Validar invariantes de segurança, teste e chegada
         run: python3 chegada-casa/tools/check_arrival_invariants.py
@@ -98,7 +101,7 @@ jobs:
                   chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GateTestMode.java \
                   chegada-casa/app/build.gradle chegada-casa/tools/check_arrival_invariants.py
           if ! git diff --cached --quiet; then
-            git commit -m "Persist verified v2.5 one-shot fake GPS gate test"
+            git commit -m "Persist verified v2.6 sustained departure and gate prompt expiry"
             git restore --worktree chegada-casa/app/build
             git pull --rebase origin main
             git push origin HEAD:main
@@ -109,4 +112,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="chegada-casa-rapida-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.5 — TESTE" --notes "v2.5: GPS adaptativo 2 km, lâmpadas 18h–6h opcionais, portão 24h. MODO TESTE COM FAKE GPS: usuário arma conscientemente no diagnóstico por 10 min e para 1 chegada. SIM na confirmação PODE ABRIR O PORTÃO FÍSICO de verdade. Fora do teste, fake GPS bloqueado. Teste somente parado diante do portão e com caminho livre. Compilação não substitui teste físico supervisionado." || true
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.6 — ANTI-FALSAS CHEGADAS" --notes "v2.6: geofence de saída não rearma sem monitor confirmar afastamento por pelo menos 90 s e 3 posições; histerese conforme raio, 2 leituras de retorno, notificações do portão expiram em 5 min. Mantém GPS adaptativo, teste fake GPS por autorização única e confirmação física obrigatória. NÃO testado em veículo nem em portão real; testar supervisionado." || true
