@@ -72,6 +72,9 @@ jobs:
       - name: Corrigir falsas saídas, chegadas e confirmações antigas
         run: python3 chegada-casa/tools/apply_false_arrival_fix.py
 
+      - name: Atualizar expectativas dos testes para saídas confirmadas
+        run: python3 chegada-casa/tools/fix_v26_invariant_expectations.py
+
       - name: Validar invariantes de segurança, teste e chegada
         run: python3 chegada-casa/tools/check_arrival_invariants.py
 
