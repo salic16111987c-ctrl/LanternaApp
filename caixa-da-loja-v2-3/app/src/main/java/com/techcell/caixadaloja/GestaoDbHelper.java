@@ -81,8 +81,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        if (oldVersion < 2) criarVendas(db);
-        if (oldVersion < 3) {
+        if (oldVersion < 2) {
+            // Bancos anteriores ao PDV não tinham as tabelas de venda.
+            // Cria direto no formato atual, evitando ALTER duplicado.
+            criarVendas(db);
+        } else if (oldVersion < 3) {
             db.execSQL("ALTER TABLE vendas ADD COLUMN subtotal REAL NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE vendas ADD COLUMN desconto REAL NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE vendas ADD COLUMN desconto_tipo TEXT NOT NULL DEFAULT ''");
