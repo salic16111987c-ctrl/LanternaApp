@@ -7,7 +7,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.techcell.techcellacs.alpha"
+        applicationId = "com.techcell.techcellacs.gestao"
         minSdk = 24
         targetSdk = 35
         versionCode = 3
