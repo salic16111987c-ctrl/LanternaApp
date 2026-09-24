@@ -10,8 +10,8 @@ android {
         applicationId = "com.techcell.techcellacs.gestao"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "3.0.0-alpha6"
+        versionCode = 7
+        versionName = "3.0.0-alpha7"
     }
 
     buildTypes {

@@ -73,7 +73,7 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("Sistema completo da loja", 14, false);
+        TextView sub = text("Sistema completo da loja • Alpha 7", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
@@ -105,7 +105,7 @@ public class GestaoActivity extends Activity {
         menu.setPadding(0, dp(22), 0, dp(6));
         root.addView(menu);
 
-        Button pdv = action("🛒  PDV / Frente de Caixa");
+        Button pdv = action("🛒  PDV / Frente de Caixa  •  TESTAR");
         pdv.setOnClickListener(v -> startActivity(new Intent(this, PdvActivity.class)));
         root.addView(pdv);
 

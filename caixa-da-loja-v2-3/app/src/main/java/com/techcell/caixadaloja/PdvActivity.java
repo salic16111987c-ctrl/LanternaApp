@@ -48,8 +48,50 @@ public class PdvActivity extends Activity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        db = new GestaoDbHelper(this);
-        montarTela();
+        try {
+            db = new GestaoDbHelper(getApplicationContext());
+            db.getWritableDatabase();
+            montarTela();
+        } catch (Throwable e) {
+            mostrarFalhaInicial(e);
+        }
+    }
+
+    private void mostrarFalhaInicial(Throwable e) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setBackgroundColor(Color.parseColor("#F3F5F9"));
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18), dp(24), dp(18), dp(30));
+        scroll.addView(root);
+
+        TextView title = txt("PDV / Frente de Caixa", 26, true);
+        root.addView(title);
+
+        TextView aviso = txt("O PDV encontrou um erro ao iniciar, mas o aplicativo permaneceu aberto.", 16, true);
+        aviso.setTextColor(Color.parseColor("#B42318"));
+        aviso.setPadding(0, dp(16), 0, dp(10));
+        root.addView(aviso);
+
+        String detalhe = e.getClass().getSimpleName();
+        if (e.getMessage() != null && !e.getMessage().trim().isEmpty()) {
+            detalhe += "\n" + e.getMessage();
+        }
+
+        TextView erro = txt(detalhe, 13, false);
+        erro.setTextColor(Color.parseColor("#475467"));
+        erro.setBackgroundColor(Color.WHITE);
+        erro.setPadding(dp(12), dp(12), dp(12), dp(12));
+        root.addView(erro);
+
+        Button voltar = new Button(this);
+        voltar.setText("Voltar");
+        voltar.setAllCaps(false);
+        voltar.setOnClickListener(v -> finish());
+        root.addView(voltar);
+
+        setContentView(scroll);
     }
 
     private void montarTela() {
