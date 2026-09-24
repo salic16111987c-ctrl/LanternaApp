@@ -6,13 +6,13 @@
     <application
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"
-        android:label="Tech Cell ACS ALPHA"
+        android:label="Tech Cell PDV TESTE"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">
 
         <activity
-            android:name="com.techcell.caixadaloja.TechCellHomeActivity"
+            android:name="com.techcell.caixadaloja.GestaoActivity"
             android:exported="true"
             android:screenOrientation="portrait">
             <intent-filter>
@@ -22,7 +22,6 @@
         </activity>
 
         <activity android:name="com.techcell.caixadaloja.MainActivity" android:exported="false" android:screenOrientation="portrait" />
-        <activity android:name="com.techcell.caixadaloja.GestaoActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.ProdutosActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.EstoqueActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.PdvActivity" android:exported="false" android:screenOrientation="portrait" />
