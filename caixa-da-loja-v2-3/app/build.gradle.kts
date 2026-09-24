@@ -10,8 +10,8 @@ android {
         applicationId = "com.techcell.techcellacs.gestao.alpha8teste"
         minSdk = 24
         targetSdk = 35
-        versionCode = 80
-        versionName = "3.0.0-alpha8-pdvteste"
+        versionCode = 90
+        versionName = "3.0.0-alpha9-pdvteste"
     }
 
     buildTypes {

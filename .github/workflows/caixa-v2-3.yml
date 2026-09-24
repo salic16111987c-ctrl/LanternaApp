@@ -1,9 +1,9 @@
-name: Build Tech Cell PDV Alpha8 Test
+name: Build Tech Cell PDV Alpha9 Test
 
 on:
   push:
     branches:
-      - gestao-techcell-alpha8-test
+      - gestao-techcell-alpha9-test
     paths:
       - 'caixa-da-loja-v2-3/**'
       - '.github/workflows/caixa-v2-3.yml'
@@ -46,12 +46,12 @@ jobs:
         working-directory: caixa-da-loja-v2-3
         run: |
           mkdir -p build-output
-          cp app/build/outputs/apk/release/app-release-unsigned.apk build-output/TechCell-PDV-Alpha8-Teste-unsigned.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk build-output/TechCell-PDV-Alpha9-Teste-unsigned.apk
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" build-output/apksigner.jar
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TechCell-PDV-Alpha8-Teste-build
+          name: TechCell-PDV-Alpha9-Teste-build
           path: caixa-da-loja-v2-3/build-output/
           retention-days: 7
