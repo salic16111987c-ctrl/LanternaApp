@@ -17,9 +17,12 @@ import java.util.Locale;
 public class EstoqueActivity extends Activity {
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
+
     private TextView txt(String s, int size, boolean bold) {
         TextView t = new TextView(this);
-        t.setText(s); t.setTextSize(size); t.setTextColor(Color.parseColor("#101828"));
+        t.setText(s);
+        t.setTextSize(size);
+        t.setTextColor(Color.parseColor("#101828"));
         if (bold) t.setTypeface(null, android.graphics.Typeface.BOLD);
         return t;
     }
@@ -56,31 +59,44 @@ public class EstoqueActivity extends Activity {
         scroll.addView(root);
 
         Button voltar = new Button(this);
-        voltar.setText("← Voltar"); voltar.setAllCaps(false); voltar.setOnClickListener(v -> finish());
+        voltar.setText("← Voltar");
+        voltar.setAllCaps(false);
+        voltar.setOnClickListener(v -> finish());
         root.addView(voltar);
 
         TextView title = txt("Estoque", 28, true);
-        title.setPadding(0, dp(16), 0, dp(12)); root.addView(title);
+        title.setPadding(0, dp(16), 0, dp(12));
+        root.addView(title);
 
         LinearLayout resumo = new LinearLayout(this);
         resumo.setOrientation(LinearLayout.VERTICAL);
         resumo.setBackgroundColor(Color.WHITE);
         resumo.setPadding(dp(14), dp(14), dp(14), dp(14));
         resumo.addView(txt("Produtos cadastrados: " + ps.size(), 16, true));
-        resumo.addView(txt("Quantidade em estoque: " + fmt(itens), 15, false));
+        resumo.addView(txt("Soma das quantidades: " + fmt(itens), 15, false));
         resumo.addView(txt("Custo do estoque: " + moeda.format(custo), 15, false));
         resumo.addView(txt("Venda potencial: " + moeda.format(venda), 15, false));
         resumo.addView(txt("Lucro bruto potencial: " + moeda.format(lucro), 15, true));
+
         TextView alert = txt("Itens em estoque baixo: " + baixos, 15, baixos>0);
         if (baixos>0) alert.setTextColor(Color.parseColor("#B42318"));
         resumo.addView(alert);
         root.addView(resumo);
 
+        TextView obs = txt(
+                "A soma das quantidades é apenas informativa porque o estoque pode misturar UN, PC, CX, KG, M etc.",
+                12, false);
+        obs.setTextColor(Color.parseColor("#667085"));
+        obs.setPadding(0, dp(6), 0, dp(4));
+        root.addView(obs);
+
         Button produtos = new Button(this);
-        produtos.setText("Abrir cadastro de produtos"); produtos.setAllCaps(false);
+        produtos.setText("Abrir cadastro de produtos");
+        produtos.setAllCaps(false);
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        bp.setMargins(0, dp(12), 0, dp(12)); produtos.setLayoutParams(bp);
+        bp.setMargins(0, dp(12), 0, dp(12));
+        produtos.setLayoutParams(bp);
         produtos.setOnClickListener(v -> startActivity(new Intent(this, ProdutosActivity.class)));
         root.addView(produtos);
 
@@ -91,16 +107,22 @@ public class EstoqueActivity extends Activity {
             card.setPadding(dp(14), dp(10), dp(14), dp(10));
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            cp.setMargins(0, dp(4), 0, dp(4)); card.setLayoutParams(cp);
+            cp.setMargins(0, dp(4), 0, dp(4));
+            card.setLayoutParams(cp);
+
             card.addView(txt(p.nome, 16, true));
-            TextView linha = txt("Qtd.: " + fmt(p.estoque) +
+            String un = p.unidade == null || p.unidade.trim().isEmpty() ? "UN" : p.unidade.trim();
+            TextView linha = txt(
+                    "Qtd.: " + fmt(p.estoque) + " " + un +
                     "   Custo estoque: " + moeda.format(p.valorEstoqueCusto()) +
                     "\nVenda potencial: " + moeda.format(p.valorEstoqueVenda()) +
-                    "   Lucro: " + moeda.format(p.lucroPotencial()), 13, false);
+                    "   Lucro: " + moeda.format(p.lucroPotencial()),
+                    13, false);
             linha.setTextColor(Color.parseColor("#475467"));
             card.addView(linha);
+
             if (p.estoqueMinimo>0 && p.estoque<=p.estoqueMinimo) {
-                TextView baixo = txt("⚠ Repor estoque — mínimo: " + fmt(p.estoqueMinimo), 13, true);
+                TextView baixo = txt("⚠ Repor estoque — mínimo: " + fmt(p.estoqueMinimo) + " " + un, 13, true);
                 baixo.setTextColor(Color.parseColor("#B42318"));
                 card.addView(baixo);
             }
