@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
 
     public static class Produto {
         public long id;
@@ -68,6 +68,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double dinheiro;
         public double pix;
         public double cartao;
+        public double desconto;
     }
 
     public GestaoDbHelper(Context context) {
@@ -81,6 +82,17 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) criarVendas(db);
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE vendas ADD COLUMN subtotal REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN desconto REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN desconto_tipo TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN desconto_referencia REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE venda_itens ADD COLUMN desconto_rateio REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE venda_itens ADD COLUMN total_liquido REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE venda_itens ADD COLUMN lucro_liquido REAL NOT NULL DEFAULT 0");
+            db.execSQL("UPDATE vendas SET subtotal=total WHERE subtotal=0");
+            db.execSQL("UPDATE venda_itens SET total_liquido=total, lucro_liquido=lucro WHERE total_liquido=0");
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -110,6 +122,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE IF NOT EXISTS vendas (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                 "data_millis INTEGER NOT NULL," +
+                "subtotal REAL NOT NULL DEFAULT 0," +
+                "desconto REAL NOT NULL DEFAULT 0," +
+                "desconto_tipo TEXT NOT NULL DEFAULT ''," +
+                "desconto_referencia REAL NOT NULL DEFAULT 0," +
                 "total REAL NOT NULL," +
                 "custo_total REAL NOT NULL," +
                 "lucro_bruto REAL NOT NULL," +
@@ -133,8 +149,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "preco_unitario REAL NOT NULL," +
                 "custo_unitario REAL NOT NULL," +
                 "total REAL NOT NULL," +
+                "desconto_rateio REAL NOT NULL DEFAULT 0," +
+                "total_liquido REAL NOT NULL DEFAULT 0," +
                 "custo_total REAL NOT NULL," +
                 "lucro REAL NOT NULL," +
+                "lucro_liquido REAL NOT NULL DEFAULT 0," +
                 "FOREIGN KEY(venda_id) REFERENCES vendas(id)" +
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_venda_itens_venda ON venda_itens(venda_id)");
@@ -213,16 +232,21 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     }
 
     public long finalizarVenda(List<VendaItem> itens, Pagamento pagamento) {
+        return finalizarVenda(itens, pagamento, 0, "", 0);
+    }
+
+    public long finalizarVenda(List<VendaItem> itens, Pagamento pagamento,
+                               double desconto, String descontoTipo, double descontoReferencia) {
         if (itens == null || itens.isEmpty()) throw new IllegalArgumentException("Venda sem itens.");
 
         SQLiteDatabase db = getWritableDatabase();
         db.beginTransaction();
         try {
-            double total = 0;
+            double subtotal = 0;
             double custoTotal = 0;
 
             for (VendaItem item : itens) {
-                if (item == null || item.produto == null || item.quantidade <= 0) {
+                if (item == null || item.produto == null || item.quantidade <= 0 || item.precoUnitario < 0) {
                     throw new IllegalArgumentException("Item de venda inválido.");
                 }
 
@@ -235,9 +259,16 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 }
 
                 item.produto = atual;
-                total += item.total();
+                subtotal += item.total();
                 custoTotal += item.custoTotal();
             }
+
+            if (desconto < 0 || desconto > subtotal + 0.001) {
+                throw new IllegalArgumentException("Desconto inválido.");
+            }
+
+            double total = subtotal - desconto;
+            if (total < 0) total = 0;
 
             double somaPagamentos = pagamento.dinheiro + pagamento.pix + pagamento.cartao;
             if (Math.abs(somaPagamentos - total) > 0.011) {
@@ -246,6 +277,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
             ContentValues venda = new ContentValues();
             venda.put("data_millis", System.currentTimeMillis());
+            venda.put("subtotal", subtotal);
+            venda.put("desconto", desconto);
+            venda.put("desconto_tipo", descontoTipo == null ? "" : descontoTipo);
+            venda.put("desconto_referencia", descontoReferencia);
             venda.put("total", total);
             venda.put("custo_total", custoTotal);
             venda.put("lucro_bruto", total - custoTotal);
@@ -258,8 +293,23 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
             long vendaId = db.insertOrThrow("vendas", null, venda);
 
-            for (VendaItem item : itens) {
+            double descontoRestante = desconto;
+            for (int index=0; index<itens.size(); index++) {
+                VendaItem item = itens.get(index);
                 Produto p = item.produto;
+
+                double descontoRateio;
+                if (desconto <= 0 || subtotal <= 0) {
+                    descontoRateio = 0;
+                } else if (index == itens.size() - 1) {
+                    descontoRateio = descontoRestante;
+                } else {
+                    descontoRateio = desconto * (item.total() / subtotal);
+                    descontoRestante -= descontoRateio;
+                }
+
+                double totalLiquido = item.total() - descontoRateio;
+                double lucroLiquido = totalLiquido - item.custoTotal();
 
                 ContentValues vi = new ContentValues();
                 vi.put("venda_id", vendaId);
@@ -271,8 +321,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 vi.put("preco_unitario", item.precoUnitario);
                 vi.put("custo_unitario", p.custo);
                 vi.put("total", item.total());
+                vi.put("desconto_rateio", descontoRateio);
+                vi.put("total_liquido", totalLiquido);
                 vi.put("custo_total", item.custoTotal());
                 vi.put("lucro", item.lucro());
+                vi.put("lucro_liquido", lucroLiquido);
                 db.insertOrThrow("venda_itens", null, vi);
 
                 if (!p.ehServico()) {
@@ -307,7 +360,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(custo_total),0), " +
                         "COALESCE(SUM(lucro_bruto),0), COALESCE(SUM(dinheiro),0), " +
-                        "COALESCE(SUM(pix),0), COALESCE(SUM(cartao),0) " +
+                        "COALESCE(SUM(pix),0), COALESCE(SUM(cartao),0), COALESCE(SUM(desconto),0) " +
                         "FROM vendas WHERE data_millis>=? AND data_millis<?",
                 new String[]{String.valueOf(inicio), String.valueOf(fim)});
         try {
@@ -319,6 +372,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 r.dinheiro = c.getDouble(4);
                 r.pix = c.getDouble(5);
                 r.cartao = c.getDouble(6);
+                r.desconto = c.getDouble(7);
             }
         } finally { c.close(); }
         return r;

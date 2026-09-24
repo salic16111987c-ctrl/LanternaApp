@@ -74,7 +74,7 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("Sistema completo da loja • Alpha 7", 14, false);
+        TextView sub = text("Sistema completo da loja • Alpha 8", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
@@ -96,6 +96,9 @@ public class GestaoActivity extends Activity {
         root.addView(fin);
         root.addView(text("Vendas realizadas: " + hoje.quantidadeVendas, 15, false));
         root.addView(text("Total vendido: " + moeda.format(hoje.total), 17, true));
+        if (hoje.desconto > 0.001) {
+            root.addView(text("Descontos concedidos: " + moeda.format(hoje.desconto), 14, false));
+        }
         root.addView(text("Custo das mercadorias: " + moeda.format(hoje.custo), 15, false));
         root.addView(text("Lucro bruto: " + moeda.format(hoje.lucro), 16, true));
         root.addView(text("Dinheiro: " + moeda.format(hoje.dinheiro) +
@@ -106,12 +109,10 @@ public class GestaoActivity extends Activity {
         menu.setPadding(0, dp(22), 0, dp(6));
         root.addView(menu);
 
-        Button pdv = action("🛒  PDV / Frente de Caixa  •  TESTAR");
+        Button pdv = action("🛒  PDV / Frente de Caixa");
         pdv.setOnClickListener(v -> {
-            Toast.makeText(this, "Abrindo PDV...", Toast.LENGTH_SHORT).show();
             try {
-                Intent intent = new Intent(this, PdvActivity.class);
-                startActivity(intent);
+                startActivity(new Intent(this, PdvActivity.class));
             } catch (Throwable e) {
                 String detalhe = e.getClass().getSimpleName();
                 if (e.getMessage() != null && !e.getMessage().trim().isEmpty()) {
@@ -155,7 +156,7 @@ public class GestaoActivity extends Activity {
         root.addView(smb);
 
         TextView next = text(
-                "Já funcional: Produtos, Estoque e PDV com baixa automática no estoque e cálculo do lucro da venda.",
+                "PDV Alpha 8: desconto em R$ ou %, edição de preço, quantidade, exclusão de item, cancelamento da venda e baixa automática do estoque.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);
