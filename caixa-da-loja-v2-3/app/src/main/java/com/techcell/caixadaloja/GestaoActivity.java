@@ -12,7 +12,11 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.text.NumberFormat;
+import java.util.Locale;
+
 public class GestaoActivity extends Activity {
+    private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
 
     private TextView text(String value, int size, boolean bold) {
@@ -45,11 +49,12 @@ public class GestaoActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (getWindow()!=null && getWindow().getDecorView()!=null) render();
+        render();
     }
 
     private void render() {
         GestaoDbHelper db = new GestaoDbHelper(this);
+        GestaoDbHelper.ResumoVendas hoje = db.resumoHoje();
 
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#F3F5F9"));
@@ -74,7 +79,7 @@ public class GestaoActivity extends Activity {
 
         TextView safe = text(
                 "MÓDULO SEPARADO DO CAIXA DA LOJA\n" +
-                "Produtos cadastrados nesta versão: " + db.count() +
+                "Produtos cadastrados: " + db.count() +
                 "\nO banco SMB ainda NÃO foi importado.",
                 13, true);
         safe.setTextColor(Color.parseColor("#176240"));
@@ -86,20 +91,22 @@ public class GestaoActivity extends Activity {
         safe.setLayoutParams(safeLp);
         root.addView(safe);
 
-        TextView fin = text("Financeiro", 20, true);
+        TextView fin = text("Hoje", 20, true);
         root.addView(fin);
-        root.addView(text("Vendas: R$ 0,00", 16, true));
-        root.addView(text("Custo das mercadorias: R$ 0,00", 16, false));
-        root.addView(text("Lucro bruto: R$ 0,00  (venda − custo)", 16, false));
-        root.addView(text("Despesas: R$ 0,00", 16, false));
-        root.addView(text("Lucro líquido: R$ 0,00  (lucro bruto − despesas)", 16, true));
+        root.addView(text("Vendas realizadas: " + hoje.quantidadeVendas, 15, false));
+        root.addView(text("Total vendido: " + moeda.format(hoje.total), 17, true));
+        root.addView(text("Custo das mercadorias: " + moeda.format(hoje.custo), 15, false));
+        root.addView(text("Lucro bruto: " + moeda.format(hoje.lucro), 16, true));
+        root.addView(text("Dinheiro: " + moeda.format(hoje.dinheiro) +
+                "   PIX: " + moeda.format(hoje.pix), 14, false));
+        root.addView(text("Cartão: " + moeda.format(hoje.cartao), 14, false));
 
         TextView menu = text("Módulos", 20, true);
         menu.setPadding(0, dp(22), 0, dp(6));
         root.addView(menu);
 
         Button pdv = action("🛒  PDV / Frente de Caixa");
-        pdv.setOnClickListener(v -> Toast.makeText(this, "PDV será a próxima etapa após Produtos + Estoque.", Toast.LENGTH_SHORT).show());
+        pdv.setOnClickListener(v -> startActivity(new Intent(this, PdvActivity.class)));
         root.addView(pdv);
 
         Button prod = action("📦  Produtos");
@@ -111,7 +118,7 @@ public class GestaoActivity extends Activity {
         root.addView(est);
 
         Button financeiro = action("💰  Financeiro");
-        financeiro.setOnClickListener(v -> Toast.makeText(this, "Financeiro em construção.", Toast.LENGTH_SHORT).show());
+        financeiro.setOnClickListener(v -> Toast.makeText(this, "Financeiro detalhado em construção.", Toast.LENGTH_SHORT).show());
         root.addView(financeiro);
 
         Button clientes = action("👤  Clientes");
@@ -131,7 +138,7 @@ public class GestaoActivity extends Activity {
         root.addView(smb);
 
         TextView next = text(
-                "Já funcional nesta versão: cadastro de Produtos e resumo de Estoque com custo, venda, lucro unitário, margem e lucro potencial.",
+                "Já funcional: Produtos, Estoque e PDV com baixa automática no estoque e cálculo do lucro da venda.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);

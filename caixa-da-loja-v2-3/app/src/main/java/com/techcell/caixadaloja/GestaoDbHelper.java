@@ -7,11 +7,12 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     public static class Produto {
         public long id;
@@ -29,22 +30,44 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double estoqueMinimo;
 
         public double lucroUnitario() { return precoVenda - custo; }
-
-        // Percentual de lucro usado no Gestão Tech Cell:
-        // lucro dividido pelo custo da mercadoria.
-        // Ex.: custo 1, venda 10 => lucro 9 => 900%.
         public double lucroPercentualSobreCusto() {
             return custo > 0 ? ((precoVenda - custo) / custo) * 100.0 : 0.0;
         }
-
-        // Mantido apenas como indicador financeiro separado.
-        public double margemSobreVenda() {
-            return precoVenda > 0 ? ((precoVenda - custo) / precoVenda) * 100.0 : 0.0;
-        }
-
         public double valorEstoqueCusto() { return custo * estoque; }
         public double valorEstoqueVenda() { return precoVenda * estoque; }
         public double lucroPotencial() { return (precoVenda - custo) * estoque; }
+        public boolean ehServico() {
+            return unidade != null && unidade.trim().equalsIgnoreCase("SERVIÇO");
+        }
+    }
+
+    public static class VendaItem {
+        public Produto produto;
+        public double quantidade;
+        public double precoUnitario;
+
+        public double total() { return precoUnitario * quantidade; }
+        public double custoTotal() { return produto.custo * quantidade; }
+        public double lucro() { return total() - custoTotal(); }
+    }
+
+    public static class Pagamento {
+        public String forma = "";
+        public double dinheiro;
+        public double pix;
+        public double cartao;
+        public double recebido;
+        public double troco;
+    }
+
+    public static class ResumoVendas {
+        public int quantidadeVendas;
+        public double total;
+        public double custo;
+        public double lucro;
+        public double dinheiro;
+        public double pix;
+        public double cartao;
     }
 
     public GestaoDbHelper(Context context) {
@@ -52,7 +75,16 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     }
 
     @Override public void onCreate(SQLiteDatabase db) {
-        db.execSQL("CREATE TABLE produtos (" +
+        criarProdutos(db);
+        criarVendas(db);
+    }
+
+    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if (oldVersion < 2) criarVendas(db);
+    }
+
+    private void criarProdutos(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS produtos (" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT," +
                 "codigo TEXT," +
                 "nome TEXT NOT NULL," +
@@ -69,12 +101,45 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
-        db.execSQL("CREATE INDEX idx_produtos_nome ON produtos(nome)");
-        db.execSQL("CREATE INDEX idx_produtos_codigo ON produtos(codigo)");
-        db.execSQL("CREATE INDEX idx_produtos_barras ON produtos(codigo_barras)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_produtos_nome ON produtos(nome)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_produtos_codigo ON produtos(codigo)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_produtos_barras ON produtos(codigo_barras)");
     }
 
-    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {}
+    private void criarVendas(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS vendas (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "data_millis INTEGER NOT NULL," +
+                "total REAL NOT NULL," +
+                "custo_total REAL NOT NULL," +
+                "lucro_bruto REAL NOT NULL," +
+                "forma_pagamento TEXT NOT NULL," +
+                "dinheiro REAL NOT NULL DEFAULT 0," +
+                "pix REAL NOT NULL DEFAULT 0," +
+                "cartao REAL NOT NULL DEFAULT 0," +
+                "recebido REAL NOT NULL DEFAULT 0," +
+                "troco REAL NOT NULL DEFAULT 0" +
+                ")");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_vendas_data ON vendas(data_millis)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS venda_itens (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "venda_id INTEGER NOT NULL," +
+                "produto_id INTEGER NOT NULL," +
+                "codigo TEXT," +
+                "nome TEXT NOT NULL," +
+                "unidade TEXT," +
+                "quantidade REAL NOT NULL," +
+                "preco_unitario REAL NOT NULL," +
+                "custo_unitario REAL NOT NULL," +
+                "total REAL NOT NULL," +
+                "custo_total REAL NOT NULL," +
+                "lucro REAL NOT NULL," +
+                "FOREIGN KEY(venda_id) REFERENCES vendas(id)" +
+                ")");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_venda_itens_venda ON venda_itens(venda_id)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_venda_itens_produto ON venda_itens(produto_id)");
+    }
 
     private ContentValues values(Produto p) {
         ContentValues v = new ContentValues();
@@ -132,7 +197,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             String like = "%" + q + "%";
             c = getReadableDatabase().rawQuery(
                     "SELECT * FROM produtos WHERE nome LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ? " +
-                            "ORDER BY nome COLLATE NOCASE",
+                            "ORDER BY nome COLLATE NOCASE LIMIT 50",
                     new String[]{like, like, like});
         }
         try {
@@ -145,6 +210,125 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM produtos", null);
         try { return c.moveToFirst() ? c.getInt(0) : 0; }
         finally { c.close(); }
+    }
+
+    public long finalizarVenda(List<VendaItem> itens, Pagamento pagamento) {
+        if (itens == null || itens.isEmpty()) throw new IllegalArgumentException("Venda sem itens.");
+
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            double total = 0;
+            double custoTotal = 0;
+
+            for (VendaItem item : itens) {
+                if (item == null || item.produto == null || item.quantidade <= 0) {
+                    throw new IllegalArgumentException("Item de venda inválido.");
+                }
+
+                Produto atual = getProdutoNaTransacao(db, item.produto.id);
+                if (atual == null) throw new IllegalStateException("Produto não encontrado: " + item.produto.nome);
+
+                if (!atual.ehServico() && atual.estoque + 0.000001 < item.quantidade) {
+                    throw new IllegalStateException("Estoque insuficiente para " + atual.nome +
+                            ". Disponível: " + atual.estoque);
+                }
+
+                item.produto = atual;
+                total += item.total();
+                custoTotal += item.custoTotal();
+            }
+
+            double somaPagamentos = pagamento.dinheiro + pagamento.pix + pagamento.cartao;
+            if (Math.abs(somaPagamentos - total) > 0.011) {
+                throw new IllegalArgumentException("Os pagamentos não conferem com o total da venda.");
+            }
+
+            ContentValues venda = new ContentValues();
+            venda.put("data_millis", System.currentTimeMillis());
+            venda.put("total", total);
+            venda.put("custo_total", custoTotal);
+            venda.put("lucro_bruto", total - custoTotal);
+            venda.put("forma_pagamento", pagamento.forma);
+            venda.put("dinheiro", pagamento.dinheiro);
+            venda.put("pix", pagamento.pix);
+            venda.put("cartao", pagamento.cartao);
+            venda.put("recebido", pagamento.recebido);
+            venda.put("troco", pagamento.troco);
+
+            long vendaId = db.insertOrThrow("vendas", null, venda);
+
+            for (VendaItem item : itens) {
+                Produto p = item.produto;
+
+                ContentValues vi = new ContentValues();
+                vi.put("venda_id", vendaId);
+                vi.put("produto_id", p.id);
+                vi.put("codigo", p.codigo);
+                vi.put("nome", p.nome);
+                vi.put("unidade", p.unidade);
+                vi.put("quantidade", item.quantidade);
+                vi.put("preco_unitario", item.precoUnitario);
+                vi.put("custo_unitario", p.custo);
+                vi.put("total", item.total());
+                vi.put("custo_total", item.custoTotal());
+                vi.put("lucro", item.lucro());
+                db.insertOrThrow("venda_itens", null, vi);
+
+                if (!p.ehServico()) {
+                    ContentValues est = new ContentValues();
+                    est.put("estoque", p.estoque - item.quantidade);
+                    est.put("updated_at", System.currentTimeMillis());
+                    db.update("produtos", est, "id=?", new String[]{String.valueOf(p.id)});
+                }
+            }
+
+            db.setTransactionSuccessful();
+            return vendaId;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    public ResumoVendas resumoHoje() {
+        Calendar c = Calendar.getInstance();
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        long inicio = c.getTimeInMillis();
+        c.add(Calendar.DAY_OF_MONTH, 1);
+        long fim = c.getTimeInMillis();
+        return resumoPeriodo(inicio, fim);
+    }
+
+    public ResumoVendas resumoPeriodo(long inicio, long fim) {
+        ResumoVendas r = new ResumoVendas();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(custo_total),0), " +
+                        "COALESCE(SUM(lucro_bruto),0), COALESCE(SUM(dinheiro),0), " +
+                        "COALESCE(SUM(pix),0), COALESCE(SUM(cartao),0) " +
+                        "FROM vendas WHERE data_millis>=? AND data_millis<?",
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            if (c.moveToFirst()) {
+                r.quantidadeVendas = c.getInt(0);
+                r.total = c.getDouble(1);
+                r.custo = c.getDouble(2);
+                r.lucro = c.getDouble(3);
+                r.dinheiro = c.getDouble(4);
+                r.pix = c.getDouble(5);
+                r.cartao = c.getDouble(6);
+            }
+        } finally { c.close(); }
+        return r;
+    }
+
+    private Produto getProdutoNaTransacao(SQLiteDatabase db, long id) {
+        Cursor c = db.rawQuery("SELECT * FROM produtos WHERE id=?", new String[]{String.valueOf(id)});
+        try {
+            return c.moveToFirst() ? fromCursor(c) : null;
+        } finally { c.close(); }
     }
 
     private Produto fromCursor(Cursor c) {
