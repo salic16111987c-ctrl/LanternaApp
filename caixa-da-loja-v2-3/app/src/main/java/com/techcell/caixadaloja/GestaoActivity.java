@@ -1,6 +1,7 @@
 package com.techcell.caixadaloja;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -34,13 +35,21 @@ public class GestaoActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(0, dp(5), 0, dp(5));
         b.setLayoutParams(lp);
-        b.setOnClickListener(v -> Toast.makeText(
-                this, "Módulo em construção. Nenhum dado foi alterado.", Toast.LENGTH_SHORT).show());
         return b;
     }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        render();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (getWindow()!=null && getWindow().getDecorView()!=null) render();
+    }
+
+    private void render() {
+        GestaoDbHelper db = new GestaoDbHelper(this);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#F3F5F9"));
@@ -65,7 +74,8 @@ public class GestaoActivity extends Activity {
 
         TextView safe = text(
                 "MÓDULO SEPARADO DO CAIXA DA LOJA\n" +
-                "O histórico SMB ainda não foi importado. Esta versão é apenas a estrutura inicial.",
+                "Produtos cadastrados nesta versão: " + db.count() +
+                "\nO banco SMB ainda NÃO foi importado.",
                 13, true);
         safe.setTextColor(Color.parseColor("#176240"));
         safe.setBackgroundColor(Color.parseColor("#ECFDF3"));
@@ -88,17 +98,40 @@ public class GestaoActivity extends Activity {
         menu.setPadding(0, dp(22), 0, dp(6));
         root.addView(menu);
 
-        root.addView(action("🛒  PDV / Frente de Caixa"));
-        root.addView(action("📦  Produtos"));
-        root.addView(action("🧮  Estoque"));
-        root.addView(action("💰  Financeiro"));
-        root.addView(action("👤  Clientes"));
-        root.addView(action("🚚  Fornecedores"));
-        root.addView(action("📊  Relatórios"));
-        root.addView(action("🗃️  Importação do SMB"));
+        Button pdv = action("🛒  PDV / Frente de Caixa");
+        pdv.setOnClickListener(v -> Toast.makeText(this, "PDV será a próxima etapa após Produtos + Estoque.", Toast.LENGTH_SHORT).show());
+        root.addView(pdv);
+
+        Button prod = action("📦  Produtos");
+        prod.setOnClickListener(v -> startActivity(new Intent(this, ProdutosActivity.class)));
+        root.addView(prod);
+
+        Button est = action("🧮  Estoque");
+        est.setOnClickListener(v -> startActivity(new Intent(this, EstoqueActivity.class)));
+        root.addView(est);
+
+        Button financeiro = action("💰  Financeiro");
+        financeiro.setOnClickListener(v -> Toast.makeText(this, "Financeiro em construção.", Toast.LENGTH_SHORT).show());
+        root.addView(financeiro);
+
+        Button clientes = action("👤  Clientes");
+        clientes.setOnClickListener(v -> Toast.makeText(this, "Clientes em construção.", Toast.LENGTH_SHORT).show());
+        root.addView(clientes);
+
+        Button fornecedores = action("🚚  Fornecedores");
+        fornecedores.setOnClickListener(v -> Toast.makeText(this, "Fornecedores em construção.", Toast.LENGTH_SHORT).show());
+        root.addView(fornecedores);
+
+        Button rel = action("📊  Relatórios");
+        rel.setOnClickListener(v -> Toast.makeText(this, "Relatórios em construção.", Toast.LENGTH_SHORT).show());
+        root.addView(rel);
+
+        Button smb = action("🗃️  Importação do SMB");
+        smb.setOnClickListener(v -> Toast.makeText(this, "Importação bloqueada até conferirmos os registros do SMB.", Toast.LENGTH_LONG).show());
+        root.addView(smb);
 
         TextView next = text(
-                "Próxima etapa: estruturar Produtos + Estoque e preparar a importação segura do banco SMB.",
+                "Já funcional nesta versão: cadastro de Produtos e resumo de Estoque com custo, venda, lucro unitário, margem e lucro potencial.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);
