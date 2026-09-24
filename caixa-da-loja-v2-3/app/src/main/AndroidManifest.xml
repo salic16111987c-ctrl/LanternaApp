@@ -21,14 +21,9 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name="com.techcell.caixadaloja.MainActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
-            android:name="com.techcell.caixadaloja.GestaoActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.MainActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.GestaoActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.ProdutosActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.EstoqueActivity" android:exported="false" android:screenOrientation="portrait" />
     </application>
 </manifest>
