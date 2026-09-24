@@ -46,12 +46,12 @@ jobs:
         working-directory: caixa-da-loja-v2-3
         run: |
           mkdir -p build-output
-          cp app/build/outputs/apk/release/app-release-unsigned.apk build-output/Tech-Cell-ACS-v3.0.0-alpha3-unsigned.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk build-output/Tech-Cell-ACS-v3.0.0-alpha4-unsigned.apk
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" build-output/apksigner.jar
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Tech-Cell-ACS-v3.0.0-alpha3-build
+          name: Tech-Cell-ACS-v3.0.0-alpha4-build
           path: caixa-da-loja-v2-3/build-output/
           retention-days: 7

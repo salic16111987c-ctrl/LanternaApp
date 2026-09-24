@@ -29,9 +29,19 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double estoqueMinimo;
 
         public double lucroUnitario() { return precoVenda - custo; }
+
+        // Percentual de lucro usado no Gestão Tech Cell:
+        // lucro dividido pelo custo da mercadoria.
+        // Ex.: custo 1, venda 10 => lucro 9 => 900%.
+        public double lucroPercentualSobreCusto() {
+            return custo > 0 ? ((precoVenda - custo) / custo) * 100.0 : 0.0;
+        }
+
+        // Mantido apenas como indicador financeiro separado.
         public double margemSobreVenda() {
             return precoVenda > 0 ? ((precoVenda - custo) / precoVenda) * 100.0 : 0.0;
         }
+
         public double valorEstoqueCusto() { return custo * estoque; }
         public double valorEstoqueVenda() { return precoVenda * estoque; }
         public double lucroPotencial() { return (precoVenda - custo) * estoque; }

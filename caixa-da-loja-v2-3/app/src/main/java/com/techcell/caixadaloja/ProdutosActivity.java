@@ -162,7 +162,8 @@ public class ProdutosActivity extends Activity {
                     "Custo: " + moeda.format(p.custo) +
                     "   Venda: " + moeda.format(p.precoVenda) +
                     "\nLucro/un.: " + moeda.format(p.lucroUnitario()) +
-                    "   Margem: " + String.format(new Locale("pt","BR"),"%.1f%%", p.margemSobreVenda()) +
+                    "   Lucro %: " + fmtPct(p.lucroPercentualSobreCusto()) +
+                    "\nMargem sobre venda: " + fmtPct(p.margemSobreVenda()) +
                     "\nEstoque: " + fmtQtd(p.estoque) + " " + un,
                     14, false);
             linha.setTextColor(Color.parseColor("#344054"));
@@ -179,6 +180,10 @@ public class ProdutosActivity extends Activity {
             card.setOnClickListener(v -> abrirFormulario(p));
             lista.addView(card);
         }
+    }
+
+    private String fmtPct(double v) {
+        return String.format(new Locale("pt","BR"), "%.1f%%", v);
     }
 
     private String unidadeExibicao(String unidade) {
@@ -305,7 +310,11 @@ public class ProdutosActivity extends Activity {
         EditText prazo = field("Opcional", decimal);
         box.addView(prazo);
 
-        TextView lucroPreview = txt("Lucro por unidade: R$ 0,00\nMargem sobre a venda: 0,0%", 14, true);
+        TextView lucroPreview = txt(
+                "Lucro por unidade: R$ 0,00\n" +
+                "Lucro % sobre custo: 0,0%\n" +
+                "Margem sobre venda: 0,0%",
+                14, true);
         lucroPreview.setTextColor(Color.parseColor("#176240"));
         lucroPreview.setBackgroundColor(Color.parseColor("#ECFDF3"));
         lucroPreview.setPadding(dp(12), dp(10), dp(12), dp(10));
@@ -314,6 +323,14 @@ public class ProdutosActivity extends Activity {
         lpPreview.setMargins(0, dp(10), 0, dp(2));
         lucroPreview.setLayoutParams(lpPreview);
         box.addView(lucroPreview);
+
+        TextView explicacao = txt(
+                "Lucro % = (preço de venda − custo) ÷ custo × 100. " +
+                "Ex.: custo R$ 1 e venda R$ 10 = lucro de 900%.",
+                12, false);
+        explicacao.setTextColor(Color.parseColor("#667085"));
+        explicacao.setPadding(0, dp(5), 0, dp(2));
+        box.addView(explicacao);
 
         box.addView(section("ESTOQUE"));
 
@@ -359,11 +376,16 @@ public class ProdutosActivity extends Activity {
             double v = num(venda.getText().toString());
             if (Double.isNaN(c)) c = 0;
             if (Double.isNaN(v)) v = 0;
+
             double lucro = v - c;
-            double margem = v > 0 ? (lucro / v) * 100.0 : 0;
-            lucroPreview.setText("Lucro por unidade: " + moeda.format(lucro) +
-                    "\nMargem sobre a venda: " +
-                    String.format(new Locale("pt","BR"), "%.1f%%", margem));
+            double lucroPct = c > 0 ? (lucro / c) * 100.0 : 0.0;
+            double margemVenda = v > 0 ? (lucro / v) * 100.0 : 0.0;
+
+            lucroPreview.setText(
+                    "Lucro por unidade: " + moeda.format(lucro) +
+                    "\nLucro % sobre custo: " + fmtPct(lucroPct) +
+                    "\nMargem sobre venda: " + fmtPct(margemVenda));
+
             lucroPreview.setTextColor(lucro < 0 ? Color.parseColor("#B42318") : Color.parseColor("#176240"));
             lucroPreview.setBackgroundColor(Color.parseColor(lucro < 0 ? "#FEF3F2" : "#ECFDF3"));
         };
