@@ -1,6 +1,7 @@
 package com.techcell.caixadaloja;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -106,7 +107,23 @@ public class GestaoActivity extends Activity {
         root.addView(menu);
 
         Button pdv = action("🛒  PDV / Frente de Caixa  •  TESTAR");
-        pdv.setOnClickListener(v -> startActivity(new Intent(this, PdvActivity.class)));
+        pdv.setOnClickListener(v -> {
+            Toast.makeText(this, "Abrindo PDV...", Toast.LENGTH_SHORT).show();
+            try {
+                Intent intent = new Intent(this, PdvActivity.class);
+                startActivity(intent);
+            } catch (Throwable e) {
+                String detalhe = e.getClass().getSimpleName();
+                if (e.getMessage() != null && !e.getMessage().trim().isEmpty()) {
+                    detalhe += "\n" + e.getMessage();
+                }
+                new AlertDialog.Builder(this)
+                        .setTitle("Não foi possível abrir o PDV")
+                        .setMessage(detalhe)
+                        .setPositiveButton("OK", null)
+                        .show();
+            }
+        });
         root.addView(pdv);
 
         Button prod = action("📦  Produtos");
