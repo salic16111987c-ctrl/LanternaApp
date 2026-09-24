@@ -53,8 +53,33 @@ public class GestaoActivity extends Activity {
         render();
     }
 
+    private void carregarProdutosTesteSeVazio(GestaoDbHelper db) {
+        if (db.count() > 0) return;
+
+        GestaoDbHelper.Produto p1 = new GestaoDbHelper.Produto();
+        p1.codigo="T001"; p1.nome="Cabo USB-C 1 m"; p1.unidade="UN";
+        p1.custo=10.0; p1.precoVenda=20.0; p1.estoque=20; p1.estoqueMinimo=3; db.save(p1);
+
+        GestaoDbHelper.Produto p2 = new GestaoDbHelper.Produto();
+        p2.codigo="T002"; p2.nome="Película 3D"; p2.unidade="UN";
+        p2.custo=3.0; p2.precoVenda=15.0; p2.estoque=30; p2.estoqueMinimo=5; db.save(p2);
+
+        GestaoDbHelper.Produto p3 = new GestaoDbHelper.Produto();
+        p3.codigo="T003"; p3.nome="Carregador 20 W"; p3.unidade="UN";
+        p3.custo=35.0; p3.precoVenda=59.90; p3.estoque=10; p3.estoqueMinimo=2; db.save(p3);
+
+        GestaoDbHelper.Produto p4 = new GestaoDbHelper.Produto();
+        p4.codigo="T004"; p4.nome="Fone Bluetooth"; p4.unidade="UN";
+        p4.custo=45.0; p4.precoVenda=79.90; p4.estoque=8; p4.estoqueMinimo=2; db.save(p4);
+
+        GestaoDbHelper.Produto p5 = new GestaoDbHelper.Produto();
+        p5.codigo="S001"; p5.nome="Serviço - Aplicação de película"; p5.unidade="SERVIÇO";
+        p5.custo=0.0; p5.precoVenda=10.0; p5.estoque=0; p5.estoqueMinimo=0; db.save(p5);
+    }
+
     private void render() {
         GestaoDbHelper db = new GestaoDbHelper(this);
+        carregarProdutosTesteSeVazio(db);
         GestaoDbHelper.ResumoVendas hoje = db.resumoHoje();
 
         ScrollView scroll = new ScrollView(this);
@@ -74,14 +99,14 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("Sistema completo da loja • Alpha 8", 14, false);
+        TextView sub = text("PDV de teste separado • Alpha 8", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         TextView safe = text(
-                "MÓDULO SEPARADO DO CAIXA DA LOJA\n" +
-                "Produtos cadastrados: " + db.count() +
-                "\nO banco SMB ainda NÃO foi importado.",
+                "ALPHA 8 • PDV DE TESTE SEPARADO\n" +
+                "Produtos de teste cadastrados: " + db.count() +
+                "\nA instalação que contém seus produtos reais permanece intacta.",
                 13, true);
         safe.setTextColor(Color.parseColor("#176240"));
         safe.setBackgroundColor(Color.parseColor("#ECFDF3"));
