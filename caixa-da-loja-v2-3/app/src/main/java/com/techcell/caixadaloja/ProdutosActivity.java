@@ -163,7 +163,6 @@ public class ProdutosActivity extends Activity {
                     "   Venda: " + moeda.format(p.precoVenda) +
                     "\nLucro/un.: " + moeda.format(p.lucroUnitario()) +
                     "   Lucro %: " + fmtPct(p.lucroPercentualSobreCusto()) +
-                    "\nMargem sobre venda: " + fmtPct(p.margemSobreVenda()) +
                     "\nEstoque: " + fmtQtd(p.estoque) + " " + un,
                     14, false);
             linha.setTextColor(Color.parseColor("#344054"));
@@ -312,8 +311,7 @@ public class ProdutosActivity extends Activity {
 
         TextView lucroPreview = txt(
                 "Lucro por unidade: R$ 0,00\n" +
-                "Lucro % sobre custo: 0,0%\n" +
-                "Margem sobre venda: 0,0%",
+                "Lucro % sobre custo: 0,0%",
                 14, true);
         lucroPreview.setTextColor(Color.parseColor("#176240"));
         lucroPreview.setBackgroundColor(Color.parseColor("#ECFDF3"));
@@ -379,12 +377,10 @@ public class ProdutosActivity extends Activity {
 
             double lucro = v - c;
             double lucroPct = c > 0 ? (lucro / c) * 100.0 : 0.0;
-            double margemVenda = v > 0 ? (lucro / v) * 100.0 : 0.0;
 
             lucroPreview.setText(
                     "Lucro por unidade: " + moeda.format(lucro) +
-                    "\nLucro % sobre custo: " + fmtPct(lucroPct) +
-                    "\nMargem sobre venda: " + fmtPct(margemVenda));
+                    "\nLucro % sobre custo: " + fmtPct(lucroPct));
 
             lucroPreview.setTextColor(lucro < 0 ? Color.parseColor("#B42318") : Color.parseColor("#176240"));
             lucroPreview.setBackgroundColor(Color.parseColor(lucro < 0 ? "#FEF3F2" : "#ECFDF3"));
