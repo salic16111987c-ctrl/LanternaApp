@@ -7,11 +7,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.techcell.techcellacs.gestao.alpha8teste"
+        applicationId = "com.techcell.techcellacs.gestao.pdvpreview"
         minSdk = 24
         targetSdk = 35
-        versionCode = 90
-        versionName = "3.0.0-alpha9-pdvteste"
+        versionCode = 100
+        versionName = "3.0.0-alpha10-pdvpreview"
     }
 
     buildTypes {

@@ -17,7 +17,6 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.GridLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -37,68 +36,143 @@ public class PdvActivity extends Activity {
     private EditText busca;
     private LinearLayout resultados;
     private LinearLayout itensCarrinho;
-    private TextView resumo;
     private TextView statusCarrinho;
+    private TextView subtotalValor;
+    private TextView descontoValor;
+    private TextView totalValor;
     private Button finalizar;
+    private Button removerDesconto;
 
     private boolean descontoPercentual = false;
     private double descontoEntrada = 0;
 
-    private final int NAVY = Color.parseColor("#101828");
-    private final int BLUE = Color.parseColor("#175CD3");
-    private final int GREEN = Color.parseColor("#067647");
-    private final int RED = Color.parseColor("#B42318");
-    private final int ORANGE = Color.parseColor("#B54708");
-    private final int BG = Color.parseColor("#F2F4F7");
-    private final int BORDER = Color.parseColor("#D0D5DD");
+    private final int NAVY = Color.parseColor("#0B1F3A");
+    private final int NAVY_2 = Color.parseColor("#123A68");
+    private final int BLUE = Color.parseColor("#1769C2");
+    private final int GREEN = Color.parseColor("#07884B");
+    private final int RED = Color.parseColor("#D92D20");
+    private final int ORANGE = Color.parseColor("#F97316");
+    private final int BG = Color.parseColor("#F5F7FB");
+    private final int TEXT = Color.parseColor("#182230");
     private final int MUTED = Color.parseColor("#667085");
+    private final int BORDER = Color.parseColor("#DCE2EA");
+    private final int PALE_BLUE = Color.parseColor("#EFF6FF");
+    private final int PALE_GREEN = Color.parseColor("#EAF8F0");
+    private final int PALE_RED = Color.parseColor("#FFF1F0");
 
-    private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
+    private int dp(int v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
 
-    private GradientDrawable bg(int color, int radius) {
+    private GradientDrawable solid(int color, int radius) {
         GradientDrawable d = new GradientDrawable();
         d.setColor(color);
         d.setCornerRadius(dp(radius));
         return d;
     }
 
-    private GradientDrawable cardBg() {
-        GradientDrawable d = bg(Color.WHITE, 12);
-        d.setStroke(dp(1), Color.parseColor("#E4E7EC"));
+    private GradientDrawable bordered(int color, int radius, int strokeColor) {
+        GradientDrawable d = solid(color, radius);
+        d.setStroke(dp(1), strokeColor);
         return d;
     }
 
-    private TextView txt(String s, int size, boolean bold) {
+    private GradientDrawable headerBg() {
+        GradientDrawable d = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{NAVY_2, NAVY});
+        d.setCornerRadii(new float[]{
+                0,0,0,0,
+                dp(22),dp(22),dp(22),dp(22)
+        });
+        return d;
+    }
+
+    private GradientDrawable circle(int color) {
+        GradientDrawable d = new GradientDrawable();
+        d.setShape(GradientDrawable.OVAL);
+        d.setColor(color);
+        return d;
+    }
+
+    private TextView txt(String value, int sp, boolean bold) {
         TextView t = new TextView(this);
-        t.setText(s);
-        t.setTextSize(size);
-        t.setTextColor(NAVY);
+        t.setText(value);
+        t.setTextSize(sp);
+        t.setTextColor(TEXT);
         if (bold) t.setTypeface(null, Typeface.BOLD);
         return t;
     }
 
-    private Button action(String label, int color) {
+    private TextView iconCircle(String icon, int bgColor, int textColor, int size) {
+        TextView v = txt(icon, 18, true);
+        v.setTextColor(textColor);
+        v.setGravity(Gravity.CENTER);
+        v.setBackground(circle(bgColor));
+        v.setLayoutParams(new LinearLayout.LayoutParams(dp(size), dp(size)));
+        return v;
+    }
+
+    private Button filledButton(String label, int color) {
         Button b = new Button(this);
         b.setText(label);
-        b.setTextColor(Color.WHITE);
         b.setTextSize(14);
+        b.setTextColor(Color.WHITE);
         b.setTypeface(null, Typeface.BOLD);
         b.setAllCaps(false);
-        b.setBackground(bg(color, 10));
-        b.setPadding(dp(8), dp(10), dp(8), dp(10));
+        b.setBackground(solid(color, 12));
+        b.setPadding(dp(10), dp(8), dp(10), dp(8));
+        b.setMinHeight(0);
+        b.setMinWidth(0);
+        b.setElevation(dp(1));
         return b;
     }
 
-    private Button lightAction(String label) {
+    private Button outlineButton(String label, int textColor) {
         Button b = new Button(this);
         b.setText(label);
-        b.setTextColor(NAVY);
         b.setTextSize(13);
+        b.setTextColor(textColor);
         b.setAllCaps(false);
-        GradientDrawable d = bg(Color.WHITE, 8);
-        d.setStroke(dp(1), BORDER);
-        b.setBackground(d);
+        b.setBackground(bordered(Color.WHITE, 10, BORDER));
+        b.setPadding(dp(8), dp(8), dp(8), dp(8));
+        b.setMinHeight(0);
+        b.setMinWidth(0);
         return b;
+    }
+
+    private LinearLayout card() {
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        v.setBackground(bordered(Color.WHITE, 16, BORDER));
+        v.setPadding(dp(14), dp(14), dp(14), dp(14));
+        v.setElevation(dp(1));
+        return v;
+    }
+
+    private LinearLayout.LayoutParams cardParams(int top) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.setMargins(0, dp(top), 0, 0);
+        return p;
+    }
+
+    private LinearLayout sectionTitle(String icon, String title) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(2), dp(18), 0, dp(7));
+
+        TextView i = txt(icon, 21, true);
+        i.setTextColor(NAVY);
+        row.addView(i);
+
+        TextView t = txt(title, 15, true);
+        t.setTextColor(NAVY);
+        t.setPadding(dp(8), 0, 0, 0);
+        row.addView(t);
+        return row;
     }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -112,17 +186,19 @@ public class PdvActivity extends Activity {
         }
     }
 
+    @Override public void onBackPressed() {
+        tentarSair();
+    }
+
     private void mostrarFalhaInicial(Throwable e) {
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(BG);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(24), dp(18), dp(30));
-        scroll.addView(root);
+        root.setPadding(dp(20), dp(28), dp(20), dp(28));
+        root.setBackgroundColor(BG);
 
         root.addView(txt("PDV / Frente de Caixa", 26, true));
 
-        TextView aviso = txt("O PDV encontrou um erro ao iniciar, mas o aplicativo permaneceu aberto.", 16, true);
+        TextView aviso = txt("O PDV encontrou um erro ao iniciar.", 16, true);
         aviso.setTextColor(RED);
         aviso.setPadding(0, dp(16), 0, dp(10));
         root.addView(aviso);
@@ -133,178 +209,327 @@ public class PdvActivity extends Activity {
         }
 
         TextView erro = txt(detalhe, 13, false);
-        erro.setTextColor(Color.parseColor("#475467"));
-        erro.setBackground(cardBg());
-        erro.setPadding(dp(12), dp(12), dp(12), dp(12));
+        erro.setBackground(bordered(Color.WHITE, 12, BORDER));
+        erro.setPadding(dp(14), dp(14), dp(14), dp(14));
         root.addView(erro);
 
-        Button voltar = lightAction("Voltar");
+        Button voltar = outlineButton("Voltar", NAVY);
+        LinearLayout.LayoutParams bp = cardParams(14);
+        bp.height = dp(48);
+        voltar.setLayoutParams(bp);
         voltar.setOnClickListener(v -> finish());
         root.addView(voltar);
 
-        setContentView(scroll);
+        setContentView(root);
     }
 
     private void montarTela() {
-        getWindow().setStatusBarColor(Color.parseColor("#0B1220"));
+        getWindow().setStatusBarColor(NAVY);
+        getWindow().setNavigationBarColor(Color.WHITE);
+
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setBackgroundColor(BG);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
-        scroll.setBackgroundColor(BG);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
+        screen.addView(scroll, sp);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(12), 0, dp(12), dp(28));
+        root.setPadding(dp(14), 0, dp(14), dp(24));
         scroll.addView(root);
 
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.setBackground(bg(NAVY, 0));
-        header.setPadding(dp(16), dp(18), dp(16), dp(18));
-        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        hp.setMargins(-dp(12), 0, -dp(12), dp(12));
-        header.setLayoutParams(hp);
+        montarCabecalho(root);
+        montarBusca(root);
+        montarItens(root);
+        montarFerramentas(root);
+        montarResumo(root);
 
-        LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setOrientation(LinearLayout.VERTICAL);
+        bottom.setPadding(dp(14), dp(10), dp(14), dp(12));
+        bottom.setBackground(bordered(Color.WHITE, 0, BORDER));
+        bottom.setElevation(dp(8));
 
-        Button voltar = action("←", Color.parseColor("#344054"));
-        voltar.setMinWidth(dp(54));
-        voltar.setOnClickListener(v -> tentarSair());
-        top.addView(voltar, new LinearLayout.LayoutParams(dp(58), dp(48)));
-
-        LinearLayout titleBox = new LinearLayout(this);
-        titleBox.setOrientation(LinearLayout.VERTICAL);
-        titleBox.setPadding(dp(12), 0, 0, 0);
-        TextView title = txt("TECH CELL • PDV", 24, true);
-        title.setTextColor(Color.WHITE);
-        titleBox.addView(title);
-        TextView sub = txt("Frente de Caixa • Alpha 9", 12, false);
-        sub.setTextColor(Color.parseColor("#D0D5DD"));
-        titleBox.addView(sub);
-        top.addView(titleBox, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        header.addView(top);
-
-        statusCarrinho = txt("", 13, true);
-        statusCarrinho.setTextColor(Color.parseColor("#EAECF0"));
-        statusCarrinho.setPadding(0, dp(12), 0, 0);
-        header.addView(statusCarrinho);
-        root.addView(header);
-
-        LinearLayout buscaCard = new LinearLayout(this);
-        buscaCard.setOrientation(LinearLayout.VERTICAL);
-        buscaCard.setBackground(cardBg());
-        buscaCard.setPadding(dp(12), dp(12), dp(12), dp(12));
-        root.addView(buscaCard);
-
-        TextView buscaLabel = txt("LOCALIZAR PRODUTO", 12, true);
-        buscaLabel.setTextColor(BLUE);
-        buscaCard.addView(buscaLabel);
-
-        busca = new EditText(this);
-        busca.setHint("Nome, código ou código de barras");
-        busca.setTextSize(18);
-        busca.setSingleLine(true);
-        busca.setImeOptions(EditorInfo.IME_ACTION_DONE);
-        busca.setInputType(InputType.TYPE_CLASS_TEXT);
-        buscaCard.addView(busca);
-
-        resultados = new LinearLayout(this);
-        resultados.setOrientation(LinearLayout.VERTICAL);
-        buscaCard.addView(resultados);
-
-        TextView carrinhoTitle = txt("ITENS DA VENDA", 14, true);
-        carrinhoTitle.setTextColor(Color.parseColor("#344054"));
-        carrinhoTitle.setPadding(dp(2), dp(16), 0, dp(5));
-        root.addView(carrinhoTitle);
-
-        itensCarrinho = new LinearLayout(this);
-        itensCarrinho.setOrientation(LinearLayout.VERTICAL);
-        root.addView(itensCarrinho);
-
-        TextView ferramentasTitle = txt("FERRAMENTAS DO CAIXA", 14, true);
-        ferramentasTitle.setTextColor(Color.parseColor("#344054"));
-        ferramentasTitle.setPadding(dp(2), dp(16), 0, dp(6));
-        root.addView(ferramentasTitle);
-
-        GridLayout tools = new GridLayout(this);
-        tools.setColumnCount(2);
-        tools.setUseDefaultMargins(false);
-
-        Button desconto = action("🏷  Desconto", ORANGE);
-        desconto.setOnClickListener(v -> abrirDesconto());
-        addGridButton(tools, desconto, 0);
-
-        Button cancelar = action("✕  Cancelar venda", RED);
-        cancelar.setOnClickListener(v -> cancelarVenda());
-        addGridButton(tools, cancelar, 1);
-
-        Button limparDesc = lightAction("Remover desconto");
-        limparDesc.setOnClickListener(v -> {
-            descontoEntrada = 0;
-            descontoPercentual = false;
-            atualizarCarrinho();
-        });
-        addGridButton(tools, limparDesc, 0);
-
-        Button focarBusca = lightAction("⌨ Buscar produto");
-        focarBusca.setOnClickListener(v -> abrirBuscaProduto());
-        addGridButton(tools, focarBusca, 1);
-
-        root.addView(tools);
-
-        resumo = txt("", 16, false);
-        resumo.setBackground(cardBg());
-        resumo.setPadding(dp(16), dp(14), dp(16), dp(14));
-        LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rp.setMargins(0, dp(14), 0, dp(10));
-        resumo.setLayoutParams(rp);
-        root.addView(resumo);
-
-        finalizar = action("FINALIZAR VENDA  →", GREEN);
+        finalizar = filledButton("▣   FINALIZAR VENDA   →", GREEN);
         finalizar.setTextSize(18);
         finalizar.setMinHeight(dp(58));
         finalizar.setOnClickListener(v -> abrirPagamento());
-        root.addView(finalizar);
+        bottom.addView(finalizar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(58)));
 
-        TextView rodape = txt(
-                "O estoque só é baixado quando a venda é finalizada. Cancelar uma venda em andamento não altera o estoque.",
-                11, false);
-        rodape.setTextColor(MUTED);
-        rodape.setGravity(Gravity.CENTER);
-        rodape.setPadding(dp(8), dp(10), dp(8), 0);
-        root.addView(rodape);
+        screen.addView(bottom, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         busca.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
-            public void onTextChanged(CharSequence s, int st, int b, int c) { atualizarResultados(); }
+            public void onTextChanged(CharSequence s, int st, int b, int c) {
+                atualizarResultados();
+            }
             public void afterTextChanged(Editable e) {}
         });
 
         busca.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
+            if (actionId == EditorInfo.IME_ACTION_DONE ||
+                    actionId == EditorInfo.IME_ACTION_SEARCH) {
                 adicionarCorrespondenciaDireta();
                 return true;
             }
             return false;
         });
 
-        setContentView(scroll);
+        setContentView(screen);
         atualizarResultados();
         atualizarCarrinho();
     }
 
-    private void addGridButton(GridLayout grid, View view, int column) {
-        GridLayout.LayoutParams p = new GridLayout.LayoutParams();
-        p.width = 0;
-        p.height = dp(52);
-        p.columnSpec = GridLayout.spec(column, 1f);
-        p.setMargins(dp(3), dp(3), dp(3), dp(3));
-        view.setLayoutParams(p);
-        grid.addView(view);
+    private void montarCabecalho(LinearLayout root) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setBackground(headerBg());
+        header.setPadding(dp(16), dp(18), dp(16), dp(18));
+
+        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        hp.setMargins(-dp(14), 0, -dp(14), dp(10));
+        header.setLayoutParams(hp);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        Button voltar = outlineButton("←", Color.WHITE);
+        voltar.setTextSize(23);
+        voltar.setBackground(bordered(Color.parseColor("#244B78"), 13, Color.parseColor("#3D648F")));
+        voltar.setOnClickListener(v -> tentarSair());
+        top.addView(voltar, new LinearLayout.LayoutParams(dp(58), dp(52)));
+
+        LinearLayout titles = new LinearLayout(this);
+        titles.setOrientation(LinearLayout.VERTICAL);
+        titles.setPadding(dp(14), 0, 0, 0);
+
+        TextView title = txt("TECH CELL • PDV", 25, true);
+        title.setTextColor(Color.WHITE);
+        titles.addView(title);
+
+        TextView sub = txt("Frente de Caixa • Alpha 10", 13, false);
+        sub.setTextColor(Color.parseColor("#D9E3F0"));
+        sub.setPadding(0, dp(2), 0, 0);
+        titles.addView(sub);
+
+        top.addView(titles, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        header.addView(top);
+
+        statusCarrinho = txt("", 14, true);
+        statusCarrinho.setTextColor(Color.WHITE);
+        statusCarrinho.setPadding(dp(2), dp(16), 0, 0);
+        header.addView(statusCarrinho);
+
+        root.addView(header);
+    }
+
+    private void montarBusca(LinearLayout root) {
+        LinearLayout buscaCard = card();
+        buscaCard.setLayoutParams(cardParams(10));
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView icon = txt("⌕", 28, true);
+        icon.setTextColor(BLUE);
+        titleRow.addView(icon);
+
+        TextView label = txt("LOCALIZAR PRODUTO", 14, true);
+        label.setTextColor(Color.parseColor("#3D4F6A"));
+        label.setPadding(dp(8), 0, 0, 0);
+        titleRow.addView(label);
+        buscaCard.addView(titleRow);
+
+        LinearLayout inputRow = new LinearLayout(this);
+        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        inputRow.setGravity(Gravity.CENTER_VERTICAL);
+        inputRow.setPadding(0, dp(10), 0, 0);
+
+        LinearLayout inputBox = new LinearLayout(this);
+        inputBox.setOrientation(LinearLayout.HORIZONTAL);
+        inputBox.setGravity(Gravity.CENTER_VERTICAL);
+        inputBox.setBackground(bordered(Color.WHITE, 12, Color.parseColor("#C9D4E2")));
+        inputBox.setPadding(dp(12), 0, dp(6), 0);
+
+        TextView searchIcon = txt("🔎", 18, false);
+        inputBox.addView(searchIcon);
+
+        busca = new EditText(this);
+        busca.setHint("Nome, código ou código de barras");
+        busca.setTextSize(17);
+        busca.setTextColor(TEXT);
+        busca.setHintTextColor(Color.parseColor("#8793A5"));
+        busca.setSingleLine(true);
+        busca.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        busca.setInputType(InputType.TYPE_CLASS_TEXT);
+        busca.setBackgroundColor(Color.TRANSPARENT);
+        busca.setPadding(dp(8), 0, dp(4), 0);
+        inputBox.addView(busca, new LinearLayout.LayoutParams(
+                0, dp(54), 1));
+
+        inputRow.addView(inputBox, new LinearLayout.LayoutParams(
+                0, dp(56), 1));
+
+        Button lista = filledButton("LISTA", BLUE);
+        lista.setTextSize(12);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(76), dp(54));
+        lp.setMargins(dp(8), 0, 0, 0);
+        lista.setLayoutParams(lp);
+        lista.setOnClickListener(v -> abrirBuscaProduto());
+        inputRow.addView(lista);
+
+        buscaCard.addView(inputRow);
+
+        resultados = new LinearLayout(this);
+        resultados.setOrientation(LinearLayout.VERTICAL);
+        resultados.setPadding(0, dp(6), 0, 0);
+        buscaCard.addView(resultados);
+
+        root.addView(buscaCard);
+    }
+
+    private void montarItens(LinearLayout root) {
+        root.addView(sectionTitle("🛒", "ITENS DA VENDA"));
+
+        itensCarrinho = new LinearLayout(this);
+        itensCarrinho.setOrientation(LinearLayout.VERTICAL);
+        root.addView(itensCarrinho);
+    }
+
+    private void montarFerramentas(LinearLayout root) {
+        root.addView(sectionTitle("⚙", "FERRAMENTAS DO CAIXA"));
+
+        LinearLayout tools = card();
+        tools.setPadding(dp(8), dp(8), dp(8), dp(8));
+
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+
+        Button desconto = filledButton("🏷  Desconto", ORANGE);
+        desconto.setOnClickListener(v -> abrirDesconto());
+        row1.addView(desconto, toolParams(1f, 0, dp(4)));
+
+        Button cancelar = filledButton("✕  Cancelar venda", RED);
+        cancelar.setOnClickListener(v -> cancelarVenda());
+        row1.addView(cancelar, toolParams(1f, dp(4), 0));
+        tools.addView(row1);
+
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams r2p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+        r2p.setMargins(0, dp(8), 0, 0);
+        row2.setLayoutParams(r2p);
+
+        removerDesconto = outlineButton("⊖  Remover desconto", NAVY);
+        removerDesconto.setOnClickListener(v -> {
+            descontoEntrada = 0;
+            descontoPercentual = false;
+            atualizarCarrinho();
+        });
+        row2.addView(removerDesconto, toolParams(1f, 0, dp(4)));
+
+        Button produtos = outlineButton("⌕  Buscar produto", NAVY);
+        produtos.setOnClickListener(v -> abrirBuscaProduto());
+        row2.addView(produtos, toolParams(1f, dp(4), 0));
+
+        tools.addView(row2);
+        root.addView(tools);
+    }
+
+    private LinearLayout.LayoutParams toolParams(float weight, int left, int right) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                0, dp(52), weight);
+        p.setMargins(left, 0, right, 0);
+        return p;
+    }
+
+    private void montarResumo(LinearLayout root) {
+        LinearLayout resumoCard = card();
+        resumoCard.setLayoutParams(cardParams(14));
+
+        LinearLayout title = new LinearLayout(this);
+        title.setOrientation(LinearLayout.HORIZONTAL);
+        title.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView icon = iconCircle("▤", PALE_BLUE, NAVY, 38);
+        title.addView(icon);
+
+        TextView t = txt("RESUMO DA VENDA", 14, true);
+        t.setTextColor(Color.parseColor("#53637A"));
+        t.setPadding(dp(10), 0, 0, 0);
+        title.addView(t);
+        resumoCard.addView(title);
+
+        LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        gap.setMargins(0, dp(12), 0, 0);
+
+        subtotalValor = txt(moeda.format(0), 18, true);
+        LinearLayout subRow = resumoRow("Subtotal", subtotalValor);
+        subRow.setLayoutParams(gap);
+        resumoCard.addView(subRow);
+
+        descontoValor = txt("- " + moeda.format(0), 18, true);
+        LinearLayout descRow = resumoRow("Desconto", descontoValor);
+        resumoCard.addView(descRow);
+
+        View divider = new View(this);
+        divider.setBackgroundColor(BORDER);
+        LinearLayout.LayoutParams divp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        divp.setMargins(0, dp(12), 0, dp(12));
+        divider.setLayoutParams(divp);
+        resumoCard.addView(divider);
+
+        LinearLayout totalBox = new LinearLayout(this);
+        totalBox.setOrientation(LinearLayout.HORIZONTAL);
+        totalBox.setGravity(Gravity.CENTER_VERTICAL);
+        totalBox.setBackground(solid(PALE_GREEN, 13));
+        totalBox.setPadding(dp(12), dp(12), dp(12), dp(12));
+
+        TextView money = iconCircle("$", GREEN, Color.WHITE, 42);
+        totalBox.addView(money);
+
+        TextView totalLabel = txt("TOTAL A RECEBER", 16, true);
+        totalLabel.setTextColor(TEXT);
+        totalLabel.setPadding(dp(12), 0, 0, 0);
+        totalBox.addView(totalLabel, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        totalValor = txt(moeda.format(0), 23, true);
+        totalValor.setTextColor(GREEN);
+        totalBox.addView(totalValor);
+
+        resumoCard.addView(totalBox);
+        root.addView(resumoCard);
+    }
+
+    private LinearLayout resumoRow(String label, TextView value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(2), dp(5), dp(2), dp(5));
+
+        TextView l = txt(label, 17, false);
+        l.setTextColor(Color.parseColor("#4B5C72"));
+        row.addView(l, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        row.addView(value);
+        return row;
     }
 
     private void tentarSair() {
@@ -314,7 +539,7 @@ public class PdvActivity extends Activity {
         }
         new AlertDialog.Builder(this)
                 .setTitle("Sair do PDV?")
-                .setMessage("Há uma venda em andamento. Os itens do carrinho serão descartados.")
+                .setMessage("Há uma venda em andamento. Os itens ainda não foram baixados do estoque.")
                 .setPositiveButton("Descartar e sair", (d,w) -> finish())
                 .setNegativeButton("Continuar venda", null)
                 .show();
@@ -324,60 +549,100 @@ public class PdvActivity extends Activity {
         resultados.removeAllViews();
         String q = busca.getText().toString().trim();
 
-        if (q.isEmpty()) return;
+        if (q.isEmpty()) {
+            resultados.setVisibility(View.GONE);
+            return;
+        }
+        resultados.setVisibility(View.VISIBLE);
 
-        List<GestaoDbHelper.Produto> ps = db.list(q);
-        if (ps.isEmpty()) {
+        List<GestaoDbHelper.Produto> produtos = db.list(q);
+        if (produtos.isEmpty()) {
             TextView vazio = txt("Nenhum produto encontrado.", 13, false);
             vazio.setTextColor(RED);
-            vazio.setPadding(0, dp(6), 0, 0);
+            vazio.setPadding(dp(6), dp(10), dp(6), dp(6));
             resultados.addView(vazio);
             return;
         }
 
-        int limite = Math.min(ps.size(), 6);
+        int limite = Math.min(produtos.size(), 4);
         for (int i=0; i<limite; i++) {
-            GestaoDbHelper.Produto p = ps.get(i);
-
-            LinearLayout linha = new LinearLayout(this);
-            linha.setOrientation(LinearLayout.VERTICAL);
-            linha.setPadding(dp(10), dp(8), dp(10), dp(8));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(0, dp(4), 0, 0);
-            linha.setLayoutParams(lp);
-
-            boolean disponivel = p.ehServico() || p.estoque > 0.000001;
-            linha.setBackground(bg(disponivel ? Color.parseColor("#EFF8FF") : Color.parseColor("#F2F4F7"), 8));
-
-            TextView nome = txt(p.nome, 15, true);
-            linha.addView(nome);
-
-            String estoque = p.ehServico() ? "Serviço" : "Estoque: " + fmtQtd(p.estoque) + " " + unidade(p);
-            TextView detalhe = txt(moeda.format(p.precoVenda) + "   •   " + estoque, 13, false);
-            detalhe.setTextColor(disponivel ? BLUE : MUTED);
-            linha.addView(detalhe);
-
-            if (disponivel) linha.setOnClickListener(v -> adicionarProduto(p));
-            resultados.addView(linha);
+            GestaoDbHelper.Produto p = produtos.get(i);
+            resultados.addView(linhaProdutoBusca(p, null));
         }
+    }
+
+    private View linhaProdutoBusca(GestaoDbHelper.Produto produto, AlertDialog dialog) {
+        boolean disponivel = produto.ehServico() || produto.estoque > 0.000001;
+
+        LinearLayout linha = new LinearLayout(this);
+        linha.setOrientation(LinearLayout.HORIZONTAL);
+        linha.setGravity(Gravity.CENTER_VERTICAL);
+        linha.setPadding(dp(10), dp(10), dp(10), dp(10));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(4), 0, 0);
+        linha.setLayoutParams(lp);
+        linha.setBackground(solid(
+                disponivel ? PALE_BLUE : Color.parseColor("#F2F4F7"), 10));
+
+        String inicial = produto.nome == null || produto.nome.trim().isEmpty()
+                ? "P" : produto.nome.trim().substring(0,1).toUpperCase(new Locale("pt","BR"));
+        TextView avatar = iconCircle(inicial,
+                disponivel ? Color.parseColor("#D7E9FF") : Color.parseColor("#E5E7EB"),
+                disponivel ? BLUE : MUTED, 40);
+        linha.addView(avatar);
+
+        LinearLayout info = new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        info.setPadding(dp(10), 0, dp(8), 0);
+
+        TextView nome = txt(produto.nome, 14, true);
+        info.addView(nome);
+
+        String codigo = produto.codigo == null || produto.codigo.trim().isEmpty()
+                ? "" : produto.codigo + " • ";
+        String estoque = produto.ehServico()
+                ? "Serviço"
+                : "Estoque " + fmtQtd(produto.estoque) + " " + unidade(produto);
+
+        TextView sub = txt(codigo + estoque, 11, false);
+        sub.setTextColor(MUTED);
+        info.addView(sub);
+
+        linha.addView(info, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView preco = txt(moeda.format(produto.precoVenda), 15, true);
+        preco.setTextColor(disponivel ? GREEN : MUTED);
+        linha.addView(preco);
+
+        if (disponivel) {
+            linha.setOnClickListener(v -> {
+                adicionarProduto(produto);
+                if (dialog != null) dialog.dismiss();
+            });
+        }
+
+        return linha;
     }
 
     private void abrirBuscaProduto() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(6), dp(16), dp(6));
+        box.setPadding(dp(16), dp(4), dp(16), dp(8));
 
         EditText campo = new EditText(this);
-        campo.setHint("Digite nome, código ou código de barras");
+        campo.setHint("Nome, código ou código de barras");
         campo.setSingleLine(true);
         campo.setTextSize(17);
+        campo.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         campo.setInputType(InputType.TYPE_CLASS_TEXT);
         box.addView(campo);
 
-        TextView dica = txt("Toque em um produto para adicionar ao carrinho.", 12, false);
+        TextView dica = txt("Toque no produto para adicionar à venda.", 12, false);
         dica.setTextColor(MUTED);
-        dica.setPadding(0, dp(4), 0, dp(6));
+        dica.setPadding(0, dp(2), 0, dp(6));
         box.addView(dica);
 
         ScrollView scrollLista = new ScrollView(this);
@@ -385,7 +650,7 @@ public class PdvActivity extends Activity {
         lista.setOrientation(LinearLayout.VERTICAL);
         scrollLista.addView(lista);
         box.addView(scrollLista, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(360)));
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(390)));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Buscar produto")
@@ -393,109 +658,100 @@ public class PdvActivity extends Activity {
                 .setNegativeButton("Fechar", null)
                 .create();
 
+        Runnable atualizar = () -> preencherBuscaProduto(
+                lista, campo.getText().toString(), dialog);
+
         campo.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
             public void onTextChanged(CharSequence s, int st, int b, int c) {
-                preencherBuscaProduto(lista, s == null ? "" : s.toString(), dialog);
+                atualizar.run();
             }
             public void afterTextChanged(Editable e) {}
         });
 
-        dialog.setOnShowListener(x -> {
-            preencherBuscaProduto(lista, "", dialog);
-            campo.requestFocus();
+        campo.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                    actionId == EditorInfo.IME_ACTION_DONE) {
+                List<GestaoDbHelper.Produto> r = db.list(campo.getText().toString());
+                if (r.size() == 1) {
+                    adicionarProduto(r.get(0));
+                    dialog.dismiss();
+                }
+                return true;
+            }
+            return false;
         });
+
+        dialog.setOnShowListener(x -> atualizar.run());
         dialog.show();
     }
 
     private void preencherBuscaProduto(LinearLayout lista, String termo, AlertDialog dialog) {
         lista.removeAllViews();
+        List<GestaoDbHelper.Produto> produtos = db.list(
+                termo == null ? "" : termo.trim());
 
-        List<GestaoDbHelper.Produto> produtos = db.list(termo == null ? "" : termo.trim());
         if (produtos.isEmpty()) {
             TextView vazio = txt("Nenhum produto encontrado.", 14, false);
             vazio.setTextColor(RED);
             vazio.setGravity(Gravity.CENTER);
-            vazio.setPadding(dp(8), dp(22), dp(8), dp(22));
+            vazio.setPadding(dp(8), dp(26), dp(8), dp(26));
             lista.addView(vazio);
             return;
         }
 
-        int limite = Math.min(produtos.size(), 40);
+        int limite = Math.min(produtos.size(), 50);
         for (int i=0; i<limite; i++) {
-            GestaoDbHelper.Produto produto = produtos.get(i);
-            boolean disponivel = produto.ehServico() || produto.estoque > 0.000001;
-
-            LinearLayout linha = new LinearLayout(this);
-            linha.setOrientation(LinearLayout.VERTICAL);
-            linha.setPadding(dp(12), dp(10), dp(12), dp(10));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(0, dp(3), 0, dp(3));
-            linha.setLayoutParams(lp);
-            linha.setBackground(bg(
-                    disponivel ? Color.parseColor("#EFF8FF") : Color.parseColor("#F2F4F7"), 8));
-
-            TextView nome = txt(produto.nome, 15, true);
-            linha.addView(nome);
-
-            String cod = (produto.codigo == null || produto.codigo.trim().isEmpty())
-                    ? "" : produto.codigo + "  •  ";
-            String est = produto.ehServico()
-                    ? "Serviço"
-                    : "Estoque: " + fmtQtd(produto.estoque) + " " + unidade(produto);
-
-            TextView detalhe = txt(cod + moeda.format(produto.precoVenda) + "  •  " + est, 12, false);
-            detalhe.setTextColor(disponivel ? BLUE : MUTED);
-            linha.addView(detalhe);
-
-            if (disponivel) {
-                linha.setOnClickListener(v -> {
-                    adicionarProduto(produto);
-                    dialog.dismiss();
-                });
-            }
-
-            lista.addView(linha);
+            lista.addView(linhaProdutoBusca(produtos.get(i), dialog));
         }
     }
 
     private void adicionarCorrespondenciaDireta() {
         String q = busca.getText().toString().trim();
         if (q.isEmpty()) return;
-        List<GestaoDbHelper.Produto> ps = db.list(q);
-        if (ps.isEmpty()) return;
+
+        List<GestaoDbHelper.Produto> produtos = db.list(q);
+        if (produtos.isEmpty()) return;
 
         GestaoDbHelper.Produto escolhido = null;
-        for (GestaoDbHelper.Produto p : ps) {
-            if (q.equalsIgnoreCase(p.codigo) || q.equalsIgnoreCase(p.codigoBarras)) {
+        for (GestaoDbHelper.Produto p : produtos) {
+            if (q.equalsIgnoreCase(p.codigo) ||
+                    q.equalsIgnoreCase(p.codigoBarras)) {
                 escolhido = p;
                 break;
             }
         }
-        if (escolhido == null && ps.size() == 1) escolhido = ps.get(0);
+        if (escolhido == null && produtos.size() == 1) {
+            escolhido = produtos.get(0);
+        }
         if (escolhido != null) adicionarProduto(escolhido);
     }
 
-    private void adicionarProduto(GestaoDbHelper.Produto p) {
-        GestaoDbHelper.VendaItem existente = localizarNoCarrinho(p.id);
+    private void adicionarProduto(GestaoDbHelper.Produto produto) {
+        GestaoDbHelper.VendaItem existente = localizarNoCarrinho(produto.id);
 
         if (existente != null) {
             double nova = existente.quantidade + 1;
-            if (!p.ehServico() && nova > p.estoque + 0.000001) {
-                Toast.makeText(this, "Quantidade maior que o estoque disponível.", Toast.LENGTH_SHORT).show();
+            if (!produto.ehServico() &&
+                    nova > produto.estoque + 0.000001) {
+                Toast.makeText(this,
+                        "Quantidade maior que o estoque disponível.",
+                        Toast.LENGTH_SHORT).show();
                 return;
             }
             existente.quantidade = nova;
         } else {
-            if (!p.ehServico() && p.estoque < 1 - 0.000001) {
-                Toast.makeText(this, "Produto sem estoque suficiente.", Toast.LENGTH_SHORT).show();
+            if (!produto.ehServico() && produto.estoque < 1 - 0.000001) {
+                Toast.makeText(this,
+                        "Produto sem estoque suficiente.",
+                        Toast.LENGTH_SHORT).show();
                 return;
             }
+
             GestaoDbHelper.VendaItem item = new GestaoDbHelper.VendaItem();
-            item.produto = p;
+            item.produto = produto;
             item.quantidade = 1;
-            item.precoUnitario = p.precoVenda;
+            item.precoUnitario = produto.precoVenda;
             carrinho.add(item);
         }
 
@@ -504,8 +760,8 @@ public class PdvActivity extends Activity {
     }
 
     private GestaoDbHelper.VendaItem localizarNoCarrinho(long produtoId) {
-        for (GestaoDbHelper.VendaItem i : carrinho) {
-            if (i.produto.id == produtoId) return i;
+        for (GestaoDbHelper.VendaItem item : carrinho) {
+            if (item.produto.id == produtoId) return item;
         }
         return null;
     }
@@ -513,107 +769,145 @@ public class PdvActivity extends Activity {
     private void atualizarCarrinho() {
         itensCarrinho.removeAllViews();
 
-        int unidades = 0;
+        double quantidadeTotal = 0;
         for (GestaoDbHelper.VendaItem item : carrinho) {
-            unidades += (int)Math.ceil(item.quantidade);
+            quantidadeTotal += item.quantidade;
         }
-        statusCarrinho.setText(carrinho.size() + (carrinho.size()==1 ? " item" : " itens") +
-                " no carrinho  •  " + unidades + " unidade(s)");
+
+        statusCarrinho.setText("🛒  " +
+                carrinho.size() + (carrinho.size()==1 ? " item" : " itens") +
+                " no carrinho  •  " + fmtQtd(quantidadeTotal) + " unidade(s)");
 
         if (carrinho.isEmpty()) {
-            TextView vazio = txt("Nenhum item adicionado. Localize um produto acima para iniciar a venda.", 14, false);
-            vazio.setTextColor(MUTED);
+            LinearLayout vazio = card();
             vazio.setGravity(Gravity.CENTER);
-            vazio.setBackground(cardBg());
-            vazio.setPadding(dp(16), dp(24), dp(16), dp(24));
+            vazio.setPadding(dp(18), dp(24), dp(18), dp(24));
+
+            TextView ico = txt("🛒", 29, false);
+            ico.setGravity(Gravity.CENTER);
+            vazio.addView(ico);
+
+            TextView msg = txt("Carrinho vazio", 16, true);
+            msg.setGravity(Gravity.CENTER);
+            msg.setPadding(0, dp(5), 0, 0);
+            vazio.addView(msg);
+
+            TextView dica = txt("Busque um produto acima para iniciar a venda.", 12, false);
+            dica.setTextColor(MUTED);
+            dica.setGravity(Gravity.CENTER);
+            dica.setPadding(0, dp(3), 0, 0);
+            vazio.addView(dica);
+
             itensCarrinho.addView(vazio);
         } else {
-            int numeroItem = 1;
+            int numero = 1;
             for (GestaoDbHelper.VendaItem item : new ArrayList<>(carrinho)) {
-                LinearLayout card = new LinearLayout(this);
-                card.setOrientation(LinearLayout.VERTICAL);
-                card.setBackground(cardBg());
-                card.setPadding(dp(12), dp(10), dp(12), dp(10));
-                LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                cp.setMargins(0, dp(4), 0, dp(4));
-                card.setLayoutParams(cp);
-
-                LinearLayout cab = new LinearLayout(this);
-                cab.setOrientation(LinearLayout.HORIZONTAL);
-                cab.setGravity(Gravity.CENTER_VERTICAL);
-
-                TextView nome = txt(numeroItem + ". " + item.produto.nome, 16, true);
-                cab.addView(nome, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-
-                TextView totalItem = txt(moeda.format(item.total()), 16, true);
-                totalItem.setTextColor(GREEN);
-                cab.addView(totalItem);
-                card.addView(cab);
-
-                TextView info = txt(
-                        fmtQtd(item.quantidade) + " " + unidade(item.produto) +
-                        " × " + moeda.format(item.precoUnitario),
-                        12, false);
-                info.setTextColor(MUTED);
-                info.setPadding(0, dp(4), 0, dp(6));
-                card.addView(info);
-
-                LinearLayout botoes = new LinearLayout(this);
-                botoes.setOrientation(LinearLayout.HORIZONTAL);
-
-                Button menos = lightAction("−");
-                menos.setOnClickListener(v -> diminuir(item));
-                botoes.addView(menos, lpPeso(0.7f));
-
-                Button qtd = lightAction("Qtd.");
-                qtd.setOnClickListener(v -> editarQuantidade(item));
-                botoes.addView(qtd, lpPeso(1f));
-
-                Button mais = lightAction("+");
-                mais.setOnClickListener(v -> aumentar(item));
-                botoes.addView(mais, lpPeso(0.7f));
-
-                Button preco = lightAction("Preço");
-                preco.setOnClickListener(v -> editarPreco(item));
-                botoes.addView(preco, lpPeso(1f));
-
-                Button remover = lightAction("Excluir");
-                remover.setTextColor(RED);
-                remover.setOnClickListener(v -> confirmarRemocao(item));
-                botoes.addView(remover, lpPeso(1f));
-
-                card.addView(botoes);
-                itensCarrinho.addView(card);
-                numeroItem++;
+                itensCarrinho.addView(cardItem(item, numero));
+                numero++;
             }
         }
 
         double subtotal = subtotal();
         double desconto = valorDesconto();
         double total = Math.max(0, subtotal - desconto);
-        String descTexto = desconto > 0
-                ? (descontoPercentual
-                    ? moeda.format(desconto) + "  (" + fmtPct(descontoEntrada) + ")"
-                    : moeda.format(desconto))
-                : moeda.format(0);
 
-        String texto = "Subtotal                                      " + moeda.format(subtotal) +
-                "\nDesconto                                      − " + descTexto +
-                "\n────────────────────────" +
-                "\nTOTAL A RECEBER                      " + moeda.format(total);
+        subtotalValor.setText(moeda.format(subtotal));
 
-        resumo.setText(texto);
-        resumo.setTypeface(null, Typeface.BOLD);
-        resumo.setTextColor(NAVY);
+        String desc = "- " + moeda.format(desconto);
+        if (desconto > 0 && descontoPercentual) {
+            desc += "  (" + fmtPct(descontoEntrada) + ")";
+        }
+        descontoValor.setText(desc);
+        descontoValor.setTextColor(desconto > 0 ? ORANGE : TEXT);
 
-        finalizar.setEnabled(!carrinho.isEmpty() && total >= 0);
-        finalizar.setAlpha(finalizar.isEnabled() ? 1f : 0.5f);
+        totalValor.setText(moeda.format(total));
+
+        boolean temVenda = !carrinho.isEmpty();
+        finalizar.setEnabled(temVenda);
+        finalizar.setAlpha(temVenda ? 1f : 0.45f);
+
+        removerDesconto.setEnabled(desconto > 0);
+        removerDesconto.setAlpha(desconto > 0 ? 1f : 0.45f);
     }
 
-    private LinearLayout.LayoutParams lpPeso(float peso) {
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, dp(44), peso);
-        p.setMargins(dp(2), 0, dp(2), 0);
+    private View cardItem(GestaoDbHelper.VendaItem item, int numero) {
+        LinearLayout card = card();
+        LinearLayout.LayoutParams cp = cardParams(numero == 1 ? 0 : 8);
+        card.setLayoutParams(cp);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView badge = iconCircle(String.valueOf(numero),
+                Color.parseColor("#E9EEF5"), NAVY, 42);
+        top.addView(badge);
+
+        LinearLayout nomeBox = new LinearLayout(this);
+        nomeBox.setOrientation(LinearLayout.VERTICAL);
+        nomeBox.setPadding(dp(10), 0, dp(8), 0);
+
+        TextView nome = txt(item.produto.nome, 16, true);
+        nomeBox.addView(nome);
+
+        TextView info = txt(
+                fmtQtd(item.quantidade) + " " + unidade(item.produto) +
+                        " × " + moeda.format(item.precoUnitario),
+                12, false);
+        info.setTextColor(MUTED);
+        info.setPadding(0, dp(2), 0, 0);
+        nomeBox.addView(info);
+
+        top.addView(nomeBox, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView total = txt(moeda.format(item.total()), 18, true);
+        total.setTextColor(GREEN);
+        top.addView(total);
+
+        card.addView(top);
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.HORIZONTAL);
+        controls.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams ctrp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
+        ctrp.setMargins(0, dp(12), 0, 0);
+        controls.setLayoutParams(ctrp);
+
+        Button menos = outlineButton("−", NAVY);
+        menos.setTextSize(20);
+        menos.setOnClickListener(v -> diminuir(item));
+        controls.addView(menos, controlParams(0.65f, 0, dp(3)));
+
+        Button qtd = outlineButton(fmtQtd(item.quantidade), NAVY);
+        qtd.setTypeface(null, Typeface.BOLD);
+        qtd.setOnClickListener(v -> editarQuantidade(item));
+        controls.addView(qtd, controlParams(0.95f, dp(3), dp(3)));
+
+        Button mais = outlineButton("+", BLUE);
+        mais.setTextSize(19);
+        mais.setTypeface(null, Typeface.BOLD);
+        mais.setOnClickListener(v -> aumentar(item));
+        controls.addView(mais, controlParams(0.65f, dp(3), dp(7)));
+
+        Button preco = outlineButton("✎  Preço", NAVY);
+        preco.setOnClickListener(v -> editarPreco(item));
+        controls.addView(preco, controlParams(1.15f, 0, dp(4)));
+
+        Button excluir = outlineButton("Excluir", RED);
+        excluir.setBackground(bordered(PALE_RED, 10, Color.parseColor("#FFD1CC")));
+        excluir.setOnClickListener(v -> confirmarRemocao(item));
+        controls.addView(excluir, controlParams(1.05f, dp(4), 0));
+
+        card.addView(controls);
+        return card;
+    }
+
+    private LinearLayout.LayoutParams controlParams(float weight, int left, int right) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                0, dp(46), weight);
+        p.setMargins(left, 0, right, 0);
         return p;
     }
 
@@ -628,8 +922,11 @@ public class PdvActivity extends Activity {
 
     private void aumentar(GestaoDbHelper.VendaItem item) {
         double nova = item.quantidade + 1;
-        if (!item.produto.ehServico() && nova > item.produto.estoque + 0.000001) {
-            Toast.makeText(this, "Limite do estoque: " + fmtQtd(item.produto.estoque), Toast.LENGTH_SHORT).show();
+        if (!item.produto.ehServico() &&
+                nova > item.produto.estoque + 0.000001) {
+            Toast.makeText(this,
+                    "Limite do estoque: " + fmtQtd(item.produto.estoque),
+                    Toast.LENGTH_SHORT).show();
             return;
         }
         item.quantidade = nova;
@@ -638,8 +935,9 @@ public class PdvActivity extends Activity {
 
     private boolean fracionada(GestaoDbHelper.Produto p) {
         String u = unidade(p).toUpperCase(new Locale("pt","BR"));
-        return u.equals("KG") || u.equals("G") || u.equals("M") || u.equals("CM") ||
-                u.equals("L") || u.equals("ML") || u.equals("OUTRA");
+        return u.equals("KG") || u.equals("G") || u.equals("M") ||
+                u.equals("CM") || u.equals("L") || u.equals("ML") ||
+                u.equals("OUTRA");
     }
 
     private void editarQuantidade(GestaoDbHelper.VendaItem item) {
@@ -647,71 +945,86 @@ public class PdvActivity extends Activity {
         campo.setText(fmtQtd(item.quantidade).replace(".", ","));
         campo.setSelectAllOnFocus(true);
         campo.setInputType(InputType.TYPE_CLASS_NUMBER |
-                (fracionada(item.produto) ? InputType.TYPE_NUMBER_FLAG_DECIMAL : 0));
+                (fracionada(item.produto)
+                        ? InputType.TYPE_NUMBER_FLAG_DECIMAL : 0));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Alterar quantidade")
-                .setMessage(item.produto.nome + (item.produto.ehServico() ? "" :
-                        "\nDisponível: " + fmtQtd(item.produto.estoque) + " " + unidade(item.produto)))
+                .setMessage(item.produto.nome +
+                        (item.produto.ehServico() ? "" :
+                                "\nDisponível: " +
+                                fmtQtd(item.produto.estoque) + " " +
+                                unidade(item.produto)))
                 .setView(campo)
                 .setPositiveButton("Aplicar", null)
                 .setNegativeButton("Cancelar", null)
                 .create();
 
-        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            double q = numero(campo.getText().toString());
-            if (Double.isNaN(q) || q <= 0) {
-                campo.setError("Quantidade inválida");
-                return;
-            }
-            if (!fracionada(item.produto) && Math.abs(q - Math.rint(q)) > 0.000001) {
-                campo.setError("Use quantidade inteira para " + unidade(item.produto));
-                return;
-            }
-            if (!item.produto.ehServico() && q > item.produto.estoque + 0.000001) {
-                campo.setError("Máximo disponível: " + fmtQtd(item.produto.estoque));
-                return;
-            }
-            item.quantidade = q;
-            dialog.dismiss();
-            atualizarCarrinho();
-        }));
+        dialog.setOnShowListener(x ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> {
+                            double q = numero(campo.getText().toString());
+                            if (Double.isNaN(q) || q <= 0) {
+                                campo.setError("Quantidade inválida");
+                                return;
+                            }
+                            if (!fracionada(item.produto) &&
+                                    Math.abs(q - Math.rint(q)) > 0.000001) {
+                                campo.setError("Use quantidade inteira para " +
+                                        unidade(item.produto));
+                                return;
+                            }
+                            if (!item.produto.ehServico() &&
+                                    q > item.produto.estoque + 0.000001) {
+                                campo.setError("Máximo disponível: " +
+                                        fmtQtd(item.produto.estoque));
+                                return;
+                            }
+                            item.quantidade = q;
+                            dialog.dismiss();
+                            atualizarCarrinho();
+                        }));
         dialog.show();
     }
 
     private void editarPreco(GestaoDbHelper.VendaItem item) {
         EditText campo = inputNumero("Novo preço unitário");
-        campo.setText(String.format(new Locale("pt","BR"), "%.2f", item.precoUnitario));
+        campo.setText(String.format(new Locale("pt","BR"),
+                "%.2f", item.precoUnitario));
         campo.setSelectAllOnFocus(true);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Alterar preço do item")
+                .setTitle("Alterar preço")
                 .setMessage(item.produto.nome +
-                        "\nPreço cadastrado: " + moeda.format(item.produto.precoVenda))
+                        "\nPreço cadastrado: " +
+                        moeda.format(item.produto.precoVenda))
                 .setView(campo)
                 .setPositiveButton("Aplicar", null)
                 .setNegativeButton("Cancelar", null)
                 .create();
 
-        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            double preco = numero(campo.getText().toString());
-            if (Double.isNaN(preco) || preco < 0) {
-                campo.setError("Preço inválido");
-                return;
-            }
-
-            item.precoUnitario = preco;
-            dialog.dismiss();
-            atualizarCarrinho();
-        }));
+        dialog.setOnShowListener(x ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> {
+                            double preco = numero(campo.getText().toString());
+                            if (Double.isNaN(preco) || preco < 0) {
+                                campo.setError("Preço inválido");
+                                return;
+                            }
+                            item.precoUnitario = preco;
+                            dialog.dismiss();
+                            atualizarCarrinho();
+                        }));
         dialog.show();
     }
 
     private void confirmarRemocao(GestaoDbHelper.VendaItem item) {
         new AlertDialog.Builder(this)
-                .setTitle("Remover item?")
-                .setMessage(item.produto.nome + "\n" + fmtQtd(item.quantidade) + " " + unidade(item.produto))
-                .setPositiveButton("Remover", (d,w) -> {
+                .setTitle("Excluir item?")
+                .setMessage(item.produto.nome + "\n" +
+                        fmtQtd(item.quantidade) + " " +
+                        unidade(item.produto))
+                .setPositiveButton("Excluir", (d,w) -> {
                     carrinho.remove(item);
                     atualizarCarrinho();
                 })
@@ -721,19 +1034,25 @@ public class PdvActivity extends Activity {
 
     private void cancelarVenda() {
         if (carrinho.isEmpty()) {
-            Toast.makeText(this, "Não há venda em andamento.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    "Não há venda em andamento.",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
+
         new AlertDialog.Builder(this)
                 .setTitle("Cancelar venda atual?")
-                .setMessage("Todos os itens e o desconto serão removidos. O estoque não será alterado.")
+                .setMessage("Todos os itens e o desconto serão removidos. " +
+                        "O estoque não será alterado.")
                 .setPositiveButton("Cancelar venda", (d,w) -> {
                     carrinho.clear();
                     descontoEntrada = 0;
                     descontoPercentual = false;
                     busca.setText("");
                     atualizarCarrinho();
-                    Toast.makeText(this, "Venda cancelada.", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this,
+                            "Venda cancelada.",
+                            Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Continuar venda", null)
                 .show();
@@ -741,71 +1060,80 @@ public class PdvActivity extends Activity {
 
     private void abrirDesconto() {
         if (carrinho.isEmpty()) {
-            Toast.makeText(this, "Adicione um produto antes de aplicar desconto.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this,
+                    "Adicione um produto antes de aplicar desconto.",
+                    Toast.LENGTH_SHORT).show();
             return;
         }
 
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(20), dp(6), dp(20), dp(6));
+        box.setPadding(dp(20), dp(6), dp(20), dp(8));
 
         Spinner tipo = new Spinner(this);
         String[] tipos = {"Desconto em R$", "Desconto em %"};
-        ArrayAdapter<String> ad = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, tipos);
-        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        ArrayAdapter<String> ad = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, tipos);
+        ad.setDropDownViewResource(
+                android.R.layout.simple_spinner_dropdown_item);
         tipo.setAdapter(ad);
         tipo.setSelection(descontoPercentual ? 1 : 0);
         box.addView(tipo);
 
         EditText valor = inputNumero("Valor do desconto");
         if (descontoEntrada > 0) {
-            valor.setText(String.format(new Locale("pt","BR"), "%.2f", descontoEntrada));
+            valor.setText(String.format(new Locale("pt","BR"),
+                    "%.2f", descontoEntrada));
         }
         box.addView(valor);
 
-        TextView limite = txt("Subtotal atual: " + moeda.format(subtotal()), 13, false);
+        TextView limite = txt("Subtotal atual: " +
+                moeda.format(subtotal()), 13, false);
         limite.setTextColor(MUTED);
         limite.setPadding(0, dp(8), 0, 0);
         box.addView(limite);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Desconto da venda")
+                .setTitle("Aplicar desconto")
                 .setView(box)
-                .setPositiveButton("Aplicar desconto", null)
-                .setNeutralButton("Remover desconto", null)
+                .setPositiveButton("Aplicar", null)
+                .setNeutralButton("Remover", null)
                 .setNegativeButton("Cancelar", null)
                 .create();
 
         dialog.setOnShowListener(x -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                double d = numero(valor.getText().toString());
-                if (Double.isNaN(d) || d < 0) {
-                    valor.setError("Informe um desconto válido");
-                    return;
-                }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener(v -> {
+                        double d = numero(valor.getText().toString());
+                        if (Double.isNaN(d) || d < 0) {
+                            valor.setError("Informe um desconto válido");
+                            return;
+                        }
 
-                boolean percentual = tipo.getSelectedItemPosition() == 1;
-                if (percentual && d > 100) {
-                    valor.setError("O percentual não pode passar de 100%");
-                    return;
-                }
-                if (!percentual && d > subtotal() + 0.001) {
-                    valor.setError("O desconto não pode passar do subtotal");
-                    return;
-                }
+                        boolean percentual =
+                                tipo.getSelectedItemPosition() == 1;
+                        if (percentual && d > 100) {
+                            valor.setError("O percentual não pode passar de 100%");
+                            return;
+                        }
+                        if (!percentual && d > subtotal() + 0.001) {
+                            valor.setError("O desconto não pode passar do subtotal");
+                            return;
+                        }
 
-                descontoPercentual = percentual;
-                descontoEntrada = d;
-                dialog.dismiss();
-                atualizarCarrinho();
-            });
+                        descontoPercentual = percentual;
+                        descontoEntrada = d;
+                        dialog.dismiss();
+                        atualizarCarrinho();
+                    });
 
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-                descontoEntrada = 0;
-                descontoPercentual = false;
-                dialog.dismiss();
-                atualizarCarrinho();
-            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+                    .setOnClickListener(v -> {
+                        descontoEntrada = 0;
+                        descontoPercentual = false;
+                        dialog.dismiss();
+                        atualizarCarrinho();
+                    });
         });
         dialog.show();
     }
@@ -819,25 +1147,37 @@ public class PdvActivity extends Activity {
 
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(20), dp(6), dp(20), dp(6));
+        box.setPadding(dp(20), dp(6), dp(20), dp(8));
 
-        TextView totalTxt = txt("TOTAL A RECEBER\n" + moeda.format(total), 22, true);
+        TextView totalTxt = txt("TOTAL A RECEBER\n" +
+                moeda.format(total), 23, true);
         totalTxt.setTextColor(GREEN);
         totalTxt.setGravity(Gravity.CENTER);
         totalTxt.setPadding(0, 0, 0, dp(12));
         box.addView(totalTxt);
 
         if (desconto > 0) {
-            TextView desc = txt("Subtotal " + moeda.format(subtotal) + "  •  desconto " + moeda.format(desconto), 12, false);
+            TextView desc = txt("Subtotal " + moeda.format(subtotal) +
+                    "  •  desconto " + moeda.format(desconto), 12, false);
             desc.setTextColor(MUTED);
             desc.setGravity(Gravity.CENTER);
+            desc.setPadding(0, 0, 0, dp(8));
             box.addView(desc);
         }
 
+        TextView formaLabel = txt("Forma de pagamento", 13, true);
+        formaLabel.setPadding(0, dp(4), 0, dp(3));
+        box.addView(formaLabel);
+
         Spinner forma = new Spinner(this);
-        String[] formas = {"DINHEIRO", "PIX", "CARTÃO DÉBITO", "CARTÃO CRÉDITO", "MISTO"};
-        ArrayAdapter<String> ad = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, formas);
-        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        String[] formas = {
+                "DINHEIRO", "PIX", "CARTÃO DÉBITO",
+                "CARTÃO CRÉDITO", "MISTO"
+        };
+        ArrayAdapter<String> ad = new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, formas);
+        ad.setDropDownViewResource(
+                android.R.layout.simple_spinner_dropdown_item);
         forma.setAdapter(ad);
         box.addView(forma);
 
@@ -845,8 +1185,10 @@ public class PdvActivity extends Activity {
         EditText mistoDinheiro = inputNumero("Dinheiro");
         EditText mistoPix = inputNumero("PIX");
         EditText mistoCartao = inputNumero("Cartão");
-        TextView troco = txt("", 15, true);
+
+        TextView troco = txt("", 16, true);
         troco.setTextColor(GREEN);
+        troco.setPadding(0, dp(6), 0, 0);
 
         box.addView(recebido);
         box.addView(mistoDinheiro);
@@ -856,34 +1198,47 @@ public class PdvActivity extends Activity {
 
         Runnable ajustarVisibilidade = () -> {
             String f = forma.getSelectedItem().toString();
-            recebido.setVisibility(f.equals("DINHEIRO") ? View.VISIBLE : View.GONE);
+            recebido.setVisibility(
+                    f.equals("DINHEIRO") ? View.VISIBLE : View.GONE);
             boolean misto = f.equals("MISTO");
             mistoDinheiro.setVisibility(misto ? View.VISIBLE : View.GONE);
             mistoPix.setVisibility(misto ? View.VISIBLE : View.GONE);
             mistoCartao.setVisibility(misto ? View.VISIBLE : View.GONE);
-            troco.setVisibility(f.equals("DINHEIRO") ? View.VISIBLE : View.GONE);
+            troco.setVisibility(
+                    f.equals("DINHEIRO") ? View.VISIBLE : View.GONE);
         };
 
         Runnable atualizarTroco = () -> {
-            if (!forma.getSelectedItem().toString().equals("DINHEIRO")) return;
+            if (!forma.getSelectedItem().toString()
+                    .equals("DINHEIRO")) return;
+
             double r = numero(recebido.getText().toString());
             if (Double.isNaN(r)) r = 0;
+
             double t = r - total;
-            troco.setText(t >= 0 ? "Troco: " + moeda.format(t) : "Falta: " + moeda.format(-t));
+            troco.setText(t >= 0
+                    ? "Troco: " + moeda.format(t)
+                    : "Falta: " + moeda.format(-t));
             troco.setTextColor(t >= 0 ? GREEN : RED);
         };
 
-        forma.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                ajustarVisibilidade.run();
-                atualizarTroco.run();
-            }
-            @Override public void onNothingSelected(AdapterView<?> parent) {}
-        });
+        forma.setOnItemSelectedListener(
+                new AdapterView.OnItemSelectedListener() {
+                    @Override public void onItemSelected(
+                            AdapterView<?> parent, View view,
+                            int position, long id) {
+                        ajustarVisibilidade.run();
+                        atualizarTroco.run();
+                    }
+                    @Override public void onNothingSelected(
+                            AdapterView<?> parent) {}
+                });
 
         recebido.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
-            public void onTextChanged(CharSequence s, int st, int b, int c) { atualizarTroco.run(); }
+            public void onTextChanged(CharSequence s, int st, int b, int c) {
+                atualizarTroco.run();
+            }
             public void afterTextChanged(Editable e) {}
         });
 
@@ -896,76 +1251,107 @@ public class PdvActivity extends Activity {
                 .setNegativeButton("Voltar", null)
                 .create();
 
-        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-            String f = forma.getSelectedItem().toString();
-            GestaoDbHelper.Pagamento pg = new GestaoDbHelper.Pagamento();
-            pg.forma = f;
+        dialog.setOnShowListener(x ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> {
+                            String f = forma.getSelectedItem().toString();
+                            GestaoDbHelper.Pagamento pg =
+                                    new GestaoDbHelper.Pagamento();
+                            pg.forma = f;
 
-            if (f.equals("DINHEIRO")) {
-                double r = numero(recebido.getText().toString());
-                if (Double.isNaN(r) || r + 0.001 < total) {
-                    recebido.setError("Valor recebido deve ser igual ou maior que o total");
-                    return;
-                }
-                pg.dinheiro = total;
-                pg.recebido = r;
-                pg.troco = r - total;
-            } else if (f.equals("PIX")) {
-                pg.pix = total;
-                pg.recebido = total;
-            } else if (f.startsWith("CARTÃO")) {
-                pg.cartao = total;
-                pg.recebido = total;
-            } else {
-                double d = zeroSeVazio(mistoDinheiro);
-                double p = zeroSeVazio(mistoPix);
-                double c = zeroSeVazio(mistoCartao);
-                if (Double.isNaN(d) || Double.isNaN(p) || Double.isNaN(c)) {
-                    Toast.makeText(this, "Confira os valores do pagamento misto.", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                double soma = d + p + c;
-                if (Math.abs(soma - total) > 0.011) {
-                    Toast.makeText(this,
-                            "Pagamento misto soma " + moeda.format(soma) +
-                                    " e precisa fechar " + moeda.format(total),
-                            Toast.LENGTH_LONG).show();
-                    return;
-                }
-                pg.dinheiro = d;
-                pg.pix = p;
-                pg.cartao = c;
-                pg.recebido = total;
-            }
+                            if (f.equals("DINHEIRO")) {
+                                double r = numero(
+                                        recebido.getText().toString());
+                                if (Double.isNaN(r) ||
+                                        r + 0.001 < total) {
+                                    recebido.setError(
+                                            "Valor recebido deve ser igual ou maior que o total");
+                                    return;
+                                }
+                                pg.dinheiro = total;
+                                pg.recebido = r;
+                                pg.troco = r - total;
+                            } else if (f.equals("PIX")) {
+                                pg.pix = total;
+                                pg.recebido = total;
+                            } else if (f.startsWith("CARTÃO")) {
+                                pg.cartao = total;
+                                pg.recebido = total;
+                            } else {
+                                double d = zeroSeVazio(mistoDinheiro);
+                                double p = zeroSeVazio(mistoPix);
+                                double c = zeroSeVazio(mistoCartao);
 
-            try {
-                String tipoDesc = desconto > 0 ? (descontoPercentual ? "PERCENTUAL" : "VALOR") : "";
-                long idVenda = db.finalizarVenda(carrinho, pg, desconto, tipoDesc, descontoEntrada);
-                double trocoFinal = pg.troco;
-                double totalFinal = total;
+                                if (Double.isNaN(d) ||
+                                        Double.isNaN(p) ||
+                                        Double.isNaN(c)) {
+                                    Toast.makeText(this,
+                                            "Confira os valores do pagamento misto.",
+                                            Toast.LENGTH_SHORT).show();
+                                    return;
+                                }
 
-                carrinho.clear();
-                descontoEntrada = 0;
-                descontoPercentual = false;
-                dialog.dismiss();
-                busca.setText("");
-                atualizarResultados();
-                atualizarCarrinho();
+                                double soma = d + p + c;
+                                if (Math.abs(soma - total) > 0.011) {
+                                    Toast.makeText(this,
+                                            "Pagamento misto soma " +
+                                                    moeda.format(soma) +
+                                                    " e precisa fechar " +
+                                                    moeda.format(total),
+                                            Toast.LENGTH_LONG).show();
+                                    return;
+                                }
 
-                String msg = "Venda #" + idVenda +
-                        "\nTotal: " + moeda.format(totalFinal);
-                if (trocoFinal > 0.001) msg += "\nTroco: " + moeda.format(trocoFinal);
+                                pg.dinheiro = d;
+                                pg.pix = p;
+                                pg.cartao = c;
+                                pg.recebido = total;
+                            }
 
-                new AlertDialog.Builder(this)
-                        .setTitle("Venda concluída ✓")
-                        .setMessage(msg + "\n\nEstoque atualizado automaticamente.")
-                        .setPositiveButton("Nova venda", null)
-                        .show();
-            } catch (Exception ex) {
-                Toast.makeText(this, ex.getMessage(), Toast.LENGTH_LONG).show();
-                atualizarResultados();
-            }
-        }));
+                            try {
+                                String tipoDesc = desconto > 0
+                                        ? (descontoPercentual
+                                        ? "PERCENTUAL" : "VALOR")
+                                        : "";
+
+                                long idVenda = db.finalizarVenda(
+                                        carrinho, pg, desconto,
+                                        tipoDesc, descontoEntrada);
+
+                                double trocoFinal = pg.troco;
+                                double totalFinal = total;
+
+                                carrinho.clear();
+                                descontoEntrada = 0;
+                                descontoPercentual = false;
+                                dialog.dismiss();
+                                busca.setText("");
+                                atualizarResultados();
+                                atualizarCarrinho();
+
+                                String msg = "Venda #" + idVenda +
+                                        "\nTotal: " +
+                                        moeda.format(totalFinal);
+                                if (trocoFinal > 0.001) {
+                                    msg += "\nTroco: " +
+                                            moeda.format(trocoFinal);
+                                }
+
+                                new AlertDialog.Builder(this)
+                                        .setTitle("Venda concluída ✓")
+                                        .setMessage(msg +
+                                                "\n\nEstoque atualizado automaticamente.")
+                                        .setPositiveButton(
+                                                "Nova venda", null)
+                                        .show();
+
+                            } catch (Exception ex) {
+                                Toast.makeText(this,
+                                        ex.getMessage(),
+                                        Toast.LENGTH_LONG).show();
+                                atualizarResultados();
+                            }
+                        }));
 
         dialog.show();
     }
@@ -974,7 +1360,8 @@ public class PdvActivity extends Activity {
         EditText e = new EditText(this);
         e.setHint(hint);
         e.setSingleLine(true);
-        e.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        e.setInputType(InputType.TYPE_CLASS_NUMBER |
+                InputType.TYPE_NUMBER_FLAG_DECIMAL);
         return e;
     }
 
@@ -986,46 +1373,61 @@ public class PdvActivity extends Activity {
 
     private double subtotal() {
         double total = 0;
-        for (GestaoDbHelper.VendaItem i : carrinho) total += i.total();
-        return total;
-    }
-
-    private double custoTotal() {
-        double total = 0;
-        for (GestaoDbHelper.VendaItem i : carrinho) total += i.custoTotal();
+        for (GestaoDbHelper.VendaItem item : carrinho) {
+            total += item.total();
+        }
         return total;
     }
 
     private double valorDesconto() {
         if (descontoEntrada <= 0) return 0;
         double sub = subtotal();
-        if (descontoPercentual) return Math.min(sub, sub * (descontoEntrada / 100.0));
+        if (descontoPercentual) {
+            return Math.min(sub,
+                    sub * (descontoEntrada / 100.0));
+        }
         return Math.min(sub, descontoEntrada);
     }
 
     private String unidade(GestaoDbHelper.Produto p) {
-        return p.unidade == null || p.unidade.trim().isEmpty() ? "UN" : p.unidade.trim();
+        return p.unidade == null || p.unidade.trim().isEmpty()
+                ? "UN" : p.unidade.trim();
     }
 
     private String fmtQtd(double v) {
-        if (Math.abs(v - Math.rint(v)) < 0.000001) return String.valueOf((long)Math.rint(v));
-        return String.format(Locale.US, "%.3f", v).replaceAll("0+$","").replaceAll("\\.$","");
+        if (Math.abs(v - Math.rint(v)) < 0.000001) {
+            return String.valueOf((long)Math.rint(v));
+        }
+        return String.format(Locale.US, "%.3f", v)
+                .replaceAll("0+$","")
+                .replaceAll("\\.$","");
     }
 
     private String fmtPct(double v) {
-        return String.format(new Locale("pt","BR"), "%.2f%%", v);
+        return String.format(new Locale("pt","BR"),
+                "%.2f%%", v);
     }
 
     private double numero(String raw) {
         if (raw == null) return Double.NaN;
-        String s = raw.trim().replace("R$", "").replace(" ", "");
+
+        String s = raw.trim()
+                .replace("R$", "")
+                .replace(" ", "");
+
         if (s.isEmpty()) return Double.NaN;
+
         int c = s.lastIndexOf(',');
         int d = s.lastIndexOf('.');
+
         try {
             if (c >= 0 && d >= 0) {
-                if (c > d) s = s.replace(".", "").replace(",", ".");
-                else s = s.replace(",", "");
+                if (c > d) {
+                    s = s.replace(".", "")
+                            .replace(",", ".");
+                } else {
+                    s = s.replace(",", "");
+                }
             } else if (c >= 0) {
                 s = s.replace(",", ".");
             }
