@@ -5,9 +5,11 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -66,7 +68,7 @@ public class HistoricoVendasActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Últimas vendas realizadas • Alpha 15", 14, false);
+        TextView sub = txt("Últimas vendas realizadas • Alpha 16", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
@@ -109,14 +111,31 @@ public class HistoricoVendasActivity extends Activity {
             TextView id = txt("Venda #" + v.id, 16, true);
             top.addView(id, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
+            boolean estornada = "ESTORNADA".equalsIgnoreCase(v.statusVenda);
+
             TextView total = txt(moeda.format(v.total), 18, true);
-            total.setTextColor(Color.parseColor("#07884B"));
+            total.setTextColor(estornada
+                    ? Color.parseColor("#B42318")
+                    : Color.parseColor("#07884B"));
             top.addView(total);
             card.addView(top);
 
             TextView dt = txt(data.format(new Date(v.dataMillis)) + " • " + v.formaPagamento, 12, false);
             dt.setTextColor(Color.parseColor("#667085"));
             card.addView(dt);
+
+            if (estornada) {
+                TextView statusVenda = txt("VENDA ESTORNADA", 12, true);
+                statusVenda.setTextColor(Color.parseColor("#B42318"));
+                statusVenda.setPadding(0, dp(5), 0, 0);
+                card.addView(statusVenda);
+
+                if (v.estornoMotivo != null && !v.estornoMotivo.trim().isEmpty()) {
+                    TextView motivo = txt("Motivo: " + v.estornoMotivo, 12, false);
+                    motivo.setTextColor(Color.parseColor("#667085"));
+                    card.addView(motivo);
+                }
+            }
 
             String fiscal = formatarSituacaoFiscal(v);
             TextView nf = txt(fiscal, 12, true);
@@ -161,7 +180,20 @@ public class HistoricoVendasActivity extends Activity {
 
         StringBuilder detalhes = new StringBuilder();
         detalhes.append("Data: ").append(data.format(new Date(v.dataMillis))).append("\n");
-        detalhes.append("Pagamento: ").append(v.formaPagamento).append("\n\n");
+        detalhes.append("Pagamento: ").append(v.formaPagamento).append("\n");
+
+        boolean estornada = "ESTORNADA".equalsIgnoreCase(v.statusVenda);
+        if (estornada) {
+            detalhes.append("Situação: VENDA ESTORNADA\n");
+            if (v.estornoEm > 0) {
+                detalhes.append("Estornada em: ")
+                        .append(data.format(new Date(v.estornoEm))).append("\n");
+            }
+            if (v.estornoMotivo != null && !v.estornoMotivo.trim().isEmpty()) {
+                detalhes.append("Motivo: ").append(v.estornoMotivo).append("\n");
+            }
+        }
+        detalhes.append("\n");
 
         for (GestaoDbHelper.VendaItemRegistro item : v.itens) {
             detalhes.append(item.nome).append("\n")
@@ -199,7 +231,7 @@ public class HistoricoVendasActivity extends Activity {
                 .setTitle("Venda #" + vendaId)
                 .setMessage(detalhes.toString())
                 .setPositiveButton("Comprovante", null)
-                .setNeutralButton("Nota fiscal", null)
+                .setNeutralButton("Ações", null)
                 .setNegativeButton("Fechar", null)
                 .create();
 
@@ -209,12 +241,84 @@ public class HistoricoVendasActivity extends Activity {
 
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
                     .setOnClickListener(y -> {
-                        Intent i = new Intent(this, PdvActivity.class);
-                        i.putExtra("emitir_nota_venda_id", vendaId);
-                        startActivity(i);
+                        dialog.dismiss();
+                        abrirAcoesVenda(vendaId);
                     });
         });
         dialog.show();
+    }
+
+    private void abrirAcoesVenda(long vendaId) {
+        GestaoDbHelper.VendaDetalhe v = db.getVendaDetalhe(vendaId);
+        if (v == null) {
+            Toast.makeText(this, "Venda não encontrada.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if ("ESTORNADA".equalsIgnoreCase(v.statusVenda)) {
+            Toast.makeText(this, "Esta venda já foi estornada.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String[] opcoes = {"Nota fiscal", "Estornar venda"};
+        new AlertDialog.Builder(this)
+                .setTitle("Ações da venda #" + vendaId)
+                .setItems(opcoes, (d, which) -> {
+                    if (which == 0) {
+                        Intent i = new Intent(this, PdvActivity.class);
+                        i.putExtra("emitir_nota_venda_id", vendaId);
+                        startActivity(i);
+                    } else {
+                        confirmarEstorno(vendaId);
+                    }
+                })
+                .setNegativeButton("Fechar", null)
+                .show();
+    }
+
+    private void confirmarEstorno(long vendaId) {
+        EditText motivo = new EditText(this);
+        motivo.setHint("Motivo do estorno");
+        motivo.setSingleLine(false);
+        motivo.setMinLines(2);
+        motivo.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(20);
+        box.setPadding(pad, 0, pad, 0);
+        box.addView(motivo);
+
+        AlertDialog confirm = new AlertDialog.Builder(this)
+                .setTitle("Estornar venda #" + vendaId)
+                .setMessage("A venda continuará no histórico. O estoque será devolvido automaticamente e a venda deixará de compor os totais financeiros.")
+                .setView(box)
+                .setPositiveButton("Confirmar estorno", null)
+                .setNegativeButton("Cancelar", null)
+                .create();
+
+        confirm.setOnShowListener(x -> confirm.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(y -> {
+                    String texto = motivo.getText().toString().trim();
+                    if (texto.isEmpty()) {
+                        motivo.setError("Informe o motivo do estorno");
+                        motivo.requestFocus();
+                        return;
+                    }
+                    try {
+                        db.estornarVenda(vendaId, texto);
+                        confirm.dismiss();
+                        Toast.makeText(this,
+                                "Venda estornada e estoque devolvido.",
+                                Toast.LENGTH_LONG).show();
+                        carregar();
+                    } catch (Exception ex) {
+                        Toast.makeText(this,
+                                ex.getMessage() == null ? "Não foi possível estornar a venda." : ex.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                    }
+                }));
+        confirm.show();
     }
 
     private void compartilharComprovante(long vendaId) {
@@ -248,6 +352,12 @@ public class HistoricoVendasActivity extends Activity {
         s.append("--------------------------------\n");
         s.append("Venda #").append(v.id).append("\n");
         s.append("Data: ").append(data.format(new Date(v.dataMillis))).append("\n");
+        if ("ESTORNADA".equalsIgnoreCase(v.statusVenda)) {
+            s.append("*** VENDA ESTORNADA ***\n");
+            if (v.estornoMotivo != null && !v.estornoMotivo.trim().isEmpty()) {
+                s.append("Motivo: ").append(v.estornoMotivo).append("\n");
+            }
+        }
         s.append("--------------------------------\n");
 
         for (GestaoDbHelper.VendaItemRegistro item : v.itens) {
