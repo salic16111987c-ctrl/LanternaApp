@@ -324,7 +324,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 16", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 17", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
@@ -1669,36 +1669,9 @@ public class PdvActivity extends Activity {
     }
 
     private void compartilharComprovante(long vendaId) {
-        GestaoDbHelper.VendaDetalhe venda = db.getVendaDetalhe(vendaId);
-        if (venda == null) {
-            Toast.makeText(this,
-                    "Venda não encontrada.",
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String comprovante = montarTextoComprovante(venda);
-
-        AlertDialog preview = new AlertDialog.Builder(this)
-                .setTitle("Comprovante da venda")
-                .setMessage(comprovante)
-                .setPositiveButton("Compartilhar", null)
-                .setNegativeButton("Fechar", null)
-                .create();
-
-        preview.setOnShowListener(x ->
-                preview.getButton(AlertDialog.BUTTON_POSITIVE)
-                        .setOnClickListener(v -> {
-                            Intent share = new Intent(Intent.ACTION_SEND);
-                            share.setType("text/plain");
-                            share.putExtra(Intent.EXTRA_SUBJECT,
-                                    "Comprovante Tech Cell - Venda #" + venda.id);
-                            share.putExtra(Intent.EXTRA_TEXT, comprovante);
-                            startActivity(Intent.createChooser(
-                                    share, "Compartilhar comprovante"));
-                        }));
-
-        preview.show();
+        Intent i = new Intent(this, ComprovanteVendaActivity.class);
+        i.putExtra("venda_id", vendaId);
+        startActivity(i);
     }
 
     private String montarTextoComprovante(GestaoDbHelper.VendaDetalhe venda) {
