@@ -169,6 +169,14 @@ public class ProdutosActivity extends Activity {
             linha.setPadding(0, dp(5), 0, 0);
             card.addView(linha);
 
+            TextView fiscalStatus = txt(
+                    p.fiscalMinimoPreenchido() ? "Fiscal: dados mínimos preenchidos" : "Fiscal: cadastro pendente",
+                    12, true);
+            fiscalStatus.setTextColor(Color.parseColor(
+                    p.fiscalMinimoPreenchido() ? "#176240" : "#B54708"));
+            fiscalStatus.setPadding(0, dp(5), 0, 0);
+            card.addView(fiscalStatus);
+
             if (p.estoque <= p.estoqueMinimo && p.estoqueMinimo > 0) {
                 TextView baixo = txt("⚠ Estoque baixo — mínimo: " + fmtQtd(p.estoqueMinimo) + " " + un, 13, true);
                 baixo.setTextColor(Color.parseColor("#B42318"));
@@ -348,6 +356,65 @@ public class ProdutosActivity extends Activity {
         ajuda.setPadding(0, dp(5), 0, dp(4));
         box.addView(ajuda);
 
+        box.addView(section("DADOS FISCAIS"));
+        TextView fiscalAviso = txt(
+                "Não preencha códigos tributários por adivinhação. Confirme NCM, CFOP, " +
+                "CSOSN/CST, PIS e COFINS com a contabilidade. Estes dados serão usados " +
+                "somente quando a emissão fiscal real for ativada.",
+                12, false);
+        fiscalAviso.setTextColor(Color.parseColor("#B54708"));
+        fiscalAviso.setBackgroundColor(Color.parseColor("#FFF6ED"));
+        fiscalAviso.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.addView(fiscalAviso);
+
+        box.addView(label("NCM (8 dígitos)"));
+        EditText ncm = field("Ex.: 85176259", InputType.TYPE_CLASS_NUMBER);
+        box.addView(ncm);
+
+        box.addView(label("CEST (quando aplicável)"));
+        EditText cest = field("Opcional", InputType.TYPE_CLASS_NUMBER);
+        box.addView(cest);
+
+        box.addView(label("CFOP padrão (4 dígitos)"));
+        EditText cfop = field("Ex.: conforme orientação contábil", InputType.TYPE_CLASS_NUMBER);
+        box.addView(cfop);
+
+        box.addView(label("Origem da mercadoria"));
+        EditText origem = field("Código de origem", InputType.TYPE_CLASS_NUMBER);
+        box.addView(origem);
+
+        box.addView(label("CSOSN/CST ICMS padrão"));
+        EditText tributacaoIcms = field("Conforme regime/operação", InputType.TYPE_CLASS_TEXT);
+        box.addView(tributacaoIcms);
+
+        box.addView(label("Alíquota ICMS % (quando aplicável)"));
+        EditText aliquotaIcms = field("0,00", decimal);
+        box.addView(aliquotaIcms);
+
+        box.addView(label("CST PIS"));
+        EditText cstPis = field("Código CST PIS", InputType.TYPE_CLASS_TEXT);
+        box.addView(cstPis);
+
+        box.addView(label("Alíquota PIS % (quando aplicável)"));
+        EditText aliquotaPis = field("0,00", decimal);
+        box.addView(aliquotaPis);
+
+        box.addView(label("CST COFINS"));
+        EditText cstCofins = field("Código CST COFINS", InputType.TYPE_CLASS_TEXT);
+        box.addView(cstCofins);
+
+        box.addView(label("Alíquota COFINS % (quando aplicável)"));
+        EditText aliquotaCofins = field("0,00", decimal);
+        box.addView(aliquotaCofins);
+
+        box.addView(label("Unidade tributável"));
+        EditText unidadeTributavel = field("Ex.: UN", InputType.TYPE_CLASS_TEXT);
+        box.addView(unidadeTributavel);
+
+        box.addView(label("GTIN tributável / EAN (quando houver)"));
+        EditText gtinTributavel = field("Código de barras tributável", InputType.TYPE_CLASS_TEXT);
+        box.addView(gtinTributavel);
+
         codigo.setText(p.codigo);
         nome.setText(p.nome);
         barras.setText(p.codigoBarras);
@@ -359,6 +426,18 @@ public class ProdutosActivity extends Activity {
         prazo.setText(fmtEdit(p.precoPrazo, false));
         estoque.setText(fmtEdit(p.estoque, true));
         minimo.setText(fmtEdit(p.estoqueMinimo, true));
+        ncm.setText(p.ncm);
+        cest.setText(p.cest);
+        cfop.setText(p.cfop);
+        origem.setText(p.origem);
+        tributacaoIcms.setText(p.tributacaoIcms);
+        aliquotaIcms.setText(fmtEdit(p.aliquotaIcms, false));
+        cstPis.setText(p.cstPis);
+        aliquotaPis.setText(fmtEdit(p.aliquotaPis, false));
+        cstCofins.setText(p.cstCofins);
+        aliquotaCofins.setText(fmtEdit(p.aliquotaCofins, false));
+        unidadeTributavel.setText(p.unidadeTributavel);
+        gtinTributavel.setText(p.gtinTributavel);
 
         int pos = posicaoUnidade(p.unidade);
         unidade.setSelection(pos);
@@ -435,12 +514,33 @@ public class ProdutosActivity extends Activity {
             double pp = num(prazo.getText().toString());
             double est = num(estoque.getText().toString());
             double min = num(minimo.getText().toString());
+            double aliIcms = num(aliquotaIcms.getText().toString());
+            double aliPis = num(aliquotaPis.getText().toString());
+            double aliCofins = num(aliquotaCofins.getText().toString());
 
             if (Double.isNaN(c)) { custo.setError("Valor inválido"); return; }
             if (Double.isNaN(pv)) { venda.setError("Valor inválido"); return; }
             if (Double.isNaN(pp)) { prazo.setError("Valor inválido"); return; }
             if (Double.isNaN(est)) { estoque.setError("Quantidade inválida"); return; }
             if (Double.isNaN(min)) { minimo.setError("Quantidade inválida"); return; }
+            if (Double.isNaN(aliIcms)) { aliquotaIcms.setError("Valor inválido"); return; }
+            if (Double.isNaN(aliPis)) { aliquotaPis.setError("Valor inválido"); return; }
+            if (Double.isNaN(aliCofins)) { aliquotaCofins.setError("Valor inválido"); return; }
+
+            String ncmTxt = CadastroBrasilUtils.apenasDigitos(ncm.getText().toString());
+            String cfopTxt = CadastroBrasilUtils.apenasDigitos(cfop.getText().toString());
+            if (!ncmTxt.isEmpty() && ncmTxt.length() != 8) {
+                ncm.setError("NCM deve ter 8 dígitos");
+                return;
+            }
+            if (!cfopTxt.isEmpty() && cfopTxt.length() != 4) {
+                cfop.setError("CFOP deve ter 4 dígitos");
+                return;
+            }
+            if (aliIcms < 0 || aliPis < 0 || aliCofins < 0) {
+                Toast.makeText(this, "Não use alíquotas negativas.", Toast.LENGTH_LONG).show();
+                return;
+            }
 
             String uSel = UNIDADES.get(unidade.getSelectedItemPosition());
             String uFinal = uSel;
@@ -480,6 +580,18 @@ public class ProdutosActivity extends Activity {
             p.precoPrazo = pp;
             p.estoque = est;
             p.estoqueMinimo = min;
+            p.ncm = ncmTxt;
+            p.cest = CadastroBrasilUtils.apenasDigitos(cest.getText().toString());
+            p.cfop = cfopTxt;
+            p.origem = origem.getText().toString().trim();
+            p.tributacaoIcms = tributacaoIcms.getText().toString().trim().toUpperCase(new Locale("pt","BR"));
+            p.aliquotaIcms = aliIcms;
+            p.cstPis = cstPis.getText().toString().trim().toUpperCase(new Locale("pt","BR"));
+            p.aliquotaPis = aliPis;
+            p.cstCofins = cstCofins.getText().toString().trim().toUpperCase(new Locale("pt","BR"));
+            p.aliquotaCofins = aliCofins;
+            p.unidadeTributavel = unidadeTributavel.getText().toString().trim().toUpperCase(new Locale("pt","BR"));
+            p.gtinTributavel = gtinTributavel.getText().toString().trim();
 
             db.save(p);
             dialog.dismiss();
