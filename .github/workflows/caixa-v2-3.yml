@@ -46,12 +46,12 @@ jobs:
         working-directory: caixa-da-loja-v2-3
         run: |
           mkdir -p build-output
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign             --ks test-signing.jks             --ks-key-alias techcelltest             --ks-pass pass:android             --key-pass pass:android             --out build-output/TechCell-PDV-Alpha16-Preview.apk             app/build/outputs/apk/release/app-release-unsigned.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs             build-output/TechCell-PDV-Alpha16-Preview.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign             --ks test-signing.jks             --ks-key-alias techcelltest             --ks-pass pass:android             --key-pass pass:android             --out build-output/TechCell-PDV-Alpha17-Preview.apk             app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs             build-output/TechCell-PDV-Alpha17-Preview.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TechCell-PDV-Alpha16-Preview
-          path: caixa-da-loja-v2-3/build-output/TechCell-PDV-Alpha16-Preview.apk
+          name: TechCell-PDV-Alpha17-Preview
+          path: caixa-da-loja-v2-3/build-output/TechCell-PDV-Alpha17-Preview.apk
           retention-days: 14
