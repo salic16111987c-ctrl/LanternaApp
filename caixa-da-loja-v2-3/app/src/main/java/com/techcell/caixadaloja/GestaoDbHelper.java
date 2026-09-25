@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 8;
+    private static final int DB_VERSION = 9;
 
     public static class Produto {
         public long id;
@@ -94,6 +94,29 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double pix;
         public double cartao;
         public double desconto;
+    }
+
+    public static class Despesa {
+        public long id;
+        public long dataMillis;
+        public String descricao = "";
+        public String categoria = "";
+        public String tipo = "OPERACIONAL";
+        public String formaPagamento = "";
+        public double valor;
+        public String observacao = "";
+        public String status = "ATIVA";
+        public long canceladaEm;
+        public String cancelamentoMotivo = "";
+    }
+
+    public static class ResumoFinanceiro {
+        public ResumoVendas vendas = new ResumoVendas();
+        public double despesasOperacionais;
+        public double comprasEstoque;
+        public double outrasSaidas;
+        public double totalSaidas;
+        public double lucroLiquido;
     }
 
     public static class VendaItemRegistro {
@@ -196,6 +219,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         criarVendas(db);
         criarEmpresaConfig(db);
         criarClientes(db);
+        criarDespesas(db);
     }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
@@ -269,6 +293,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE produtos ADD COLUMN aliquota_cofins REAL NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE produtos ADD COLUMN unidade_tributavel TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE produtos ADD COLUMN gtin_tributavel TEXT NOT NULL DEFAULT ''");
+        }
+
+        if (oldVersion < 9) {
+            criarDespesas(db);
         }
     }
 
@@ -415,6 +443,26 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 ")");
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_documento ON clientes(documento) WHERE documento<>''");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome)");
+    }
+
+    private void criarDespesas(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS despesas (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "data_millis INTEGER NOT NULL," +
+                "descricao TEXT NOT NULL," +
+                "categoria TEXT NOT NULL DEFAULT ''," +
+                "tipo TEXT NOT NULL DEFAULT 'OPERACIONAL'," +
+                "forma_pagamento TEXT NOT NULL DEFAULT ''," +
+                "valor REAL NOT NULL DEFAULT 0," +
+                "observacao TEXT NOT NULL DEFAULT ''," +
+                "status TEXT NOT NULL DEFAULT 'ATIVA'," +
+                "cancelada_em INTEGER NOT NULL DEFAULT 0," +
+                "cancelamento_motivo TEXT NOT NULL DEFAULT ''," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL" +
+                ")");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_despesas_data ON despesas(data_millis)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_despesas_status ON despesas(status)");
     }
 
     private ContentValues values(Produto p) {
@@ -1029,6 +1077,106 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 r.desconto = c.getDouble(7);
             }
         } finally { c.close(); }
+        return r;
+    }
+
+    public long saveDespesa(Despesa d) {
+        if (d == null) throw new IllegalArgumentException("Despesa inválida.");
+        if (d.descricao == null || d.descricao.trim().isEmpty()) {
+            throw new IllegalArgumentException("Informe a descrição da despesa.");
+        }
+        if (d.valor <= 0) throw new IllegalArgumentException("Informe um valor maior que zero.");
+
+        SQLiteDatabase db = getWritableDatabase();
+        long now = System.currentTimeMillis();
+        ContentValues v = new ContentValues();
+        v.put("data_millis", d.dataMillis > 0 ? d.dataMillis : now);
+        v.put("descricao", d.descricao.trim());
+        v.put("categoria", d.categoria == null ? "" : d.categoria.trim());
+        v.put("tipo", d.tipo == null ? "OPERACIONAL" : d.tipo.trim());
+        v.put("forma_pagamento", d.formaPagamento == null ? "" : d.formaPagamento.trim());
+        v.put("valor", d.valor);
+        v.put("observacao", d.observacao == null ? "" : d.observacao.trim());
+        v.put("status", d.status == null ? "ATIVA" : d.status.trim());
+        v.put("cancelada_em", d.canceladaEm);
+        v.put("cancelamento_motivo", d.cancelamentoMotivo == null ? "" : d.cancelamentoMotivo.trim());
+        v.put("updated_at", now);
+
+        if (d.id > 0) {
+            db.update("despesas", v, "id=? AND status='ATIVA'",
+                    new String[]{String.valueOf(d.id)});
+            return d.id;
+        }
+
+        v.put("created_at", now);
+        d.id = db.insertOrThrow("despesas", null, v);
+        return d.id;
+    }
+
+    public List<Despesa> listDespesas(long inicio, long fim, int limite) {
+        List<Despesa> out = new ArrayList<>();
+        int max = Math.max(1, Math.min(limite, 500));
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,data_millis,descricao,categoria,tipo,forma_pagamento,valor,observacao," +
+                        "status,cancelada_em,cancelamento_motivo FROM despesas " +
+                        "WHERE data_millis>=? AND data_millis<? ORDER BY data_millis DESC,id DESC LIMIT " + max,
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            while (c.moveToNext()) {
+                Despesa d = new Despesa();
+                d.id = c.getLong(0);
+                d.dataMillis = c.getLong(1);
+                d.descricao = c.getString(2);
+                d.categoria = c.getString(3);
+                d.tipo = c.getString(4);
+                d.formaPagamento = c.getString(5);
+                d.valor = c.getDouble(6);
+                d.observacao = c.getString(7);
+                d.status = c.getString(8);
+                d.canceladaEm = c.getLong(9);
+                d.cancelamentoMotivo = c.getString(10);
+                out.add(d);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
+    public void cancelarDespesa(long id, String motivo) {
+        if (motivo == null || motivo.trim().isEmpty()) {
+            throw new IllegalArgumentException("Informe o motivo do cancelamento.");
+        }
+        ContentValues v = new ContentValues();
+        v.put("status", "CANCELADA");
+        v.put("cancelada_em", System.currentTimeMillis());
+        v.put("cancelamento_motivo", motivo.trim());
+        v.put("updated_at", System.currentTimeMillis());
+        int alteradas = getWritableDatabase().update(
+                "despesas", v, "id=? AND status='ATIVA'", new String[]{String.valueOf(id)});
+        if (alteradas == 0) throw new IllegalStateException("Despesa já cancelada ou não encontrada.");
+    }
+
+    public ResumoFinanceiro resumoFinanceiro(long inicio, long fim) {
+        ResumoFinanceiro r = new ResumoFinanceiro();
+        r.vendas = resumoPeriodo(inicio, fim);
+
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT tipo,COALESCE(SUM(valor),0) FROM despesas " +
+                        "WHERE data_millis>=? AND data_millis<? AND status='ATIVA' GROUP BY tipo",
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            while (c.moveToNext()) {
+                String tipo = c.getString(0);
+                double valor = c.getDouble(1);
+                if ("COMPRA_ESTOQUE".equalsIgnoreCase(tipo)) r.comprasEstoque += valor;
+                else if ("OUTRA_SAIDA".equalsIgnoreCase(tipo)) r.outrasSaidas += valor;
+                else r.despesasOperacionais += valor;
+            }
+        } finally { c.close(); }
+
+        r.totalSaidas = r.despesasOperacionais + r.comprasEstoque + r.outrasSaidas;
+        // Compra de estoque NÃO é descontada novamente do lucro: o custo da mercadoria
+        // já entra no resultado quando o item é vendido.
+        r.lucroLiquido = r.vendas.lucro - r.despesasOperacionais - r.outrasSaidas;
         return r;
     }
 
