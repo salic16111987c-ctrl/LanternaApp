@@ -100,7 +100,22 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String notaChave = "";
         public String notaProtocolo = "";
         public String notaXml = "";
+        public String notaTipo = "";
+        public String destNome = "";
+        public String destDocumento = "";
         public final List<VendaItemRegistro> itens = new ArrayList<>();
+    }
+
+    public static class VendaResumo {
+        public long id;
+        public long dataMillis;
+        public double total;
+        public double desconto;
+        public String formaPagamento = "";
+        public String notaTipo = "";
+        public String notaStatus = "NAO_EMITIDA";
+        public String destNome = "";
+        public String destDocumento = "";
     }
 
     public static class EmpresaConfig {
@@ -536,12 +551,37 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         }
     }
 
+    public List<VendaResumo> listVendas(int limite) {
+        List<VendaResumo> out = new ArrayList<>();
+        int max = Math.max(1, Math.min(limite, 500));
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,data_millis,total,desconto,forma_pagamento,nota_tipo,nota_status,dest_nome,dest_documento " +
+                        "FROM vendas ORDER BY data_millis DESC,id DESC LIMIT " + max,
+                null);
+        try {
+            while (c.moveToNext()) {
+                VendaResumo v = new VendaResumo();
+                v.id = c.getLong(0);
+                v.dataMillis = c.getLong(1);
+                v.total = c.getDouble(2);
+                v.desconto = c.getDouble(3);
+                v.formaPagamento = c.getString(4);
+                v.notaTipo = c.getString(5);
+                v.notaStatus = c.getString(6);
+                v.destNome = c.getString(7);
+                v.destDocumento = c.getString(8);
+                out.add(v);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
     public VendaDetalhe getVendaDetalhe(long vendaId) {
         VendaDetalhe v = null;
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT id,data_millis,subtotal,desconto,total,forma_pagamento,dinheiro,pix,cartao," +
-                        "recebido,troco,consumidor_documento,nota_status,nota_numero,nota_chave,nota_protocolo,nota_xml " +
-                        "FROM vendas WHERE id=?",
+                        "recebido,troco,consumidor_documento,nota_status,nota_numero,nota_chave,nota_protocolo,nota_xml," +
+                        "nota_tipo,dest_nome,dest_documento FROM vendas WHERE id=?",
                 new String[]{String.valueOf(vendaId)});
         try {
             if (c.moveToFirst()) {
@@ -563,6 +603,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 v.notaChave = c.getString(14);
                 v.notaProtocolo = c.getString(15);
                 v.notaXml = c.getString(16);
+                v.notaTipo = c.getString(17);
+                v.destNome = c.getString(18);
+                v.destDocumento = c.getString(19);
             }
         } finally { c.close(); }
 
