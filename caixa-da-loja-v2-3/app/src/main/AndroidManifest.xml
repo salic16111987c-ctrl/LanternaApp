@@ -30,6 +30,6 @@
         <activity android:name="com.techcell.caixadaloja.ConfiguracoesFiscaisActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.ClientesActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.HistoricoVendasActivity" android:exported="false" android:screenOrientation="portrait" />
-        <activity android:name="com.techcell.caixadaloja.ComprovanteVendaActivity" android:exported="false" android:screenOrientation="portrait" />\n        <activity android:name="com.techcell.caixadaloja.PreparacaoFiscalActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.ComprovanteVendaActivity" android:exported="false" android:screenOrientation="portrait" />\n        <activity android:name="com.techcell.caixadaloja.PreparacaoFiscalActivity" android:exported="false" android:screenOrientation="portrait" />\n        <activity android:name="com.techcell.caixadaloja.FinanceiroActivity" android:exported="false" android:screenOrientation="portrait" />
     </application>
 </manifest>
