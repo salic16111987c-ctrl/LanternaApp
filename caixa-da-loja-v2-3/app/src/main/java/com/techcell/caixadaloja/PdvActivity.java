@@ -320,7 +320,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 12", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 13", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
@@ -1458,6 +1458,68 @@ public class PdvActivity extends Activity {
     }
 
     private void abrirNfe(long vendaId) {
+        List<GestaoDbHelper.Cliente> clientes = db.listClientes("");
+        if (clientes.isEmpty()) {
+            abrirNfeManual(vendaId);
+            return;
+        }
+
+        String[] opcoes = new String[]{
+                "Selecionar cliente cadastrado",
+                "Preencher destinatário agora"
+        };
+
+        new AlertDialog.Builder(this)
+                .setTitle("Destinatário da NF-e")
+                .setItems(opcoes, (d, which) -> {
+                    if (which == 0) selecionarClienteNfe(vendaId);
+                    else abrirNfeManual(vendaId);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void selecionarClienteNfe(long vendaId) {
+        List<GestaoDbHelper.Cliente> clientes = db.listClientes("");
+        String[] nomes = new String[clientes.size()];
+        for (int i=0; i<clientes.size(); i++) {
+            GestaoDbHelper.Cliente c = clientes.get(i);
+            nomes[i] = c.nome + " • " + c.tipo + " • " + c.documento;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Selecionar cliente")
+                .setItems(nomes, (d, which) -> registrarNfeCliente(vendaId, clientes.get(which)))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void registrarNfeCliente(long vendaId, GestaoDbHelper.Cliente c) {
+        if (c.logradouro == null || c.logradouro.trim().isEmpty() ||
+                c.numero == null || c.numero.trim().isEmpty() ||
+                c.bairro == null || c.bairro.trim().isEmpty() ||
+                c.cep == null || c.cep.replaceAll("[^0-9]", "").length() != 8 ||
+                c.municipio == null || c.municipio.trim().isEmpty() ||
+                c.uf == null || c.uf.trim().length() != 2) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Cadastro incompleto")
+                    .setMessage("Este cliente precisa de endereço completo para a NF-e. Abra o módulo Clientes e complete o cadastro.")
+                    .setPositiveButton("Abrir Clientes", (d,w) ->
+                            startActivity(new Intent(this, ClientesActivity.class)))
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+            return;
+        }
+
+        db.registrarSolicitacaoNfe(
+                vendaId, c.nome, c.documento, c.ie,
+                c.logradouro, c.numero, c.complemento,
+                c.bairro, c.cep, c.municipio, c.uf,
+                c.telefone, c.email);
+        mostrarNotaPreparada(vendaId, "NF-e");
+    }
+
+    private void abrirNfeManual(long vendaId) {
         ScrollView scroll = new ScrollView(this);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);

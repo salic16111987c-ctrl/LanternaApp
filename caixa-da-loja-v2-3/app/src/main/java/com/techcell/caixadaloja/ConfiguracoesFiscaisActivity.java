@@ -2,11 +2,9 @@ package com.techcell.caixadaloja;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.text.InputType;
-import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -18,11 +16,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 public class ConfiguracoesFiscaisActivity extends Activity {
-    private static final String PREFS = "fiscal_config";
-
     private EditText razao, fantasia, cnpj, ie, regime, cep, logradouro, numero,
             complemento, bairro, municipio, uf, telefone, email, serieNfce, serieNfe;
     private Spinner ambiente;
+    private TextView status;
+    private GestaoDbHelper db;
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
 
@@ -35,11 +33,6 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         return t;
     }
 
-    private EditText campo(String label, String key) {
-        LinearLayout box = new LinearLayout(this);
-        return null;
-    }
-
     private EditText addCampo(LinearLayout root, String label, String hint, boolean numeroApenas) {
         TextView l = txt(label, 13, true);
         l.setTextColor(Color.parseColor("#475467"));
@@ -50,8 +43,7 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         e.setHint(hint);
         e.setSingleLine(true);
         e.setTextSize(16);
-        if (numeroApenas) e.setInputType(InputType.TYPE_CLASS_NUMBER);
-        else e.setInputType(InputType.TYPE_CLASS_TEXT);
+        e.setInputType(numeroApenas ? InputType.TYPE_CLASS_NUMBER : InputType.TYPE_CLASS_TEXT);
         e.setBackgroundColor(Color.WHITE);
         e.setPadding(dp(12), dp(8), dp(12), dp(8));
         root.addView(e, new LinearLayout.LayoutParams(
@@ -61,6 +53,7 @@ public class ConfiguracoesFiscaisActivity extends Activity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        db = new GestaoDbHelper(this);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#F4F6FA"));
@@ -85,14 +78,10 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
 
-        TextView aviso = txt(
-                "Estes dados serão usados no cupom fiscal (NFC-e) e na nota fiscal (NF-e). " +
-                "Certificado digital e CSC serão configurados na etapa de integração real com a SEFAZ.",
-                13, false);
-        aviso.setTextColor(Color.parseColor("#344054"));
-        aviso.setBackgroundColor(Color.parseColor("#EAF3FF"));
-        aviso.setPadding(dp(12), dp(12), dp(12), dp(12));
-        root.addView(aviso);
+        status = txt("", 13, true);
+        status.setPadding(dp(12), dp(10), dp(12), dp(10));
+        status.setVisibility(TextView.GONE);
+        root.addView(status);
 
         razao = addCampo(root, "Razão social *", "Razão social da empresa", false);
         fantasia = addCampo(root, "Nome fantasia", "Tech Cell", false);
@@ -154,24 +143,24 @@ public class ConfiguracoesFiscaisActivity extends Activity {
     }
 
     private void carregar() {
-        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
-        razao.setText(p.getString("razao", ""));
-        fantasia.setText(p.getString("fantasia", ""));
-        cnpj.setText(p.getString("cnpj", ""));
-        ie.setText(p.getString("ie", ""));
-        regime.setText(p.getString("regime", ""));
-        cep.setText(p.getString("cep", ""));
-        logradouro.setText(p.getString("logradouro", ""));
-        numero.setText(p.getString("numero", ""));
-        complemento.setText(p.getString("complemento", ""));
-        bairro.setText(p.getString("bairro", ""));
-        municipio.setText(p.getString("municipio", ""));
-        uf.setText(p.getString("uf", ""));
-        telefone.setText(p.getString("telefone", ""));
-        email.setText(p.getString("email", ""));
-        serieNfce.setText(p.getString("serie_nfce", "1"));
-        serieNfe.setText(p.getString("serie_nfe", "1"));
-        ambiente.setSelection(p.getBoolean("producao", false) ? 1 : 0);
+        GestaoDbHelper.EmpresaConfig e = db.getEmpresaConfig();
+        razao.setText(e.razao);
+        fantasia.setText(e.fantasia);
+        cnpj.setText(e.cnpj);
+        ie.setText(e.ie);
+        regime.setText(e.regime);
+        cep.setText(e.cep);
+        logradouro.setText(e.logradouro);
+        numero.setText(e.numero);
+        complemento.setText(e.complemento);
+        bairro.setText(e.bairro);
+        municipio.setText(e.municipio);
+        uf.setText(e.uf);
+        telefone.setText(e.telefone);
+        email.setText(e.email);
+        serieNfce.setText(e.serieNfce == null || e.serieNfce.isEmpty() ? "1" : e.serieNfce);
+        serieNfe.setText(e.serieNfe == null || e.serieNfe.isEmpty() ? "1" : e.serieNfe);
+        ambiente.setSelection(e.producao ? 1 : 0);
     }
 
     private void salvar() {
@@ -188,56 +177,58 @@ public class ConfiguracoesFiscaisActivity extends Activity {
             ie.setError("Informe a Inscrição Estadual");
             return;
         }
+        String ufTxt = uf.getText().toString().trim().toUpperCase();
         if (logradouro.getText().toString().trim().isEmpty() ||
                 numero.getText().toString().trim().isEmpty() ||
                 bairro.getText().toString().trim().isEmpty() ||
                 municipio.getText().toString().trim().isEmpty() ||
-                uf.getText().toString().trim().length() != 2) {
-            Toast.makeText(this,
-                    "Confira o endereço da empresa e a UF.",
-                    Toast.LENGTH_LONG).show();
+                ufTxt.length() != 2) {
+            Toast.makeText(this, "Confira o endereço da empresa e a UF.", Toast.LENGTH_LONG).show();
             return;
         }
 
-        SharedPreferences.Editor e = getSharedPreferences(PREFS, MODE_PRIVATE).edit();
-        e.putString("razao", razao.getText().toString().trim());
-        e.putString("fantasia", fantasia.getText().toString().trim());
-        e.putString("cnpj", doc);
-        e.putString("ie", ie.getText().toString().trim());
-        e.putString("regime", regime.getText().toString().trim());
-        e.putString("cep", soNumeros(cep.getText().toString()));
-        e.putString("logradouro", logradouro.getText().toString().trim());
-        e.putString("numero", numero.getText().toString().trim());
-        e.putString("complemento", complemento.getText().toString().trim());
-        e.putString("bairro", bairro.getText().toString().trim());
-        e.putString("municipio", municipio.getText().toString().trim());
-        e.putString("uf", uf.getText().toString().trim().toUpperCase());
-        e.putString("telefone", telefone.getText().toString().trim());
-        e.putString("email", email.getText().toString().trim());
-        e.putString("serie_nfce", serieNfce.getText().toString().trim());
-        e.putString("serie_nfe", serieNfe.getText().toString().trim());
-        e.putBoolean("producao", ambiente.getSelectedItemPosition() == 1);
-        e.apply();
+        GestaoDbHelper.EmpresaConfig e = new GestaoDbHelper.EmpresaConfig();
+        e.razao = razao.getText().toString().trim();
+        e.fantasia = fantasia.getText().toString().trim();
+        e.cnpj = doc;
+        e.ie = ie.getText().toString().trim();
+        e.regime = regime.getText().toString().trim();
+        e.cep = soNumeros(cep.getText().toString());
+        e.logradouro = logradouro.getText().toString().trim();
+        e.numero = numero.getText().toString().trim();
+        e.complemento = complemento.getText().toString().trim();
+        e.bairro = bairro.getText().toString().trim();
+        e.municipio = municipio.getText().toString().trim();
+        e.uf = ufTxt;
+        e.telefone = telefone.getText().toString().trim();
+        e.email = email.getText().toString().trim();
+        e.serieNfce = serieNfce.getText().toString().trim().isEmpty() ? "1" : serieNfce.getText().toString().trim();
+        e.serieNfe = serieNfe.getText().toString().trim().isEmpty() ? "1" : serieNfe.getText().toString().trim();
+        e.producao = ambiente.getSelectedItemPosition() == 1;
 
+        db.saveEmpresaConfig(e);
+
+        status.setText("✓ Dados da empresa salvos no banco.");
+        status.setTextColor(Color.parseColor("#176240"));
+        status.setBackgroundColor(Color.parseColor("#ECFDF3"));
+        status.setVisibility(TextView.VISIBLE);
         Toast.makeText(this, "Dados fiscais salvos.", Toast.LENGTH_SHORT).show();
-        finish();
     }
 
     public static boolean estaMinimamenteConfigurada(Context context) {
-        SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        return !p.getString("razao", "").trim().isEmpty() &&
-                soNumeros(p.getString("cnpj", "")).length() == 14 &&
-                !p.getString("ie", "").trim().isEmpty() &&
-                !p.getString("municipio", "").trim().isEmpty() &&
-                p.getString("uf", "").trim().length() == 2;
+        GestaoDbHelper.EmpresaConfig e = new GestaoDbHelper(context).getEmpresaConfig();
+        return !e.razao.trim().isEmpty() &&
+                soNumeros(e.cnpj).length() == 14 &&
+                !e.ie.trim().isEmpty() &&
+                !e.municipio.trim().isEmpty() &&
+                e.uf.trim().length() == 2;
     }
 
     public static String nomeEmpresa(Context context) {
-        SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String fantasia = p.getString("fantasia", "").trim();
-        if (!fantasia.isEmpty()) return fantasia;
-        String razao = p.getString("razao", "").trim();
-        return razao.isEmpty() ? "TECH CELL" : razao;
+        GestaoDbHelper.EmpresaConfig e = new GestaoDbHelper(context).getEmpresaConfig();
+        if (e.fantasia != null && !e.fantasia.trim().isEmpty()) return e.fantasia.trim();
+        if (e.razao != null && !e.razao.trim().isEmpty()) return e.razao.trim();
+        return "TECH CELL";
     }
 
     private static String soNumeros(String s) {

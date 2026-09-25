@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 5;
+    private static final int DB_VERSION = 6;
 
     public static class Produto {
         public long id;
@@ -103,6 +103,44 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public final List<VendaItemRegistro> itens = new ArrayList<>();
     }
 
+    public static class EmpresaConfig {
+        public long id = 1;
+        public String razao = "";
+        public String fantasia = "";
+        public String cnpj = "";
+        public String ie = "";
+        public String regime = "";
+        public String cep = "";
+        public String logradouro = "";
+        public String numero = "";
+        public String complemento = "";
+        public String bairro = "";
+        public String municipio = "";
+        public String uf = "";
+        public String telefone = "";
+        public String email = "";
+        public String serieNfce = "1";
+        public String serieNfe = "1";
+        public boolean producao;
+    }
+
+    public static class Cliente {
+        public long id;
+        public String tipo = "PF";
+        public String nome = "";
+        public String documento = "";
+        public String ie = "";
+        public String logradouro = "";
+        public String numero = "";
+        public String complemento = "";
+        public String bairro = "";
+        public String cep = "";
+        public String municipio = "";
+        public String uf = "";
+        public String telefone = "";
+        public String email = "";
+    }
+
     public GestaoDbHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
@@ -110,13 +148,16 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     @Override public void onCreate(SQLiteDatabase db) {
         criarProdutos(db);
         criarVendas(db);
+        criarEmpresaConfig(db);
+        criarClientes(db);
     }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
             // Bancos anteriores ao PDV não tinham as tabelas de venda.
-            // Cria direto no formato atual e encerra para evitar ALTER duplicado.
             criarVendas(db);
+            criarEmpresaConfig(db);
+            criarClientes(db);
             return;
         }
 
@@ -155,6 +196,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE vendas ADD COLUMN dest_uf TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE vendas ADD COLUMN dest_telefone TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE vendas ADD COLUMN dest_email TEXT NOT NULL DEFAULT ''");
+        }
+
+        if (oldVersion < 6) {
+            criarEmpresaConfig(db);
+            criarClientes(db);
         }
     }
 
@@ -240,6 +286,52 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_venda_itens_venda ON venda_itens(venda_id)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_venda_itens_produto ON venda_itens(produto_id)");
+    }
+
+    private void criarEmpresaConfig(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS empresa_config (" +
+                "id INTEGER PRIMARY KEY CHECK(id=1)," +
+                "razao TEXT NOT NULL DEFAULT ''," +
+                "fantasia TEXT NOT NULL DEFAULT ''," +
+                "cnpj TEXT NOT NULL DEFAULT ''," +
+                "ie TEXT NOT NULL DEFAULT ''," +
+                "regime TEXT NOT NULL DEFAULT ''," +
+                "cep TEXT NOT NULL DEFAULT ''," +
+                "logradouro TEXT NOT NULL DEFAULT ''," +
+                "numero TEXT NOT NULL DEFAULT ''," +
+                "complemento TEXT NOT NULL DEFAULT ''," +
+                "bairro TEXT NOT NULL DEFAULT ''," +
+                "municipio TEXT NOT NULL DEFAULT ''," +
+                "uf TEXT NOT NULL DEFAULT ''," +
+                "telefone TEXT NOT NULL DEFAULT ''," +
+                "email TEXT NOT NULL DEFAULT ''," +
+                "serie_nfce TEXT NOT NULL DEFAULT '1'," +
+                "serie_nfe TEXT NOT NULL DEFAULT '1'," +
+                "producao INTEGER NOT NULL DEFAULT 0" +
+                ")");
+    }
+
+    private void criarClientes(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS clientes (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "tipo TEXT NOT NULL DEFAULT 'PF'," +
+                "nome TEXT NOT NULL," +
+                "documento TEXT NOT NULL DEFAULT ''," +
+                "ie TEXT NOT NULL DEFAULT ''," +
+                "logradouro TEXT NOT NULL DEFAULT ''," +
+                "numero TEXT NOT NULL DEFAULT ''," +
+                "complemento TEXT NOT NULL DEFAULT ''," +
+                "bairro TEXT NOT NULL DEFAULT ''," +
+                "cep TEXT NOT NULL DEFAULT ''," +
+                "municipio TEXT NOT NULL DEFAULT ''," +
+                "uf TEXT NOT NULL DEFAULT ''," +
+                "telefone TEXT NOT NULL DEFAULT ''," +
+                "email TEXT NOT NULL DEFAULT ''," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL" +
+                ")");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_documento ON clientes(documento) WHERE documento<>''");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_clientes_nome ON clientes(nome)");
     }
 
     private ContentValues values(Produto p) {
@@ -547,6 +639,128 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         getWritableDatabase().update(
                 "vendas", values, "id=?",
                 new String[]{String.valueOf(vendaId)});
+    }
+
+    public void saveEmpresaConfig(EmpresaConfig e) {
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues v = new ContentValues();
+        v.put("id", 1);
+        v.put("razao", e.razao);
+        v.put("fantasia", e.fantasia);
+        v.put("cnpj", e.cnpj);
+        v.put("ie", e.ie);
+        v.put("regime", e.regime);
+        v.put("cep", e.cep);
+        v.put("logradouro", e.logradouro);
+        v.put("numero", e.numero);
+        v.put("complemento", e.complemento);
+        v.put("bairro", e.bairro);
+        v.put("municipio", e.municipio);
+        v.put("uf", e.uf);
+        v.put("telefone", e.telefone);
+        v.put("email", e.email);
+        v.put("serie_nfce", e.serieNfce);
+        v.put("serie_nfe", e.serieNfe);
+        v.put("producao", e.producao ? 1 : 0);
+        db.insertWithOnConflict("empresa_config", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    public EmpresaConfig getEmpresaConfig() {
+        EmpresaConfig e = new EmpresaConfig();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT razao,fantasia,cnpj,ie,regime,cep,logradouro,numero,complemento,bairro,municipio,uf,telefone,email,serie_nfce,serie_nfe,producao FROM empresa_config WHERE id=1",
+                null);
+        try {
+            if (c.moveToFirst()) {
+                e.razao = c.getString(0);
+                e.fantasia = c.getString(1);
+                e.cnpj = c.getString(2);
+                e.ie = c.getString(3);
+                e.regime = c.getString(4);
+                e.cep = c.getString(5);
+                e.logradouro = c.getString(6);
+                e.numero = c.getString(7);
+                e.complemento = c.getString(8);
+                e.bairro = c.getString(9);
+                e.municipio = c.getString(10);
+                e.uf = c.getString(11);
+                e.telefone = c.getString(12);
+                e.email = c.getString(13);
+                e.serieNfce = c.getString(14);
+                e.serieNfe = c.getString(15);
+                e.producao = c.getInt(16) == 1;
+            }
+        } finally { c.close(); }
+        return e;
+    }
+
+    public long saveCliente(Cliente c) {
+        SQLiteDatabase db = getWritableDatabase();
+        long now = System.currentTimeMillis();
+        ContentValues v = new ContentValues();
+        v.put("tipo", c.tipo);
+        v.put("nome", c.nome);
+        v.put("documento", c.documento);
+        v.put("ie", c.ie);
+        v.put("logradouro", c.logradouro);
+        v.put("numero", c.numero);
+        v.put("complemento", c.complemento);
+        v.put("bairro", c.bairro);
+        v.put("cep", c.cep);
+        v.put("municipio", c.municipio);
+        v.put("uf", c.uf);
+        v.put("telefone", c.telefone);
+        v.put("email", c.email);
+        v.put("updated_at", now);
+        if (c.id > 0) {
+            db.update("clientes", v, "id=?", new String[]{String.valueOf(c.id)});
+            return c.id;
+        }
+        v.put("created_at", now);
+        c.id = db.insertOrThrow("clientes", null, v);
+        return c.id;
+    }
+
+    public void deleteCliente(long id) {
+        getWritableDatabase().delete("clientes", "id=?", new String[]{String.valueOf(id)});
+    }
+
+    public List<Cliente> listClientes(String busca) {
+        List<Cliente> out = new ArrayList<>();
+        String q = busca == null ? "" : busca.trim();
+        Cursor c;
+        if (q.isEmpty()) {
+            c = getReadableDatabase().rawQuery(
+                    "SELECT * FROM clientes ORDER BY nome COLLATE NOCASE LIMIT 100", null);
+        } else {
+            String like = "%" + q + "%";
+            c = getReadableDatabase().rawQuery(
+                    "SELECT * FROM clientes WHERE nome LIKE ? OR documento LIKE ? ORDER BY nome COLLATE NOCASE LIMIT 100",
+                    new String[]{like, like});
+        }
+        try {
+            while (c.moveToNext()) out.add(clienteFromCursor(c));
+        } finally { c.close(); }
+        return out;
+    }
+
+    private Cliente clienteFromCursor(Cursor c) {
+        Cliente x = new Cliente();
+        x.id = c.getLong(c.getColumnIndexOrThrow("id"));
+        x.tipo = c.getString(c.getColumnIndexOrThrow("tipo"));
+        x.nome = c.getString(c.getColumnIndexOrThrow("nome"));
+        x.documento = c.getString(c.getColumnIndexOrThrow("documento"));
+        x.ie = c.getString(c.getColumnIndexOrThrow("ie"));
+        x.logradouro = c.getString(c.getColumnIndexOrThrow("logradouro"));
+        x.numero = c.getString(c.getColumnIndexOrThrow("numero"));
+        x.complemento = c.getString(c.getColumnIndexOrThrow("complemento"));
+        x.bairro = c.getString(c.getColumnIndexOrThrow("bairro"));
+        x.cep = c.getString(c.getColumnIndexOrThrow("cep"));
+        x.municipio = c.getString(c.getColumnIndexOrThrow("municipio"));
+        x.uf = c.getString(c.getColumnIndexOrThrow("uf"));
+        x.telefone = c.getString(c.getColumnIndexOrThrow("telefone"));
+        x.email = c.getString(c.getColumnIndexOrThrow("email"));
+        return x;
     }
 
     public ResumoVendas resumoHoje() {

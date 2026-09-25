@@ -99,12 +99,12 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("PDV de teste separado • Alpha 12", 14, false);
+        TextView sub = text("PDV de teste separado • Alpha 13", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         TextView safe = text(
-                "ALPHA 12 • PDV DE TESTE SEPARADO\n" +
+                "ALPHA 13 • PDV DE TESTE SEPARADO\n" +
                 "Produtos de teste cadastrados: " + db.count() +
                 "\nA instalação que contém seus produtos reais permanece intacta.",
                 13, true);
@@ -170,7 +170,8 @@ public class GestaoActivity extends Activity {
         root.addView(financeiro);
 
         Button clientes = action("👤  Clientes");
-        clientes.setOnClickListener(v -> Toast.makeText(this, "Clientes em construção.", Toast.LENGTH_SHORT).show());
+        clientes.setOnClickListener(v ->
+                startActivity(new Intent(this, ClientesActivity.class)));
         root.addView(clientes);
 
         Button fornecedores = action("🚚  Fornecedores");
@@ -186,7 +187,7 @@ public class GestaoActivity extends Activity {
         root.addView(smb);
 
         TextView next = text(
-                "PDV Alpha 12: dados da empresa, NFC-e, NF-e com destinatário, comprovante e estrutura fiscal preparada.",
+                "PDV Alpha 13: empresa salva em banco, cadastro real de clientes PF/PJ e seleção de cliente na NF-e.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);
