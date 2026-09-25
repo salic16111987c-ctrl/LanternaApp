@@ -324,7 +324,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 15", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 16", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
