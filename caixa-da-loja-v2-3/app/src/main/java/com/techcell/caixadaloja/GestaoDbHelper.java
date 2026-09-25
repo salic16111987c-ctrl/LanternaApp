@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 6;
+    private static final int DB_VERSION = 7;
 
     public static class Produto {
         public long id;
@@ -103,6 +103,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String notaTipo = "";
         public String destNome = "";
         public String destDocumento = "";
+        public String statusVenda = "CONCLUIDA";
+        public long estornoEm;
+        public String estornoMotivo = "";
         public final List<VendaItemRegistro> itens = new ArrayList<>();
     }
 
@@ -116,6 +119,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String notaStatus = "NAO_EMITIDA";
         public String destNome = "";
         public String destDocumento = "";
+        public String statusVenda = "CONCLUIDA";
+        public long estornoEm;
+        public String estornoMotivo = "";
     }
 
     public static class EmpresaConfig {
@@ -217,6 +223,13 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             criarEmpresaConfig(db);
             criarClientes(db);
         }
+
+        if (oldVersion < 7) {
+            db.execSQL("ALTER TABLE vendas ADD COLUMN status_venda TEXT NOT NULL DEFAULT 'CONCLUIDA'");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN estorno_em INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN estorno_motivo TEXT NOT NULL DEFAULT ''");
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_vendas_status ON vendas(status_venda)");
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -277,7 +290,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "dest_municipio TEXT NOT NULL DEFAULT ''," +
                 "dest_uf TEXT NOT NULL DEFAULT ''," +
                 "dest_telefone TEXT NOT NULL DEFAULT ''," +
-                "dest_email TEXT NOT NULL DEFAULT ''" +
+                "dest_email TEXT NOT NULL DEFAULT ''," +
+                "status_venda TEXT NOT NULL DEFAULT 'CONCLUIDA'," +
+                "estorno_em INTEGER NOT NULL DEFAULT 0," +
+                "estorno_motivo TEXT NOT NULL DEFAULT ''" +
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_vendas_data ON vendas(data_millis)");
 
@@ -498,6 +514,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             venda.put("dest_uf", "");
             venda.put("dest_telefone", "");
             venda.put("dest_email", "");
+            venda.put("status_venda", "CONCLUIDA");
+            venda.put("estorno_em", 0);
+            venda.put("estorno_motivo", "");
 
             long vendaId = db.insertOrThrow("vendas", null, venda);
 
@@ -555,7 +574,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         List<VendaResumo> out = new ArrayList<>();
         int max = Math.max(1, Math.min(limite, 500));
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,data_millis,total,desconto,forma_pagamento,nota_tipo,nota_status,dest_nome,dest_documento " +
+                "SELECT id,data_millis,total,desconto,forma_pagamento,nota_tipo,nota_status,dest_nome,dest_documento," +
+                        "status_venda,estorno_em,estorno_motivo " +
                         "FROM vendas ORDER BY data_millis DESC,id DESC LIMIT " + max,
                 null);
         try {
@@ -570,6 +590,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 v.notaStatus = c.getString(6);
                 v.destNome = c.getString(7);
                 v.destDocumento = c.getString(8);
+                v.statusVenda = c.getString(9);
+                v.estornoEm = c.getLong(10);
+                v.estornoMotivo = c.getString(11);
                 out.add(v);
             }
         } finally { c.close(); }
@@ -581,7 +604,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT id,data_millis,subtotal,desconto,total,forma_pagamento,dinheiro,pix,cartao," +
                         "recebido,troco,consumidor_documento,nota_status,nota_numero,nota_chave,nota_protocolo,nota_xml," +
-                        "nota_tipo,dest_nome,dest_documento FROM vendas WHERE id=?",
+                        "nota_tipo,dest_nome,dest_documento,status_venda,estorno_em,estorno_motivo FROM vendas WHERE id=?",
                 new String[]{String.valueOf(vendaId)});
         try {
             if (c.moveToFirst()) {
@@ -606,6 +629,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 v.notaTipo = c.getString(17);
                 v.destNome = c.getString(18);
                 v.destDocumento = c.getString(19);
+                v.statusVenda = c.getString(20);
+                v.estornoEm = c.getLong(21);
+                v.estornoMotivo = c.getString(22);
             }
         } finally { c.close(); }
 
@@ -631,6 +657,99 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         } finally { i.close(); }
 
         return v;
+    }
+
+
+    public void estornarVenda(long vendaId, String motivo) {
+        String motivoLimpo = motivo == null ? "" : motivo.trim();
+        if (motivoLimpo.isEmpty()) {
+            throw new IllegalArgumentException("Informe o motivo do estorno.");
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            String statusVenda;
+            String notaStatus;
+            Cursor venda = db.rawQuery(
+                    "SELECT status_venda,nota_status FROM vendas WHERE id=?",
+                    new String[]{String.valueOf(vendaId)});
+            try {
+                if (!venda.moveToFirst()) {
+                    throw new IllegalStateException("Venda não encontrada.");
+                }
+                statusVenda = venda.getString(0);
+                notaStatus = venda.getString(1);
+            } finally {
+                venda.close();
+            }
+
+            if ("ESTORNADA".equalsIgnoreCase(statusVenda)) {
+                throw new IllegalStateException("Esta venda já foi estornada.");
+            }
+            if ("AUTORIZADA".equalsIgnoreCase(notaStatus)) {
+                throw new IllegalStateException(
+                        "A venda possui nota fiscal autorizada. Cancele o documento fiscal antes de estornar a venda.");
+            }
+
+            Cursor itens = db.rawQuery(
+                    "SELECT produto_id,nome,unidade,quantidade FROM venda_itens WHERE venda_id=?",
+                    new String[]{String.valueOf(vendaId)});
+            try {
+                while (itens.moveToNext()) {
+                    long produtoId = itens.getLong(0);
+                    String nome = itens.getString(1);
+                    String unidade = itens.getString(2);
+                    double quantidade = itens.getDouble(3);
+
+                    if (unidade != null && unidade.trim().equalsIgnoreCase("SERVIÇO")) {
+                        continue;
+                    }
+
+                    Cursor produto = db.rawQuery(
+                            "SELECT estoque FROM produtos WHERE id=?",
+                            new String[]{String.valueOf(produtoId)});
+                    double estoqueAtual;
+                    try {
+                        if (!produto.moveToFirst()) {
+                            throw new IllegalStateException(
+                                    "O produto \"" + nome + "\" não existe mais no cadastro. O estorno não foi realizado.");
+                        }
+                        estoqueAtual = produto.getDouble(0);
+                    } finally {
+                        produto.close();
+                    }
+
+                    ContentValues estoque = new ContentValues();
+                    estoque.put("estoque", estoqueAtual + quantidade);
+                    estoque.put("updated_at", System.currentTimeMillis());
+                    int alterados = db.update(
+                            "produtos", estoque, "id=?",
+                            new String[]{String.valueOf(produtoId)});
+                    if (alterados != 1) {
+                        throw new IllegalStateException(
+                                "Não foi possível devolver ao estoque o produto \"" + nome + "\".");
+                    }
+                }
+            } finally {
+                itens.close();
+            }
+
+            ContentValues values = new ContentValues();
+            values.put("status_venda", "ESTORNADA");
+            values.put("estorno_em", System.currentTimeMillis());
+            values.put("estorno_motivo", motivoLimpo);
+            int alteradas = db.update(
+                    "vendas", values, "id=? AND status_venda<>'ESTORNADA'",
+                    new String[]{String.valueOf(vendaId)});
+            if (alteradas != 1) {
+                throw new IllegalStateException("Não foi possível registrar o estorno.");
+            }
+
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
     }
 
     public void registrarSolicitacaoNfce(long vendaId, String documento) {
@@ -824,7 +943,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(custo_total),0), " +
                         "COALESCE(SUM(lucro_bruto),0), COALESCE(SUM(dinheiro),0), " +
                         "COALESCE(SUM(pix),0), COALESCE(SUM(cartao),0), COALESCE(SUM(desconto),0) " +
-                        "FROM vendas WHERE data_millis>=? AND data_millis<?",
+                        "FROM vendas WHERE data_millis>=? AND data_millis<? AND status_venda<>'ESTORNADA'",
                 new String[]{String.valueOf(inicio), String.valueOf(fim)});
         try {
             if (c.moveToFirst()) {
