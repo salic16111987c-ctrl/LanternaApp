@@ -99,12 +99,12 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("PDV de teste separado • Alpha 18", 14, false);
+        TextView sub = text("PDV de teste separado • Alpha 19", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         TextView safe = text(
-                "ALPHA 18 • PDV DE TESTE SEPARADO\n" +
+                "ALPHA 19 • PDV DE TESTE SEPARADO\n" +
                 "Produtos de teste cadastrados: " + db.count() +
                 "\nA instalação que contém seus produtos reais permanece intacta.",
                 13, true);
@@ -165,6 +165,11 @@ public class GestaoActivity extends Activity {
                 startActivity(new Intent(this, ConfiguracoesFiscaisActivity.class)));
         root.addView(fiscal);
 
+        Button prepFiscal = action("✅  Preparação fiscal / Homologação");
+        prepFiscal.setOnClickListener(v ->
+                startActivity(new Intent(this, PreparacaoFiscalActivity.class)));
+        root.addView(prepFiscal);
+
         Button historico = action("🧾  Histórico de vendas");
         historico.setOnClickListener(v ->
                 startActivity(new Intent(this, HistoricoVendasActivity.class)));
@@ -192,7 +197,7 @@ public class GestaoActivity extends Activity {
         root.addView(smb);
 
         TextView next = text(
-                "PDV Alpha 18: comprovante profissional com compartilhamento, impressão e opção de salvar em PDF pelo Android.",
+                "PDV Alpha 19: preparação fiscal com dados tributários de produtos e checklist para homologação, sem transmissão real.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);
