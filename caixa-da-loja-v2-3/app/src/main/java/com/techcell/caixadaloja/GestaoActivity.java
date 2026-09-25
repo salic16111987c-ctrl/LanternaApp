@@ -55,7 +55,6 @@ public class GestaoActivity extends Activity {
 
     private void render() {
         GestaoDbHelper db = new GestaoDbHelper(this);
-        carregarProdutosTesteSeVazio(db);
         GestaoDbHelper.ResumoVendas hoje = db.resumoHoje();
 
         ScrollView scroll = new ScrollView(this);
