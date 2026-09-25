@@ -68,7 +68,7 @@ public class HistoricoVendasActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Últimas vendas realizadas • Alpha 16", 14, false);
+        TextView sub = txt("Últimas vendas realizadas • Alpha 17", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
@@ -322,27 +322,9 @@ public class HistoricoVendasActivity extends Activity {
     }
 
     private void compartilharComprovante(long vendaId) {
-        GestaoDbHelper.VendaDetalhe v = db.getVendaDetalhe(vendaId);
-        if (v == null) return;
-
-        String comprovante = montarComprovante(v);
-
-        AlertDialog preview = new AlertDialog.Builder(this)
-                .setTitle("Comprovante da venda")
-                .setMessage(comprovante)
-                .setPositiveButton("Compartilhar", null)
-                .setNegativeButton("Fechar", null)
-                .create();
-
-        preview.setOnShowListener(x -> preview.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(y -> {
-                    Intent share = new Intent(Intent.ACTION_SEND);
-                    share.setType("text/plain");
-                    share.putExtra(Intent.EXTRA_SUBJECT, "Comprovante Tech Cell - Venda #" + v.id);
-                    share.putExtra(Intent.EXTRA_TEXT, comprovante);
-                    startActivity(Intent.createChooser(share, "Compartilhar comprovante"));
-                }));
-        preview.show();
+        Intent i = new Intent(this, ComprovanteVendaActivity.class);
+        i.putExtra("venda_id", vendaId);
+        startActivity(i);
     }
 
     private String montarComprovante(GestaoDbHelper.VendaDetalhe v) {
