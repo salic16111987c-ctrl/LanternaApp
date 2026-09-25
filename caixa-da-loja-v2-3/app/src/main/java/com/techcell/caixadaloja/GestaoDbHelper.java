@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 7;
+    private static final int DB_VERSION = 8;
 
     public static class Produto {
         public long id;
@@ -28,6 +28,31 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double precoPrazo;
         public double estoque;
         public double estoqueMinimo;
+
+        // Dados fiscais do produto. Não recebem valores tributários automáticos:
+        // devem ser conferidos com a contabilidade antes da emissão fiscal real.
+        public String ncm = "";
+        public String cest = "";
+        public String cfop = "";
+        public String origem = "";
+        public String tributacaoIcms = "";
+        public double aliquotaIcms;
+        public String cstPis = "";
+        public double aliquotaPis;
+        public String cstCofins = "";
+        public double aliquotaCofins;
+        public String unidadeTributavel = "";
+        public String gtinTributavel = "";
+
+        public boolean fiscalMinimoPreenchido() {
+            if (ehServico()) return true;
+            return ncm != null && ncm.replaceAll("[^0-9]", "").length() == 8 &&
+                    cfop != null && cfop.replaceAll("[^0-9]", "").length() == 4 &&
+                    origem != null && !origem.trim().isEmpty() &&
+                    tributacaoIcms != null && !tributacaoIcms.trim().isEmpty() &&
+                    cstPis != null && !cstPis.trim().isEmpty() &&
+                    cstCofins != null && !cstCofins.trim().isEmpty();
+        }
 
         public double lucroUnitario() { return precoVenda - custo; }
         public double lucroPercentualSobreCusto() {
@@ -230,6 +255,21 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE vendas ADD COLUMN estorno_motivo TEXT NOT NULL DEFAULT ''");
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_vendas_status ON vendas(status_venda)");
         }
+
+        if (oldVersion < 8) {
+            db.execSQL("ALTER TABLE produtos ADD COLUMN ncm TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN cest TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN cfop TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN origem TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN tributacao_icms TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN aliquota_icms REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN cst_pis TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN aliquota_pis REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN cst_cofins TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN aliquota_cofins REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN unidade_tributavel TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE produtos ADD COLUMN gtin_tributavel TEXT NOT NULL DEFAULT ''");
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -247,6 +287,18 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "preco_prazo REAL NOT NULL DEFAULT 0," +
                 "estoque REAL NOT NULL DEFAULT 0," +
                 "estoque_minimo REAL NOT NULL DEFAULT 0," +
+                "ncm TEXT NOT NULL DEFAULT ''," +
+                "cest TEXT NOT NULL DEFAULT ''," +
+                "cfop TEXT NOT NULL DEFAULT ''," +
+                "origem TEXT NOT NULL DEFAULT ''," +
+                "tributacao_icms TEXT NOT NULL DEFAULT ''," +
+                "aliquota_icms REAL NOT NULL DEFAULT 0," +
+                "cst_pis TEXT NOT NULL DEFAULT ''," +
+                "aliquota_pis REAL NOT NULL DEFAULT 0," +
+                "cst_cofins TEXT NOT NULL DEFAULT ''," +
+                "aliquota_cofins REAL NOT NULL DEFAULT 0," +
+                "unidade_tributavel TEXT NOT NULL DEFAULT ''," +
+                "gtin_tributavel TEXT NOT NULL DEFAULT ''," +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -379,6 +431,18 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("preco_prazo", p.precoPrazo);
         v.put("estoque", p.estoque);
         v.put("estoque_minimo", p.estoqueMinimo);
+        v.put("ncm", p.ncm == null ? "" : p.ncm);
+        v.put("cest", p.cest == null ? "" : p.cest);
+        v.put("cfop", p.cfop == null ? "" : p.cfop);
+        v.put("origem", p.origem == null ? "" : p.origem);
+        v.put("tributacao_icms", p.tributacaoIcms == null ? "" : p.tributacaoIcms);
+        v.put("aliquota_icms", p.aliquotaIcms);
+        v.put("cst_pis", p.cstPis == null ? "" : p.cstPis);
+        v.put("aliquota_pis", p.aliquotaPis);
+        v.put("cst_cofins", p.cstCofins == null ? "" : p.cstCofins);
+        v.put("aliquota_cofins", p.aliquotaCofins);
+        v.put("unidade_tributavel", p.unidadeTributavel == null ? "" : p.unidadeTributavel);
+        v.put("gtin_tributavel", p.gtinTributavel == null ? "" : p.gtinTributavel);
         return v;
     }
 
@@ -434,6 +498,14 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM produtos", null);
         try { return c.moveToFirst() ? c.getInt(0) : 0; }
         finally { c.close(); }
+    }
+
+    public int countProdutosFiscalPendente() {
+        int pendentes = 0;
+        for (Produto p : list("")) {
+            if (!p.fiscalMinimoPreenchido()) pendentes++;
+        }
+        return pendentes;
     }
 
     public long finalizarVenda(List<VendaItem> itens, Pagamento pagamento) {
@@ -982,6 +1054,18 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         p.precoPrazo = c.getDouble(c.getColumnIndexOrThrow("preco_prazo"));
         p.estoque = c.getDouble(c.getColumnIndexOrThrow("estoque"));
         p.estoqueMinimo = c.getDouble(c.getColumnIndexOrThrow("estoque_minimo"));
+        p.ncm = c.getString(c.getColumnIndexOrThrow("ncm"));
+        p.cest = c.getString(c.getColumnIndexOrThrow("cest"));
+        p.cfop = c.getString(c.getColumnIndexOrThrow("cfop"));
+        p.origem = c.getString(c.getColumnIndexOrThrow("origem"));
+        p.tributacaoIcms = c.getString(c.getColumnIndexOrThrow("tributacao_icms"));
+        p.aliquotaIcms = c.getDouble(c.getColumnIndexOrThrow("aliquota_icms"));
+        p.cstPis = c.getString(c.getColumnIndexOrThrow("cst_pis"));
+        p.aliquotaPis = c.getDouble(c.getColumnIndexOrThrow("aliquota_pis"));
+        p.cstCofins = c.getString(c.getColumnIndexOrThrow("cst_cofins"));
+        p.aliquotaCofins = c.getDouble(c.getColumnIndexOrThrow("aliquota_cofins"));
+        p.unidadeTributavel = c.getString(c.getColumnIndexOrThrow("unidade_tributavel"));
+        p.gtinTributavel = c.getString(c.getColumnIndexOrThrow("gtin_tributavel"));
         return p;
     }
 }
