@@ -99,12 +99,12 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("PDV de teste separado • Alpha 16", 14, false);
+        TextView sub = text("PDV de teste separado • Alpha 17", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         TextView safe = text(
-                "ALPHA 16 • PDV DE TESTE SEPARADO\n" +
+                "ALPHA 17 • PDV DE TESTE SEPARADO\n" +
                 "Produtos de teste cadastrados: " + db.count() +
                 "\nA instalação que contém seus produtos reais permanece intacta.",
                 13, true);
@@ -192,7 +192,7 @@ public class GestaoActivity extends Activity {
         root.addView(smb);
 
         TextView next = text(
-                "PDV Alpha 16: histórico de vendas com estorno seguro, devolução automática de estoque, comprovante e ações fiscais.",
+                "PDV Alpha 17: comprovante profissional com compartilhamento, impressão e opção de salvar em PDF pelo Android.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);
