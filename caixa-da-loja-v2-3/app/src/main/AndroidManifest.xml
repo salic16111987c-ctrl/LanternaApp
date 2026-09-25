@@ -3,6 +3,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@drawable/ic_launcher"
@@ -12,7 +13,7 @@
         android:usesCleartextTraffic="false">
 
         <activity
-            android:name="com.techcell.caixadaloja.GestaoActivity"
+            android:name="com.techcell.caixadaloja.TechCellHomeActivity"
             android:exported="true"
             android:screenOrientation="portrait">
             <intent-filter>
@@ -22,11 +23,13 @@
         </activity>
 
         <activity android:name="com.techcell.caixadaloja.MainActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.GestaoActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.ProdutosActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.EstoqueActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.PdvActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.ConfiguracoesFiscaisActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.ClientesActivity" android:exported="false" android:screenOrientation="portrait" />
-        <activity android:name="com.techcell.caixadaloja.HistoricoVendasActivity" android:exported="false" android:screenOrientation="portrait" />\n        <activity android:name="com.techcell.caixadaloja.ComprovanteVendaActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.HistoricoVendasActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.ComprovanteVendaActivity" android:exported="false" android:screenOrientation="portrait" />
     </application>
 </manifest>
