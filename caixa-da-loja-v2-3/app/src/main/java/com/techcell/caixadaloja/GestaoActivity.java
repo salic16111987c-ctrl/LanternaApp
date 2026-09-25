@@ -99,12 +99,12 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("PDV de teste separado • Alpha 11", 14, false);
+        TextView sub = text("PDV de teste separado • Alpha 12", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         TextView safe = text(
-                "ALPHA 11 • PDV DE TESTE SEPARADO\n" +
+                "ALPHA 12 • PDV DE TESTE SEPARADO\n" +
                 "Produtos de teste cadastrados: " + db.count() +
                 "\nA instalação que contém seus produtos reais permanece intacta.",
                 13, true);
@@ -160,6 +160,11 @@ public class GestaoActivity extends Activity {
         est.setOnClickListener(v -> startActivity(new Intent(this, EstoqueActivity.class)));
         root.addView(est);
 
+        Button fiscal = action("🧾  Configurações fiscais / Dados da empresa");
+        fiscal.setOnClickListener(v ->
+                startActivity(new Intent(this, ConfiguracoesFiscaisActivity.class)));
+        root.addView(fiscal);
+
         Button financeiro = action("💰  Financeiro");
         financeiro.setOnClickListener(v -> Toast.makeText(this, "Financeiro detalhado em construção.", Toast.LENGTH_SHORT).show());
         root.addView(financeiro);
@@ -181,7 +186,7 @@ public class GestaoActivity extends Activity {
         root.addView(smb);
 
         TextView next = text(
-                "PDV Alpha 11: visual profissional, desconto, cancelamento, comprovante da venda e preparação da NFC-e.",
+                "PDV Alpha 12: dados da empresa, NFC-e, NF-e com destinatário, comprovante e estrutura fiscal preparada.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);

@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 4;
+    private static final int DB_VERSION = 5;
 
     public static class Produto {
         public long id;
@@ -140,6 +140,22 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE vendas ADD COLUMN nota_protocolo TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE vendas ADD COLUMN nota_xml TEXT NOT NULL DEFAULT ''");
         }
+
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE vendas ADD COLUMN nota_tipo TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_nome TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_documento TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_ie TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_logradouro TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_numero TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_complemento TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_bairro TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_cep TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_municipio TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_uf TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_telefone TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN dest_email TEXT NOT NULL DEFAULT ''");
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -187,7 +203,20 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "nota_numero TEXT NOT NULL DEFAULT ''," +
                 "nota_chave TEXT NOT NULL DEFAULT ''," +
                 "nota_protocolo TEXT NOT NULL DEFAULT ''," +
-                "nota_xml TEXT NOT NULL DEFAULT ''" +
+                "nota_xml TEXT NOT NULL DEFAULT ''," +
+                "nota_tipo TEXT NOT NULL DEFAULT ''," +
+                "dest_nome TEXT NOT NULL DEFAULT ''," +
+                "dest_documento TEXT NOT NULL DEFAULT ''," +
+                "dest_ie TEXT NOT NULL DEFAULT ''," +
+                "dest_logradouro TEXT NOT NULL DEFAULT ''," +
+                "dest_numero TEXT NOT NULL DEFAULT ''," +
+                "dest_complemento TEXT NOT NULL DEFAULT ''," +
+                "dest_bairro TEXT NOT NULL DEFAULT ''," +
+                "dest_cep TEXT NOT NULL DEFAULT ''," +
+                "dest_municipio TEXT NOT NULL DEFAULT ''," +
+                "dest_uf TEXT NOT NULL DEFAULT ''," +
+                "dest_telefone TEXT NOT NULL DEFAULT ''," +
+                "dest_email TEXT NOT NULL DEFAULT ''" +
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_vendas_data ON vendas(data_millis)");
 
@@ -349,6 +378,19 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             venda.put("nota_chave", "");
             venda.put("nota_protocolo", "");
             venda.put("nota_xml", "");
+            venda.put("nota_tipo", "");
+            venda.put("dest_nome", "");
+            venda.put("dest_documento", "");
+            venda.put("dest_ie", "");
+            venda.put("dest_logradouro", "");
+            venda.put("dest_numero", "");
+            venda.put("dest_complemento", "");
+            venda.put("dest_bairro", "");
+            venda.put("dest_cep", "");
+            venda.put("dest_municipio", "");
+            venda.put("dest_uf", "");
+            venda.put("dest_telefone", "");
+            venda.put("dest_email", "");
 
             long vendaId = db.insertOrThrow("vendas", null, venda);
 
@@ -457,8 +499,37 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     }
 
     public void registrarSolicitacaoNfce(long vendaId, String documento) {
+        String doc = documento == null ? "" : documento.trim();
         ContentValues values = new ContentValues();
+        values.put("nota_tipo", "NFC-e");
+        values.put("consumidor_documento", doc);
+        values.put("dest_documento", doc);
+        values.put("nota_status", "PENDENTE_CONFIGURACAO");
+        getWritableDatabase().update(
+                "vendas", values, "id=?",
+                new String[]{String.valueOf(vendaId)});
+    }
+
+    public void registrarSolicitacaoNfe(long vendaId,
+                                        String nome, String documento, String ie,
+                                        String logradouro, String numero, String complemento,
+                                        String bairro, String cep, String municipio, String uf,
+                                        String telefone, String email) {
+        ContentValues values = new ContentValues();
+        values.put("nota_tipo", "NF-e");
         values.put("consumidor_documento", documento == null ? "" : documento.trim());
+        values.put("dest_nome", nome == null ? "" : nome.trim());
+        values.put("dest_documento", documento == null ? "" : documento.trim());
+        values.put("dest_ie", ie == null ? "" : ie.trim());
+        values.put("dest_logradouro", logradouro == null ? "" : logradouro.trim());
+        values.put("dest_numero", numero == null ? "" : numero.trim());
+        values.put("dest_complemento", complemento == null ? "" : complemento.trim());
+        values.put("dest_bairro", bairro == null ? "" : bairro.trim());
+        values.put("dest_cep", cep == null ? "" : cep.trim());
+        values.put("dest_municipio", municipio == null ? "" : municipio.trim());
+        values.put("dest_uf", uf == null ? "" : uf.trim().toUpperCase());
+        values.put("dest_telefone", telefone == null ? "" : telefone.trim());
+        values.put("dest_email", email == null ? "" : email.trim());
         values.put("nota_status", "PENDENTE_CONFIGURACAO");
         getWritableDatabase().update(
                 "vendas", values, "id=?",

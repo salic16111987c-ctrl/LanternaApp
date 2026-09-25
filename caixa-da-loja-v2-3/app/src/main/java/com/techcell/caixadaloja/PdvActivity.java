@@ -320,7 +320,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 11", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 12", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
@@ -1377,28 +1377,52 @@ public class PdvActivity extends Activity {
     }
 
     private void abrirEmissaoNota(long vendaId) {
+        if (!ConfiguracoesFiscaisActivity.estaMinimamenteConfigurada(this)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Dados da empresa incompletos")
+                    .setMessage("Antes de preparar NFC-e ou NF-e, cadastre os dados fiscais da empresa emitente.")
+                    .setPositiveButton("Configurar agora", (d,w) ->
+                            startActivity(new Intent(this, ConfiguracoesFiscaisActivity.class)))
+                    .setNegativeButton("Depois", null)
+                    .show();
+            return;
+        }
+
+        String[] opcoes = {
+                "NFC-e • Cupom fiscal",
+                "NF-e • Nota fiscal"
+        };
+
+        new AlertDialog.Builder(this)
+                .setTitle("Qual documento deseja emitir?")
+                .setItems(opcoes, (d, which) -> {
+                    if (which == 0) abrirNfce(vendaId);
+                    else abrirNfe(vendaId);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void abrirNfce(long vendaId) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(6), dp(20), dp(8));
 
         TextView info = txt(
-                "CPF/CNPJ do consumidor é opcional.\n" +
-                "Nesta versão a solicitação fica registrada na venda. " +
-                "A NFC-e fiscal real será transmitida quando configurarmos " +
-                "certificado, CSC e dados fiscais da empresa.",
+                "NFC-e / cupom fiscal\nCPF ou CNPJ do consumidor é opcional nesta tela.",
                 13, false);
         info.setTextColor(MUTED);
         info.setPadding(0, 0, 0, dp(10));
         box.addView(info);
 
         EditText documento = new EditText(this);
-        documento.setHint("CPF/CNPJ (opcional)");
+        documento.setHint("CPF/CNPJ do consumidor (opcional)");
         documento.setSingleLine(true);
         documento.setInputType(InputType.TYPE_CLASS_NUMBER);
         box.addView(documento);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Emitir nota da venda")
+                .setTitle("Preparar NFC-e")
                 .setView(box)
                 .setPositiveButton("Registrar NFC-e", null)
                 .setNegativeButton("Cancelar", null)
@@ -1410,28 +1434,134 @@ public class PdvActivity extends Activity {
                             String doc = documento.getText().toString()
                                     .replaceAll("[^0-9]", "");
 
-                            if (!doc.isEmpty() &&
-                                    doc.length() != 11 &&
-                                    doc.length() != 14) {
-                                documento.setError(
-                                        "Informe CPF com 11 dígitos ou CNPJ com 14 dígitos");
+                            if (!doc.isEmpty() && doc.length() != 11 && doc.length() != 14) {
+                                documento.setError("Informe CPF com 11 ou CNPJ com 14 dígitos");
                                 return;
                             }
 
                             db.registrarSolicitacaoNfce(vendaId, doc);
                             dialog.dismiss();
-
-                            new AlertDialog.Builder(this)
-                                    .setTitle("NFC-e registrada")
-                                    .setMessage(
-                                            "A venda #" + vendaId +
-                                            " ficou marcada para emissão fiscal.\n\n" +
-                                            "Situação: aguardando configuração fiscal da Tech Cell.")
-                                    .setPositiveButton("OK", null)
-                                    .show();
+                            mostrarNotaPreparada(vendaId, "NFC-e");
                         }));
-
         dialog.show();
+    }
+
+    private EditText campoFiscal(LinearLayout root, String hint, boolean numerico) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        e.setSingleLine(true);
+        e.setTextSize(15);
+        if (numerico) e.setInputType(InputType.TYPE_CLASS_NUMBER);
+        else e.setInputType(InputType.TYPE_CLASS_TEXT);
+        root.addView(e);
+        return e;
+    }
+
+    private void abrirNfe(long vendaId) {
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(18), dp(4), dp(18), dp(12));
+        scroll.addView(box);
+
+        TextView info = txt(
+                "NF-e / nota fiscal\nPreencha os dados do destinatário.",
+                13, false);
+        info.setTextColor(MUTED);
+        info.setPadding(0, 0, 0, dp(8));
+        box.addView(info);
+
+        EditText nome = campoFiscal(box, "Nome / Razão social *", false);
+        EditText documento = campoFiscal(box, "CPF / CNPJ *", true);
+        EditText ie = campoFiscal(box, "Inscrição Estadual (quando houver)", false);
+        EditText logradouro = campoFiscal(box, "Logradouro *", false);
+        EditText numero = campoFiscal(box, "Número *", false);
+        EditText complemento = campoFiscal(box, "Complemento", false);
+        EditText bairro = campoFiscal(box, "Bairro *", false);
+        EditText cep = campoFiscal(box, "CEP *", true);
+        EditText municipio = campoFiscal(box, "Município *", false);
+        EditText uf = campoFiscal(box, "UF *", false);
+        EditText telefone = campoFiscal(box, "Telefone", false);
+        EditText email = campoFiscal(box, "E-mail", false);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Preparar NF-e")
+                .setView(scroll)
+                .setPositiveButton("Registrar NF-e", null)
+                .setNegativeButton("Cancelar", null)
+                .create();
+
+        dialog.setOnShowListener(x ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> {
+                            String doc = documento.getText().toString().replaceAll("[^0-9]", "");
+                            String cepLimpo = cep.getText().toString().replaceAll("[^0-9]", "");
+                            String ufTxt = uf.getText().toString().trim().toUpperCase();
+
+                            if (nome.getText().toString().trim().isEmpty()) {
+                                nome.setError("Informe o destinatário");
+                                return;
+                            }
+                            if (doc.length() != 11 && doc.length() != 14) {
+                                documento.setError("Informe CPF com 11 ou CNPJ com 14 dígitos");
+                                return;
+                            }
+                            if (logradouro.getText().toString().trim().isEmpty()) {
+                                logradouro.setError("Informe o logradouro");
+                                return;
+                            }
+                            if (numero.getText().toString().trim().isEmpty()) {
+                                numero.setError("Informe o número");
+                                return;
+                            }
+                            if (bairro.getText().toString().trim().isEmpty()) {
+                                bairro.setError("Informe o bairro");
+                                return;
+                            }
+                            if (cepLimpo.length() != 8) {
+                                cep.setError("Informe CEP com 8 dígitos");
+                                return;
+                            }
+                            if (municipio.getText().toString().trim().isEmpty()) {
+                                municipio.setError("Informe o município");
+                                return;
+                            }
+                            if (ufTxt.length() != 2) {
+                                uf.setError("Informe a UF com 2 letras");
+                                return;
+                            }
+
+                            db.registrarSolicitacaoNfe(
+                                    vendaId,
+                                    nome.getText().toString(),
+                                    doc,
+                                    ie.getText().toString(),
+                                    logradouro.getText().toString(),
+                                    numero.getText().toString(),
+                                    complemento.getText().toString(),
+                                    bairro.getText().toString(),
+                                    cepLimpo,
+                                    municipio.getText().toString(),
+                                    ufTxt,
+                                    telefone.getText().toString(),
+                                    email.getText().toString());
+
+                            dialog.dismiss();
+                            mostrarNotaPreparada(vendaId, "NF-e");
+                        }));
+        dialog.show();
+    }
+
+    private void mostrarNotaPreparada(long vendaId, String tipo) {
+        new AlertDialog.Builder(this)
+                .setTitle(tipo + " preparada")
+                .setMessage(
+                        "A venda #" + vendaId +
+                        " ficou registrada para emissão de " + tipo + ".\n\n" +
+                        "Quando conectarmos certificado digital, CSC e serviços da SEFAZ, " +
+                        "o sistema fará a transmissão fiscal real usando estes mesmos dados.")
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private void compartilharComprovante(long vendaId) {
@@ -1472,7 +1602,7 @@ public class PdvActivity extends Activity {
                 "dd/MM/yyyy HH:mm", new Locale("pt","BR"));
 
         StringBuilder s = new StringBuilder();
-        s.append("TECH CELL\n");
+        s.append(ConfiguracoesFiscaisActivity.nomeEmpresa(this)).append("\n");
         s.append("COMPROVANTE DE VENDA - NÃO FISCAL\n");
         s.append("--------------------------------\n");
         s.append("Venda #").append(venda.id).append("\n");
