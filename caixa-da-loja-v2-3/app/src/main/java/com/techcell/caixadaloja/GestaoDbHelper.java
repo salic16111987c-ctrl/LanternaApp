@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 3;
+    private static final int DB_VERSION = 4;
 
     public static class Produto {
         public long id;
@@ -71,6 +71,38 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double desconto;
     }
 
+    public static class VendaItemRegistro {
+        public String codigo = "";
+        public String nome = "";
+        public String unidade = "";
+        public double quantidade;
+        public double precoUnitario;
+        public double total;
+        public double descontoRateio;
+        public double totalLiquido;
+    }
+
+    public static class VendaDetalhe {
+        public long id;
+        public long dataMillis;
+        public double subtotal;
+        public double desconto;
+        public double total;
+        public String formaPagamento = "";
+        public double dinheiro;
+        public double pix;
+        public double cartao;
+        public double recebido;
+        public double troco;
+        public String consumidorDocumento = "";
+        public String notaStatus = "NAO_EMITIDA";
+        public String notaNumero = "";
+        public String notaChave = "";
+        public String notaProtocolo = "";
+        public String notaXml = "";
+        public final List<VendaItemRegistro> itens = new ArrayList<>();
+    }
+
     public GestaoDbHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
@@ -83,9 +115,12 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
             // Bancos anteriores ao PDV não tinham as tabelas de venda.
-            // Cria direto no formato atual, evitando ALTER duplicado.
+            // Cria direto no formato atual e encerra para evitar ALTER duplicado.
             criarVendas(db);
-        } else if (oldVersion < 3) {
+            return;
+        }
+
+        if (oldVersion < 3) {
             db.execSQL("ALTER TABLE vendas ADD COLUMN subtotal REAL NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE vendas ADD COLUMN desconto REAL NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE vendas ADD COLUMN desconto_tipo TEXT NOT NULL DEFAULT ''");
@@ -95,6 +130,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE venda_itens ADD COLUMN lucro_liquido REAL NOT NULL DEFAULT 0");
             db.execSQL("UPDATE vendas SET subtotal=total WHERE subtotal=0");
             db.execSQL("UPDATE venda_itens SET total_liquido=total, lucro_liquido=lucro WHERE total_liquido=0");
+        }
+
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE vendas ADD COLUMN consumidor_documento TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN nota_status TEXT NOT NULL DEFAULT 'NAO_EMITIDA'");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN nota_numero TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN nota_chave TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN nota_protocolo TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE vendas ADD COLUMN nota_xml TEXT NOT NULL DEFAULT ''");
         }
     }
 
@@ -137,7 +181,13 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "pix REAL NOT NULL DEFAULT 0," +
                 "cartao REAL NOT NULL DEFAULT 0," +
                 "recebido REAL NOT NULL DEFAULT 0," +
-                "troco REAL NOT NULL DEFAULT 0" +
+                "troco REAL NOT NULL DEFAULT 0," +
+                "consumidor_documento TEXT NOT NULL DEFAULT ''," +
+                "nota_status TEXT NOT NULL DEFAULT 'NAO_EMITIDA'," +
+                "nota_numero TEXT NOT NULL DEFAULT ''," +
+                "nota_chave TEXT NOT NULL DEFAULT ''," +
+                "nota_protocolo TEXT NOT NULL DEFAULT ''," +
+                "nota_xml TEXT NOT NULL DEFAULT ''" +
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_vendas_data ON vendas(data_millis)");
 
@@ -293,6 +343,12 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             venda.put("cartao", pagamento.cartao);
             venda.put("recebido", pagamento.recebido);
             venda.put("troco", pagamento.troco);
+            venda.put("consumidor_documento", "");
+            venda.put("nota_status", "NAO_EMITIDA");
+            venda.put("nota_numero", "");
+            venda.put("nota_chave", "");
+            venda.put("nota_protocolo", "");
+            venda.put("nota_xml", "");
 
             long vendaId = db.insertOrThrow("vendas", null, venda);
 
@@ -344,6 +400,82 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         } finally {
             db.endTransaction();
         }
+    }
+
+    public VendaDetalhe getVendaDetalhe(long vendaId) {
+        VendaDetalhe v = null;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,data_millis,subtotal,desconto,total,forma_pagamento,dinheiro,pix,cartao," +
+                        "recebido,troco,consumidor_documento,nota_status,nota_numero,nota_chave,nota_protocolo,nota_xml " +
+                        "FROM vendas WHERE id=?",
+                new String[]{String.valueOf(vendaId)});
+        try {
+            if (c.moveToFirst()) {
+                v = new VendaDetalhe();
+                v.id = c.getLong(0);
+                v.dataMillis = c.getLong(1);
+                v.subtotal = c.getDouble(2);
+                v.desconto = c.getDouble(3);
+                v.total = c.getDouble(4);
+                v.formaPagamento = c.getString(5);
+                v.dinheiro = c.getDouble(6);
+                v.pix = c.getDouble(7);
+                v.cartao = c.getDouble(8);
+                v.recebido = c.getDouble(9);
+                v.troco = c.getDouble(10);
+                v.consumidorDocumento = c.getString(11);
+                v.notaStatus = c.getString(12);
+                v.notaNumero = c.getString(13);
+                v.notaChave = c.getString(14);
+                v.notaProtocolo = c.getString(15);
+                v.notaXml = c.getString(16);
+            }
+        } finally { c.close(); }
+
+        if (v == null) return null;
+
+        Cursor i = getReadableDatabase().rawQuery(
+                "SELECT codigo,nome,unidade,quantidade,preco_unitario,total,desconto_rateio,total_liquido " +
+                        "FROM venda_itens WHERE venda_id=? ORDER BY id",
+                new String[]{String.valueOf(vendaId)});
+        try {
+            while (i.moveToNext()) {
+                VendaItemRegistro item = new VendaItemRegistro();
+                item.codigo = i.getString(0);
+                item.nome = i.getString(1);
+                item.unidade = i.getString(2);
+                item.quantidade = i.getDouble(3);
+                item.precoUnitario = i.getDouble(4);
+                item.total = i.getDouble(5);
+                item.descontoRateio = i.getDouble(6);
+                item.totalLiquido = i.getDouble(7);
+                v.itens.add(item);
+            }
+        } finally { i.close(); }
+
+        return v;
+    }
+
+    public void registrarSolicitacaoNfce(long vendaId, String documento) {
+        ContentValues values = new ContentValues();
+        values.put("consumidor_documento", documento == null ? "" : documento.trim());
+        values.put("nota_status", "PENDENTE_CONFIGURACAO");
+        getWritableDatabase().update(
+                "vendas", values, "id=?",
+                new String[]{String.valueOf(vendaId)});
+    }
+
+    public void atualizarNfce(long vendaId, String status, String numero,
+                              String chave, String protocolo, String xml) {
+        ContentValues values = new ContentValues();
+        values.put("nota_status", status == null ? "" : status);
+        values.put("nota_numero", numero == null ? "" : numero);
+        values.put("nota_chave", chave == null ? "" : chave);
+        values.put("nota_protocolo", protocolo == null ? "" : protocolo);
+        values.put("nota_xml", xml == null ? "" : xml);
+        getWritableDatabase().update(
+                "vendas", values, "id=?",
+                new String[]{String.valueOf(vendaId)});
     }
 
     public ResumoVendas resumoHoje() {

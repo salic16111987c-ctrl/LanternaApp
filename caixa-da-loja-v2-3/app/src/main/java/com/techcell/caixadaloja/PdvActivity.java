@@ -2,6 +2,7 @@ package com.techcell.caixadaloja;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -24,6 +25,8 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.text.NumberFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -317,7 +320,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 10", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 11", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
@@ -1329,21 +1332,8 @@ public class PdvActivity extends Activity {
                                 atualizarResultados();
                                 atualizarCarrinho();
 
-                                String msg = "Venda #" + idVenda +
-                                        "\nTotal: " +
-                                        moeda.format(totalFinal);
-                                if (trocoFinal > 0.001) {
-                                    msg += "\nTroco: " +
-                                            moeda.format(trocoFinal);
-                                }
-
-                                new AlertDialog.Builder(this)
-                                        .setTitle("Venda concluída ✓")
-                                        .setMessage(msg +
-                                                "\n\nEstoque atualizado automaticamente.")
-                                        .setPositiveButton(
-                                                "Nova venda", null)
-                                        .show();
+                                mostrarPosVenda(
+                                        idVenda, totalFinal, trocoFinal);
 
                             } catch (Exception ex) {
                                 Toast.makeText(this,
@@ -1354,6 +1344,173 @@ public class PdvActivity extends Activity {
                         }));
 
         dialog.show();
+    }
+
+    private void mostrarPosVenda(long vendaId, double total, double troco) {
+        String msg = "Venda #" + vendaId +
+                "\nTotal: " + moeda.format(total);
+        if (troco > 0.001) {
+            msg += "\nTroco: " + moeda.format(troco);
+        }
+        msg += "\n\nEstoque atualizado automaticamente.";
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Venda concluída ✓")
+                .setMessage(msg)
+                .setPositiveButton("Nova venda", null)
+                .setNegativeButton("Comprovante", null)
+                .setNeutralButton("Emitir nota", null)
+                .create();
+
+        dialog.setOnShowListener(x -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                    .setOnClickListener(v -> dialog.dismiss());
+
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
+                    .setOnClickListener(v -> compartilharComprovante(vendaId));
+
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+                    .setOnClickListener(v -> abrirEmissaoNota(vendaId));
+        });
+
+        dialog.show();
+    }
+
+    private void abrirEmissaoNota(long vendaId) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(6), dp(20), dp(8));
+
+        TextView info = txt(
+                "CPF/CNPJ do consumidor é opcional.\n" +
+                "Nesta versão a solicitação fica registrada na venda. " +
+                "A NFC-e fiscal real será transmitida quando configurarmos " +
+                "certificado, CSC e dados fiscais da empresa.",
+                13, false);
+        info.setTextColor(MUTED);
+        info.setPadding(0, 0, 0, dp(10));
+        box.addView(info);
+
+        EditText documento = new EditText(this);
+        documento.setHint("CPF/CNPJ (opcional)");
+        documento.setSingleLine(true);
+        documento.setInputType(InputType.TYPE_CLASS_NUMBER);
+        box.addView(documento);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Emitir nota da venda")
+                .setView(box)
+                .setPositiveButton("Registrar NFC-e", null)
+                .setNegativeButton("Cancelar", null)
+                .create();
+
+        dialog.setOnShowListener(x ->
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> {
+                            String doc = documento.getText().toString()
+                                    .replaceAll("[^0-9]", "");
+
+                            if (!doc.isEmpty() &&
+                                    doc.length() != 11 &&
+                                    doc.length() != 14) {
+                                documento.setError(
+                                        "Informe CPF com 11 dígitos ou CNPJ com 14 dígitos");
+                                return;
+                            }
+
+                            db.registrarSolicitacaoNfce(vendaId, doc);
+                            dialog.dismiss();
+
+                            new AlertDialog.Builder(this)
+                                    .setTitle("NFC-e registrada")
+                                    .setMessage(
+                                            "A venda #" + vendaId +
+                                            " ficou marcada para emissão fiscal.\n\n" +
+                                            "Situação: aguardando configuração fiscal da Tech Cell.")
+                                    .setPositiveButton("OK", null)
+                                    .show();
+                        }));
+
+        dialog.show();
+    }
+
+    private void compartilharComprovante(long vendaId) {
+        GestaoDbHelper.VendaDetalhe venda = db.getVendaDetalhe(vendaId);
+        if (venda == null) {
+            Toast.makeText(this,
+                    "Venda não encontrada.",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String comprovante = montarTextoComprovante(venda);
+
+        AlertDialog preview = new AlertDialog.Builder(this)
+                .setTitle("Comprovante da venda")
+                .setMessage(comprovante)
+                .setPositiveButton("Compartilhar", null)
+                .setNegativeButton("Fechar", null)
+                .create();
+
+        preview.setOnShowListener(x ->
+                preview.getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> {
+                            Intent share = new Intent(Intent.ACTION_SEND);
+                            share.setType("text/plain");
+                            share.putExtra(Intent.EXTRA_SUBJECT,
+                                    "Comprovante Tech Cell - Venda #" + venda.id);
+                            share.putExtra(Intent.EXTRA_TEXT, comprovante);
+                            startActivity(Intent.createChooser(
+                                    share, "Compartilhar comprovante"));
+                        }));
+
+        preview.show();
+    }
+
+    private String montarTextoComprovante(GestaoDbHelper.VendaDetalhe venda) {
+        SimpleDateFormat df = new SimpleDateFormat(
+                "dd/MM/yyyy HH:mm", new Locale("pt","BR"));
+
+        StringBuilder s = new StringBuilder();
+        s.append("TECH CELL\n");
+        s.append("COMPROVANTE DE VENDA - NÃO FISCAL\n");
+        s.append("--------------------------------\n");
+        s.append("Venda #").append(venda.id).append("\n");
+        s.append("Data: ").append(
+                df.format(new Date(venda.dataMillis))).append("\n");
+        s.append("--------------------------------\n");
+
+        for (GestaoDbHelper.VendaItemRegistro item : venda.itens) {
+            s.append(item.nome).append("\n");
+            s.append(fmtQtd(item.quantidade))
+                    .append(" ")
+                    .append(item.unidade == null || item.unidade.trim().isEmpty()
+                            ? "UN" : item.unidade)
+                    .append(" x ")
+                    .append(moeda.format(item.precoUnitario))
+                    .append(" = ")
+                    .append(moeda.format(item.total))
+                    .append("\n");
+        }
+
+        s.append("--------------------------------\n");
+        s.append("Subtotal: ").append(
+                moeda.format(venda.subtotal)).append("\n");
+        s.append("Desconto: - ").append(
+                moeda.format(venda.desconto)).append("\n");
+        s.append("TOTAL: ").append(
+                moeda.format(venda.total)).append("\n");
+        s.append("Pagamento: ").append(
+                venda.formaPagamento).append("\n");
+
+        if (venda.troco > 0.001) {
+            s.append("Troco: ").append(
+                    moeda.format(venda.troco)).append("\n");
+        }
+
+        s.append("--------------------------------\n");
+        s.append("Obrigado pela preferência!\n");
+        return s.toString();
     }
 
     private EditText inputNumero(String hint) {
