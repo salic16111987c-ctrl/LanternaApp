@@ -80,7 +80,7 @@ public class PreparacaoFiscalActivity extends Activity {
         titulo.setPadding(0, dp(16), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("NF-e / NFC-e • Alpha 19 • preparação para homologação", 14, false);
+        TextView sub = txt("NF-e / NFC-e • Alpha 20 • preparação para homologação", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(12));
         root.addView(sub);
