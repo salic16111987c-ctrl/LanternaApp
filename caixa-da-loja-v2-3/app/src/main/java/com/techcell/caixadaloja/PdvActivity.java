@@ -320,7 +320,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 13", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 14", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
@@ -1419,6 +1419,8 @@ public class PdvActivity extends Activity {
         documento.setHint("CPF/CNPJ do consumidor (opcional)");
         documento.setSingleLine(true);
         documento.setInputType(InputType.TYPE_CLASS_NUMBER);
+        CadastroBrasilUtils.aplicarMascaraDocumento(documento,
+                () -> CadastroBrasilUtils.apenasDigitos(documento.getText().toString()).length() > 11);
         box.addView(documento);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
@@ -1434,9 +1436,14 @@ public class PdvActivity extends Activity {
                             String doc = documento.getText().toString()
                                     .replaceAll("[^0-9]", "");
 
-                            if (!doc.isEmpty() && doc.length() != 11 && doc.length() != 14) {
-                                documento.setError("Informe CPF com 11 ou CNPJ com 14 dígitos");
-                                return;
+                            if (!doc.isEmpty()) {
+                                boolean valido = doc.length() == 11
+                                        ? CadastroBrasilUtils.cpfValido(doc)
+                                        : doc.length() == 14 && CadastroBrasilUtils.cnpjValido(doc);
+                                if (!valido) {
+                                    documento.setError("CPF/CNPJ inválido");
+                                    return;
+                                }
                             }
 
                             db.registrarSolicitacaoNfce(vendaId, doc);
@@ -1546,6 +1553,34 @@ public class PdvActivity extends Activity {
         EditText telefone = campoFiscal(box, "Telefone", false);
         EditText email = campoFiscal(box, "E-mail", false);
 
+        CadastroBrasilUtils.aplicarMascaraDocumento(documento,
+                () -> CadastroBrasilUtils.apenasDigitos(documento.getText().toString()).length() > 11);
+        CadastroBrasilUtils.aplicarMascaraCep(cep);
+
+        final String[] ultimoCepNfe = {""};
+        cep.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+            public void onTextChanged(CharSequence s, int st, int b, int c) {}
+            public void afterTextChanged(Editable e) {
+                String d = CadastroBrasilUtils.apenasDigitos(e.toString());
+                if (d.length() != 8 || d.equals(ultimoCepNfe[0])) return;
+                ultimoCepNfe[0] = d;
+                CadastroBrasilUtils.buscarCep(PdvActivity.this, d,
+                        new CadastroBrasilUtils.CepCallback() {
+                            @Override public void onSuccess(CadastroBrasilUtils.CepData x) {
+                                if (!x.logradouro.isEmpty()) logradouro.setText(x.logradouro);
+                                if (!x.bairro.isEmpty()) bairro.setText(x.bairro);
+                                if (!x.municipio.isEmpty()) municipio.setText(x.municipio);
+                                if (!x.uf.isEmpty()) uf.setText(x.uf);
+                                numero.requestFocus();
+                            }
+                            @Override public void onError(String mensagem) {
+                                Toast.makeText(PdvActivity.this, mensagem, Toast.LENGTH_SHORT).show();
+                            }
+                        });
+            }
+        });
+
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Preparar NF-e")
                 .setView(scroll)
@@ -1564,8 +1599,11 @@ public class PdvActivity extends Activity {
                                 nome.setError("Informe o destinatário");
                                 return;
                             }
-                            if (doc.length() != 11 && doc.length() != 14) {
-                                documento.setError("Informe CPF com 11 ou CNPJ com 14 dígitos");
+                            boolean docValido = doc.length() == 11
+                                    ? CadastroBrasilUtils.cpfValido(doc)
+                                    : doc.length() == 14 && CadastroBrasilUtils.cnpjValido(doc);
+                            if (!docValido) {
+                                documento.setError("CPF/CNPJ inválido");
                                 return;
                             }
                             if (logradouro.getText().toString().trim().isEmpty()) {

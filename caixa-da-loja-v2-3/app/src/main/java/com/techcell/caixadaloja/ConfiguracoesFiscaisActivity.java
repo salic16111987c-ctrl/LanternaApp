@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -21,6 +23,8 @@ public class ConfiguracoesFiscaisActivity extends Activity {
     private Spinner ambiente;
     private TextView status;
     private GestaoDbHelper db;
+    private String ultimoCnpjConsultado = "";
+    private String ultimoCepConsultado = "";
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
 
@@ -73,7 +77,7 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Dados da empresa emitente", 15, false);
+        TextView sub = txt("Dados da empresa emitente • Alpha 14", 15, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
@@ -83,9 +87,9 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         status.setVisibility(TextView.GONE);
         root.addView(status);
 
-        razao = addCampo(root, "Razão social *", "Razão social da empresa", false);
-        fantasia = addCampo(root, "Nome fantasia", "Tech Cell", false);
-        cnpj = addCampo(root, "CNPJ *", "Somente números", true);
+        razao = addCampo(root, "Razão social *", "Preenchida automaticamente pelo CNPJ", false);
+        fantasia = addCampo(root, "Nome fantasia", "Preenchido automaticamente quando disponível", false);
+        cnpj = addCampo(root, "CNPJ *", "00.000.000/0000-00", true);
         ie = addCampo(root, "Inscrição Estadual *", "Inscrição Estadual", false);
         regime = addCampo(root, "Regime tributário", "Ex.: Simples Nacional", false);
 
@@ -94,13 +98,13 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         end.setPadding(0, dp(18), 0, dp(2));
         root.addView(end);
 
-        cep = addCampo(root, "CEP", "Somente números", true);
-        logradouro = addCampo(root, "Logradouro *", "Rua / Avenida", false);
+        cep = addCampo(root, "CEP", "00000-000", true);
+        logradouro = addCampo(root, "Logradouro *", "Preenchido pelo CEP", false);
         numero = addCampo(root, "Número *", "Número", false);
         complemento = addCampo(root, "Complemento", "Opcional", false);
-        bairro = addCampo(root, "Bairro *", "Bairro", false);
-        municipio = addCampo(root, "Município *", "Cidade", false);
-        uf = addCampo(root, "UF *", "MG", false);
+        bairro = addCampo(root, "Bairro *", "Preenchido pelo CEP", false);
+        municipio = addCampo(root, "Município *", "Preenchido pelo CEP", false);
+        uf = addCampo(root, "UF *", "Preenchida pelo CEP", false);
         telefone = addCampo(root, "Telefone", "Telefone da empresa", false);
         email = addCampo(root, "E-mail", "E-mail da empresa", false);
 
@@ -139,6 +143,7 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         root.addView(salvar);
 
         carregar();
+        configurarAutomacoes();
         setContentView(scroll);
     }
 
@@ -146,10 +151,10 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         GestaoDbHelper.EmpresaConfig e = db.getEmpresaConfig();
         razao.setText(e.razao);
         fantasia.setText(e.fantasia);
-        cnpj.setText(e.cnpj);
+        cnpj.setText(CadastroBrasilUtils.formatarCnpj(e.cnpj));
         ie.setText(e.ie);
         regime.setText(e.regime);
-        cep.setText(e.cep);
+        cep.setText(CadastroBrasilUtils.formatarCep(e.cep));
         logradouro.setText(e.logradouro);
         numero.setText(e.numero);
         complemento.setText(e.complemento);
@@ -161,16 +166,106 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         serieNfce.setText(e.serieNfce == null || e.serieNfce.isEmpty() ? "1" : e.serieNfce);
         serieNfe.setText(e.serieNfe == null || e.serieNfe.isEmpty() ? "1" : e.serieNfe);
         ambiente.setSelection(e.producao ? 1 : 0);
+        ultimoCnpjConsultado = CadastroBrasilUtils.apenasDigitos(e.cnpj);
+        ultimoCepConsultado = CadastroBrasilUtils.apenasDigitos(e.cep);
+    }
+
+    private void configurarAutomacoes() {
+        CadastroBrasilUtils.aplicarMascaraCnpj(cnpj);
+        CadastroBrasilUtils.aplicarMascaraCep(cep);
+
+        cnpj.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+            public void onTextChanged(CharSequence s, int st, int b, int c) {}
+            public void afterTextChanged(Editable e) {
+                String doc = CadastroBrasilUtils.apenasDigitos(e.toString());
+                if (doc.length() < 14) {
+                    cnpj.setError(null);
+                    return;
+                }
+                if (!CadastroBrasilUtils.cnpjValido(doc)) {
+                    cnpj.setError("CNPJ inválido");
+                    return;
+                }
+                cnpj.setError(null);
+                if (doc.equals(ultimoCnpjConsultado)) return;
+                ultimoCnpjConsultado = doc;
+                consultarCnpj(doc);
+            }
+        });
+
+        cep.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
+            public void onTextChanged(CharSequence s, int st, int b, int c) {}
+            public void afterTextChanged(Editable e) {
+                String d = CadastroBrasilUtils.apenasDigitos(e.toString());
+                if (d.length() != 8 || d.equals(ultimoCepConsultado)) return;
+                ultimoCepConsultado = d;
+                consultarCep(d);
+            }
+        });
+    }
+
+    private void consultarCnpj(String doc) {
+        mostrarStatus("Consultando CNPJ...", "#175CD3", "#EFF8FF");
+        CadastroBrasilUtils.buscarCnpj(this, doc, new CadastroBrasilUtils.CnpjCallback() {
+            @Override public void onSuccess(CadastroBrasilUtils.CnpjData d) {
+                razao.setText(d.razaoSocial);
+                if (!d.nomeFantasia.isEmpty()) fantasia.setText(d.nomeFantasia);
+
+                ultimoCepConsultado = d.cep;
+                if (!d.cep.isEmpty()) cep.setText(CadastroBrasilUtils.formatarCep(d.cep));
+                if (!d.logradouro.isEmpty()) logradouro.setText(d.logradouro);
+                if (!d.numero.isEmpty()) numero.setText(d.numero);
+                if (!d.complemento.isEmpty()) complemento.setText(d.complemento);
+                if (!d.bairro.isEmpty()) bairro.setText(d.bairro);
+                if (!d.municipio.isEmpty()) municipio.setText(d.municipio);
+                if (!d.uf.isEmpty()) uf.setText(d.uf);
+                if (!d.telefone.isEmpty()) telefone.setText(d.telefone);
+                if (!d.email.isEmpty()) email.setText(d.email);
+
+                String situacao = d.situacao.isEmpty() ? "" : " • Situação: " + d.situacao;
+                mostrarStatus("✓ Empresa localizada" + situacao, "#176240", "#ECFDF3");
+            }
+
+            @Override public void onError(String mensagem) {
+                mostrarStatus(mensagem + " Você pode preencher manualmente.", "#B54708", "#FFF6ED");
+            }
+        });
+    }
+
+    private void consultarCep(String d) {
+        mostrarStatus("Consultando CEP...", "#175CD3", "#EFF8FF");
+        CadastroBrasilUtils.buscarCep(this, d, new CadastroBrasilUtils.CepCallback() {
+            @Override public void onSuccess(CadastroBrasilUtils.CepData x) {
+                if (!x.logradouro.isEmpty()) logradouro.setText(x.logradouro);
+                if (!x.bairro.isEmpty()) bairro.setText(x.bairro);
+                if (!x.municipio.isEmpty()) municipio.setText(x.municipio);
+                if (!x.uf.isEmpty()) uf.setText(x.uf);
+                mostrarStatus("✓ Endereço localizado pelo CEP", "#176240", "#ECFDF3");
+                numero.requestFocus();
+            }
+            @Override public void onError(String mensagem) {
+                mostrarStatus(mensagem + " Preencha o endereço manualmente.", "#B54708", "#FFF6ED");
+            }
+        });
+    }
+
+    private void mostrarStatus(String mensagem, String texto, String fundo) {
+        status.setText(mensagem);
+        status.setTextColor(Color.parseColor(texto));
+        status.setBackgroundColor(Color.parseColor(fundo));
+        status.setVisibility(TextView.VISIBLE);
     }
 
     private void salvar() {
-        String doc = soNumeros(cnpj.getText().toString());
+        String doc = CadastroBrasilUtils.apenasDigitos(cnpj.getText().toString());
         if (razao.getText().toString().trim().isEmpty()) {
             razao.setError("Informe a razão social");
             return;
         }
-        if (doc.length() != 14) {
-            cnpj.setError("Informe um CNPJ com 14 dígitos");
+        if (!CadastroBrasilUtils.cnpjValido(doc)) {
+            cnpj.setError("CNPJ inválido");
             return;
         }
         if (ie.getText().toString().trim().isEmpty()) {
@@ -193,7 +288,7 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         e.cnpj = doc;
         e.ie = ie.getText().toString().trim();
         e.regime = regime.getText().toString().trim();
-        e.cep = soNumeros(cep.getText().toString());
+        e.cep = CadastroBrasilUtils.apenasDigitos(cep.getText().toString());
         e.logradouro = logradouro.getText().toString().trim();
         e.numero = numero.getText().toString().trim();
         e.complemento = complemento.getText().toString().trim();
@@ -207,18 +302,14 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         e.producao = ambiente.getSelectedItemPosition() == 1;
 
         db.saveEmpresaConfig(e);
-
-        status.setText("✓ Dados da empresa salvos no banco.");
-        status.setTextColor(Color.parseColor("#176240"));
-        status.setBackgroundColor(Color.parseColor("#ECFDF3"));
-        status.setVisibility(TextView.VISIBLE);
+        mostrarStatus("✓ Dados da empresa salvos no banco.", "#176240", "#ECFDF3");
         Toast.makeText(this, "Dados fiscais salvos.", Toast.LENGTH_SHORT).show();
     }
 
     public static boolean estaMinimamenteConfigurada(Context context) {
         GestaoDbHelper.EmpresaConfig e = new GestaoDbHelper(context).getEmpresaConfig();
         return !e.razao.trim().isEmpty() &&
-                soNumeros(e.cnpj).length() == 14 &&
+                CadastroBrasilUtils.cnpjValido(e.cnpj) &&
                 !e.ie.trim().isEmpty() &&
                 !e.municipio.trim().isEmpty() &&
                 e.uf.trim().length() == 2;
@@ -229,9 +320,5 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         if (e.fantasia != null && !e.fantasia.trim().isEmpty()) return e.fantasia.trim();
         if (e.razao != null && !e.razao.trim().isEmpty()) return e.razao.trim();
         return "TECH CELL";
-    }
-
-    private static String soNumeros(String s) {
-        return s == null ? "" : s.replaceAll("[^0-9]", "");
     }
 }
