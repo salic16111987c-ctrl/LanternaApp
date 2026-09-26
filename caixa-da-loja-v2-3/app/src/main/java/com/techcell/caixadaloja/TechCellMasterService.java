@@ -28,6 +28,8 @@ public class TechCellMasterService extends Service {
     private static final String PONG = "TECHCELL_PONG_V1";
     private static final String SNAPSHOT = "TECHCELL_SNAPSHOT_V1";
     private static final String SNAPSHOT_OK = "TECHCELL_SNAPSHOT_OK_V1";
+    private static final String SALE = "TECHCELL_SALE_V1";
+    private static final String SALE_OK = "TECHCELL_SALE_OK_V1";
     private static final String ERROR = "TECHCELL_ERROR_V1";
 
     private volatile boolean ativo;
@@ -133,6 +135,11 @@ public class TechCellMasterService extends Service {
                 return;
             }
 
+            if (linha.startsWith(SALE + "|")) {
+                responderVenda(linha, w);
+                return;
+            }
+
             w.write(ERROR + "|COMANDO_INVALIDO");
             w.newLine();
             w.flush();
@@ -173,6 +180,7 @@ public class TechCellMasterService extends Service {
         }
 
         String[] p = linha.split("\\|", -1);
+        String deviceUuid = p.length >= 2 ? p[1] : "";
         String codigo = p.length >= 3 ? p[2] : "";
         if (!db.validarCodigoPareamento(codigo)) {
             w.write(ERROR + "|CODIGO_INVALIDO");
@@ -181,9 +189,65 @@ public class TechCellMasterService extends Service {
             return;
         }
 
+        String token = db.autorizarDispositivoLan(deviceUuid);
         String json = db.exportarSnapshotInicial();
         String compactado = TechCellLanClient.compactar(json);
-        w.write(SNAPSHOT_OK + "|" + compactado);
+        w.write(SNAPSHOT_OK + "|" + seguro(token) + "|" + compactado);
+        w.newLine();
+        w.flush();
+    }
+
+    private void responderVenda(String linha, BufferedWriter w) throws Exception {
+        GestaoDbHelper db = new GestaoDbHelper(this);
+        GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            w.write(ERROR + "|NAO_MASTER");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        String[] p = linha.split("\\|", 4);
+        if (p.length < 4) {
+            w.write(ERROR + "|PACOTE_INCOMPLETO");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        String deviceUuid = p[1] == null ? "" : p[1].trim();
+        String credencial = p[2] == null ? "" : p[2].trim();
+        String token = "";
+
+        if (credencial.startsWith("T:")) {
+            token = credencial.substring(2);
+            if (!db.validarTokenLan(deviceUuid, token)) {
+                w.write(ERROR + "|NAO_AUTORIZADO");
+                w.newLine();
+                w.flush();
+                return;
+            }
+        } else if (credencial.startsWith("C:")) {
+            String codigo = credencial.substring(2);
+            if (!db.validarCodigoPareamento(codigo)) {
+                w.write(ERROR + "|CODIGO_INVALIDO");
+                w.newLine();
+                w.flush();
+                return;
+            }
+            token = db.autorizarDispositivoLan(deviceUuid);
+        } else {
+            w.write(ERROR + "|NAO_AUTORIZADO");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        String json = TechCellLanClient.descompactar(p[3]);
+
+        GestaoDbHelper.RecebimentoVenda recebida = db.receberVendaDoTerminal(json);
+        w.write(SALE_OK + "|" + seguro(recebida.vendaUuid) + "|" + recebida.vendaIdMaster + "|" +
+                (recebida.jaExistia ? "EXISTE" : "NOVA") + "|" + seguro(token));
         w.newLine();
         w.flush();
     }

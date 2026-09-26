@@ -41,6 +41,8 @@ public class ConfiguracaoDispositivoActivity extends Activity {
     private Button buscarMaster;
     private Button testarConexao;
     private Button sincronizarAgora;
+    private Button enviarVendas;
+    private TextView resumoVendas;
 
     private int dp(int v){ return TechCellUi.dp(this,v); }
     private TextView text(String v,int s,boolean b){
@@ -92,7 +94,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView titulo=text("Dispositivo e rede",27,true);
         titulo.setPadding(0,dp(16),0,0);root.addView(titulo);
-        TextView sub=text("Pareamento e sincronização inicial • Alpha 33",13,false);
+        TextView sub=text("Pareamento e sincronização inicial • Alpha 34",13,false);
         sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout identidade=TechCellUi.card(this);
@@ -172,11 +174,23 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         tp.setMargins(0,dp(10),0,0);blocoMasterRemoto.addView(testarConexao,tp);
 
         sincronizarAgora=new Button(this);
-        sincronizarAgora.setText("↓  Sincronizar dados agora");
+        sincronizarAgora.setText("↓  Sincronizar dados do Master");
         sincronizarAgora.setTextSize(15);TechCellUi.stylePrimary(this,sincronizarAgora,TechCellUi.GREEN);
         sincronizarAgora.setOnClickListener(v->sincronizarComMasterSalvo());
         LinearLayout.LayoutParams sy=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));
         sy.setMargins(0,dp(10),0,0);blocoMasterRemoto.addView(sincronizarAgora,sy);
+
+        enviarVendas=new Button(this);
+        enviarVendas.setText("↑  Enviar vendas pendentes ao Master");
+        enviarVendas.setTextSize(15);TechCellUi.stylePrimary(this,enviarVendas,TechCellUi.BLUE);
+        enviarVendas.setOnClickListener(v->enviarVendasPendentes());
+        LinearLayout.LayoutParams ev=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));
+        ev.setMargins(0,dp(10),0,0);blocoMasterRemoto.addView(enviarVendas,ev);
+
+        resumoVendas=text(resumoVendasPendentes(),12,true);
+        resumoVendas.setTextColor(db.countVendasPendentesMaster()>0?TechCellUi.ORANGE:TechCellUi.GREEN);
+        resumoVendas.setPadding(0,dp(10),0,0);
+        blocoMasterRemoto.addView(resumoVendas);
 
         if(atual.masterName!=null&&!atual.masterName.trim().isEmpty()){
             TextView vinc=text("Vinculado a: "+atual.masterName+" • "+atual.masterHost,12,true);
@@ -210,11 +224,20 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));
         sp.setMargins(0,dp(16),0,0);root.addView(salvar,sp);
 
-        TextView aviso=text("Alpha 33 faz o espelho inicial do Master para o terminal. Vendas feitas no Caixa ainda não retornam automaticamente ao Master nesta etapa.",11,false);
+        TextView aviso=text("Alpha 34 faz o espelho inicial do Master para o terminal. Vendas feitas no Caixa ainda não retornam automaticamente ao Master nesta etapa.",11,false);
         aviso.setTextColor(TechCellUi.MUTED);aviso.setGravity(Gravity.CENTER);
         aviso.setPadding(dp(8),dp(12),dp(8),0);root.addView(aviso);
 
         setContentView(scroll);
+    }
+
+    private String resumoVendasPendentes(){
+        int pendentes=db.countVendasPendentesMaster();
+        if(pendentes>0)return "Vendas aguardando envio ao Master: "+pendentes;
+        if(atual.lastSalePushAt>0 && (atual.lastSalePushError==null||atual.lastSalePushError.trim().isEmpty())){
+            return "Vendas locais sincronizadas com o Master ✓";
+        }
+        return "Vendas pendentes: 0";
     }
 
     private String resumoSincronizacao(){
@@ -440,8 +463,12 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         new Thread(()->{
             try{
-                String json=TechCellLanClient.baixarSnapshot(info.host,info.port,atual.dispositivoUuid,codigo);
-                GestaoDbHelper.SnapshotStats st=db.aplicarSnapshotInicial(json);
+                TechCellLanClient.SnapshotDownload download=TechCellLanClient.baixarSnapshot(
+                        info.host,info.port,atual.dispositivoUuid,codigo);
+                GestaoDbHelper.SnapshotStats st=db.aplicarSnapshotInicial(download.json);
+                if(download.authToken!=null&&!download.authToken.trim().isEmpty()){
+                    db.salvarTokenMaster(download.authToken);
+                }
                 db.registrarMasterOnline(info.host);
                 runOnUiThread(()->{
                     atual=db.getSyncContext();
@@ -450,6 +477,10 @@ public class ConfiguracaoDispositivoActivity extends Activity {
                     resultadoRede.setText("SINCRONIZAÇÃO OK ✓  Dados recebidos do Master.");
                     resumoSync.setText(resumoSincronizacao());
                     resumoSync.setTextColor(TechCellUi.GREEN);
+                    if(resumoVendas!=null){
+                        resumoVendas.setText(resumoVendasPendentes());
+                        resumoVendas.setTextColor(db.countVendasPendentesMaster()>0?TechCellUi.ORANGE:TechCellUi.GREEN);
+                    }
                     new AlertDialog.Builder(this)
                             .setTitle("Sincronização concluída")
                             .setMessage("Produtos/estoque: "+st.produtos+"\nClientes: "+st.clientes+"\nFornecedores: "+st.fornecedores+
@@ -470,6 +501,53 @@ public class ConfiguracaoDispositivoActivity extends Activity {
                 });
             }
         },"TechCell-Snapshot").start();
+    }
+
+    private void enviarVendasPendentes(){
+        if("MASTER".equals(papelSelecionado())){
+            Toast.makeText(this,"O Master já é a base principal das vendas.",Toast.LENGTH_LONG).show();
+            return;
+        }
+        int qtd=db.countVendasPendentesMaster();
+        if(qtd<=0){
+            Toast.makeText(this,"Não há vendas pendentes para enviar.",Toast.LENGTH_SHORT).show();
+            if(resumoVendas!=null){
+                resumoVendas.setText(resumoVendasPendentes());
+                resumoVendas.setTextColor(TechCellUi.GREEN);
+            }
+            return;
+        }
+
+        String codigo=pairingCode==null?"":pairingCode.getText().toString().trim();
+        GestaoDbHelper.SyncContext ctx=db.getSyncContext();
+        boolean temToken=ctx.masterAuthToken!=null&&!ctx.masterAuthToken.trim().isEmpty();
+        if(!temToken && codigo.isEmpty()){
+            pairingCode.requestFocus();
+            Toast.makeText(this,"Informe o código de pareamento do Master para autorizar este Caixa.",Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        enviarVendas.setEnabled(false);
+        resultadoRede.setTextColor(TechCellUi.BLUE);
+        resultadoRede.setText("Enviando "+qtd+" venda(s) pendente(s) ao Master…");
+
+        new Thread(()->{
+            TechCellSaleSync.Resultado r=TechCellSaleSync.enviarPendentes(this,codigo);
+            runOnUiThread(()->{
+                enviarVendas.setEnabled(true);
+                atual=db.getSyncContext();
+                if(r.erro==null||r.erro.trim().isEmpty()){
+                    resultadoRede.setTextColor(TechCellUi.GREEN);
+                    resultadoRede.setText("VENDAS SINCRONIZADAS ✓  Enviadas: "+r.enviadas+
+                            (r.jaExistiam>0?" • já existentes no Master: "+r.jaExistiam:""));
+                }else{
+                    resultadoRede.setTextColor(TechCellUi.RED);
+                    resultadoRede.setText("Envio interrompido: "+r.erro);
+                }
+                resumoVendas.setText(resumoVendasPendentes());
+                resumoVendas.setTextColor(db.countVendasPendentesMaster()>0?TechCellUi.ORANGE:TechCellUi.GREEN);
+            });
+        },"TechCell-Sale-Push").start();
     }
 
     private String nomeMaster(TechCellLanClient.MasterInfo info){

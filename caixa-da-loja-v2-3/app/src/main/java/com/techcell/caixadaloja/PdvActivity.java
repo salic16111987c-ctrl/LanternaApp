@@ -324,7 +324,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 33", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 34", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
@@ -1338,6 +1338,7 @@ public class PdvActivity extends Activity {
 
                                 mostrarPosVenda(
                                         idVenda, totalFinal, trocoFinal);
+                                tentarSincronizarVendasAutomaticamente();
 
                             } catch (Exception ex) {
                                 Toast.makeText(this,
@@ -1348,6 +1349,34 @@ public class PdvActivity extends Activity {
                         }));
 
         dialog.show();
+    }
+
+    private void tentarSincronizarVendasAutomaticamente() {
+        try {
+            GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+            if (!ctx.configurado || "MASTER".equalsIgnoreCase(ctx.papelDispositivo)) return;
+            if (ctx.masterHost == null || ctx.masterHost.trim().isEmpty()) return;
+            if (ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) return;
+
+            new Thread(() -> {
+                TechCellSaleSync.Resultado r = TechCellSaleSync.enviarPendentes(
+                        getApplicationContext(), "");
+                if ((r.erro == null || r.erro.trim().isEmpty()) && r.enviadas > 0) {
+                    runOnUiThread(() -> Toast.makeText(
+                            this,
+                            r.enviadas == 1 ? "Venda sincronizada com o Master ✓" :
+                                    r.enviadas + " vendas sincronizadas com o Master ✓",
+                            Toast.LENGTH_SHORT).show());
+                } else if (r.erro != null && !r.erro.trim().isEmpty()) {
+                    runOnUiThread(() -> Toast.makeText(
+                            this,
+                            "Venda salva localmente. Sincronização pendente: " + r.erro,
+                            Toast.LENGTH_LONG).show());
+                }
+            }, "TechCell-Auto-Sale-Sync").start();
+        } catch (Throwable ignored) {
+            // A venda local já foi concluída; falha de rede nunca desfaz a operação local.
+        }
     }
 
     private void mostrarPosVenda(long vendaId, double total, double troco) {

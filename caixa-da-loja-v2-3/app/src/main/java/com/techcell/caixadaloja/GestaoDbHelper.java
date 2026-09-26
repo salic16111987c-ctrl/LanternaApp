@@ -16,7 +16,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 15;
+    private static final int DB_VERSION = 16;
 
     public static class Produto {
         public long id;
@@ -314,6 +314,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public int lastSnapshotProdutos;
         public int lastSnapshotClientes;
         public int lastSnapshotFornecedores;
+        public String masterAuthToken = "";
+        public long lastSalePushAt;
+        public int lastSalePushCount;
+        public String lastSalePushError = "";
         public boolean configurado;
         public boolean cloudAtiva;
     }
@@ -443,6 +447,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         if (oldVersion < 15) {
             migrarParaV15(db);
+        }
+
+        if (oldVersion < 16) {
+            migrarParaV16(db);
         }
     }
 
@@ -698,6 +706,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "last_snapshot_produtos INTEGER NOT NULL DEFAULT 0," +
                 "last_snapshot_clientes INTEGER NOT NULL DEFAULT 0," +
                 "last_snapshot_fornecedores INTEGER NOT NULL DEFAULT 0," +
+                "master_auth_token TEXT NOT NULL DEFAULT ''," +
+                "last_sale_push_at INTEGER NOT NULL DEFAULT 0," +
+                "last_sale_push_count INTEGER NOT NULL DEFAULT 0," +
+                "last_sale_push_error TEXT NOT NULL DEFAULT ''," +
                 "configurado INTEGER NOT NULL DEFAULT 0," +
                 "cloud_ativa INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL," +
@@ -726,6 +738,13 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "dispositivo_uuid TEXT NOT NULL," +
                 "deleted_at INTEGER NOT NULL," +
                 "sync_status TEXT NOT NULL DEFAULT 'PENDENTE'" +
+                ")");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS lan_authorized_devices (" +
+                "device_uuid TEXT PRIMARY KEY," +
+                "auth_token TEXT NOT NULL," +
+                "created_at INTEGER NOT NULL," +
+                "last_seen INTEGER NOT NULL" +
                 ")");
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_tombstones_uuid " +
                 "ON sync_tombstones(entidade,entidade_uuid)");
@@ -758,6 +777,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("last_snapshot_produtos", 0);
         v.put("last_snapshot_clientes", 0);
         v.put("last_snapshot_fornecedores", 0);
+        v.put("master_auth_token", "");
+        v.put("last_sale_push_at", 0);
+        v.put("last_sale_push_count", 0);
+        v.put("last_sale_push_error", "");
         v.put("configurado", 0);
         v.put("cloud_ativa", 0);
         v.put("created_at", now);
@@ -788,6 +811,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                         "nome_dispositivo,master_tipo,master_host,master_port,master_device_uuid," +
                         "master_name,master_last_seen,lan_pairing_code,last_snapshot_at," +
                         "last_snapshot_produtos,last_snapshot_clientes,last_snapshot_fornecedores," +
+                        "master_auth_token,last_sale_push_at,last_sale_push_count,last_sale_push_error," +
                         "configurado,cloud_ativa FROM sync_context WHERE id=1",
                 null);
         try {
@@ -808,8 +832,12 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 x.lastSnapshotProdutos = c.getInt(13);
                 x.lastSnapshotClientes = c.getInt(14);
                 x.lastSnapshotFornecedores = c.getInt(15);
-                x.configurado = c.getInt(16) == 1;
-                x.cloudAtiva = c.getInt(17) == 1;
+                x.masterAuthToken = c.getString(16);
+                x.lastSalePushAt = c.getLong(17);
+                x.lastSalePushCount = c.getInt(18);
+                x.lastSalePushError = c.getString(19);
+                x.configurado = c.getInt(20) == 1;
+                x.cloudAtiva = c.getInt(21) == 1;
             }
         } finally {
             c.close();
@@ -842,6 +870,14 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 new Object[]{novoCodigoPareamento()});
     }
 
+    private void migrarParaV16(SQLiteDatabase db) {
+        criarSyncBase(db);
+        adicionarColunaSeAusente(db, "sync_context", "master_auth_token", "TEXT NOT NULL DEFAULT ''");
+        adicionarColunaSeAusente(db, "sync_context", "last_sale_push_at", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "sync_context", "last_sale_push_count", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "sync_context", "last_sale_push_error", "TEXT NOT NULL DEFAULT ''");
+    }
+
     public void salvarConfiguracaoDispositivo(String nome, String papel, String masterHost, int masterPort) {
         String nomeLimpo = nome == null ? "" : nome.trim();
         if (nomeLimpo.isEmpty()) throw new IllegalArgumentException("Informe um nome para este dispositivo.");
@@ -869,6 +905,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             v.put("master_device_uuid", "");
             v.put("master_name", "");
             v.put("master_last_seen", 0);
+            v.put("master_auth_token", "");
         }
         v.put("configurado", 1);
         v.put("updated_at", System.currentTimeMillis());
@@ -1110,6 +1147,265 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             }
         }
         return v;
+    }
+
+    public void salvarTokenMaster(String token) {
+        ContentValues v = new ContentValues();
+        v.put("master_auth_token", token == null ? "" : token.trim());
+        v.put("updated_at", System.currentTimeMillis());
+        getWritableDatabase().update("sync_context", v, "id=1", null);
+    }
+
+    public String autorizarDispositivoLan(String deviceUuid) {
+        String device = deviceUuid == null ? "" : deviceUuid.trim();
+        if (device.isEmpty()) throw new IllegalArgumentException("Dispositivo inválido.");
+
+        SQLiteDatabase db = getWritableDatabase();
+        Cursor c = db.rawQuery("SELECT auth_token FROM lan_authorized_devices WHERE device_uuid=?",
+                new String[]{device});
+        try {
+            if (c.moveToFirst()) {
+                String token = c.getString(0);
+                ContentValues seen = new ContentValues();
+                seen.put("last_seen", System.currentTimeMillis());
+                db.update("lan_authorized_devices", seen, "device_uuid=?", new String[]{device});
+                return token;
+            }
+        } finally {
+            c.close();
+        }
+
+        String token = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "");
+        long now = System.currentTimeMillis();
+        ContentValues v = new ContentValues();
+        v.put("device_uuid", device);
+        v.put("auth_token", token);
+        v.put("created_at", now);
+        v.put("last_seen", now);
+        db.insertOrThrow("lan_authorized_devices", null, v);
+        return token;
+    }
+
+    public boolean validarTokenLan(String deviceUuid, String token) {
+        String device = deviceUuid == null ? "" : deviceUuid.trim();
+        String recebido = token == null ? "" : token.trim();
+        if (device.isEmpty() || recebido.isEmpty()) return false;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT 1 FROM lan_authorized_devices WHERE device_uuid=? AND auth_token=? LIMIT 1",
+                new String[]{device, recebido});
+        try {
+            return c.moveToFirst();
+        } finally {
+            c.close();
+        }
+    }
+
+    public int countVendasPendentesMaster() {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM vendas WHERE sync_status='PENDENTE'", null);
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    public List<Long> listarIdsVendasPendentesMaster() {
+        List<Long> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id FROM vendas WHERE sync_status='PENDENTE' ORDER BY data_millis,id", null);
+        try {
+            while (c.moveToNext()) out.add(c.getLong(0));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    public String exportarVendaParaMaster(long vendaId) {
+        SQLiteDatabase db = getReadableDatabase();
+        try {
+            JSONObject root = new JSONObject();
+            root.put("schema", 1);
+
+            SyncContext ctx = lerSyncContext(db);
+            root.put("empresa_uuid", ctx.empresaUuid);
+            root.put("filial_uuid", ctx.filialUuid);
+            root.put("dispositivo_uuid", ctx.dispositivoUuid);
+
+            Cursor vc = db.rawQuery("SELECT * FROM vendas WHERE id=?", new String[]{String.valueOf(vendaId)});
+            try {
+                if (!vc.moveToFirst()) throw new IllegalStateException("Venda pendente não encontrada.");
+                root.put("venda", cursorRowJson(vc));
+            } finally {
+                vc.close();
+            }
+
+            JSONArray itens = new JSONArray();
+            Cursor ic = db.rawQuery(
+                    "SELECT vi.*,p.uuid AS produto_uuid FROM venda_itens vi " +
+                            "LEFT JOIN produtos p ON p.id=vi.produto_id WHERE vi.venda_id=? ORDER BY vi.id",
+                    new String[]{String.valueOf(vendaId)});
+            try {
+                while (ic.moveToNext()) itens.put(cursorRowJson(ic));
+            } finally {
+                ic.close();
+            }
+            if (itens.length() == 0) throw new IllegalStateException("Venda sem itens para sincronizar.");
+            root.put("itens", itens);
+            return root.toString();
+        } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException)e;
+            throw new IllegalStateException("Falha ao preparar venda pendente: " + e.getMessage(), e);
+        }
+    }
+
+    private JSONObject cursorRowJson(Cursor c) throws Exception {
+        JSONObject row = new JSONObject();
+        String[] cols = c.getColumnNames();
+        for (int i = 0; i < cols.length; i++) {
+            switch (c.getType(i)) {
+                case Cursor.FIELD_TYPE_NULL: row.put(cols[i], JSONObject.NULL); break;
+                case Cursor.FIELD_TYPE_INTEGER: row.put(cols[i], c.getLong(i)); break;
+                case Cursor.FIELD_TYPE_FLOAT: row.put(cols[i], c.getDouble(i)); break;
+                case Cursor.FIELD_TYPE_BLOB:
+                    row.put(cols[i], android.util.Base64.encodeToString(c.getBlob(i), android.util.Base64.NO_WRAP));
+                    break;
+                default: row.put(cols[i], c.getString(i));
+            }
+        }
+        return row;
+    }
+
+    public static class RecebimentoVenda {
+        public String vendaUuid = "";
+        public long vendaIdMaster;
+        public boolean jaExistia;
+    }
+
+    public RecebimentoVenda receberVendaDoTerminal(String json) {
+        if (json == null || json.trim().isEmpty()) throw new IllegalArgumentException("Venda vazia.");
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            JSONObject root = new JSONObject(json);
+            if (root.optInt("schema", 0) != 1) throw new IllegalStateException("Versão da venda incompatível.");
+
+            SyncContext ctx = lerSyncContext(db);
+            if (!"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+                throw new IllegalStateException("Este aparelho não é o Master.");
+            }
+            if (!ctx.empresaUuid.equalsIgnoreCase(root.optString("empresa_uuid", "")) ||
+                    !ctx.filialUuid.equalsIgnoreCase(root.optString("filial_uuid", ""))) {
+                throw new IllegalStateException("Venda pertence a outra empresa/filial.");
+            }
+
+            JSONObject vendaJson = root.getJSONObject("venda");
+            String vendaUuid = vendaJson.optString("uuid", "").trim();
+            if (vendaUuid.isEmpty()) throw new IllegalStateException("Venda sem UUID.");
+
+            long existente = idPorUuid(db, "vendas", vendaUuid);
+            RecebimentoVenda out = new RecebimentoVenda();
+            out.vendaUuid = vendaUuid;
+            if (existente > 0) {
+                out.vendaIdMaster = existente;
+                out.jaExistia = true;
+                db.setTransactionSuccessful();
+                return out;
+            }
+
+            ContentValues venda = jsonParaValues(vendaJson, true);
+            venda.put("empresa_uuid", ctx.empresaUuid);
+            venda.put("filial_uuid", ctx.filialUuid);
+            venda.put("sync_status", "PENDENTE");
+            venda.put("sync_updated_at", System.currentTimeMillis());
+            long masterVendaId = db.insertOrThrow("vendas", null, venda);
+
+            JSONArray itens = root.getJSONArray("itens");
+            if (itens.length() == 0) throw new IllegalStateException("Venda recebida sem itens.");
+
+            for (int i = 0; i < itens.length(); i++) {
+                JSONObject itemJson = itens.getJSONObject(i);
+                String produtoUuid = itemJson.optString("produto_uuid", "").trim();
+                if (produtoUuid.isEmpty()) throw new IllegalStateException("Item sem vínculo com o produto.");
+
+                long produtoId = idPorUuid(db, "produtos", produtoUuid);
+                if (produtoId <= 0) {
+                    throw new IllegalStateException("Produto da venda não existe no Master: " + itemJson.optString("nome", produtoUuid));
+                }
+
+                String unidade;
+                double estoque;
+                Cursor pc = db.rawQuery("SELECT unidade,estoque FROM produtos WHERE id=?",
+                        new String[]{String.valueOf(produtoId)});
+                try {
+                    if (!pc.moveToFirst()) throw new IllegalStateException("Produto não encontrado no Master.");
+                    unidade = pc.getString(0);
+                    estoque = pc.getDouble(1);
+                } finally {
+                    pc.close();
+                }
+
+                double quantidade = itemJson.optDouble("quantidade", 0);
+                if (quantidade <= 0) throw new IllegalStateException("Quantidade inválida na venda recebida.");
+                boolean servico = unidade != null && unidade.trim().equalsIgnoreCase("SERVIÇO");
+                if (!servico && estoque + 0.000001 < quantidade) {
+                    throw new IllegalStateException("Estoque insuficiente no Master para " +
+                            itemJson.optString("nome", "produto") + ". Disponível: " + estoque);
+                }
+
+                ContentValues item = jsonParaValues(itemJson, true);
+                item.remove("produto_uuid");
+                item.put("venda_id", masterVendaId);
+                item.put("produto_id", produtoId);
+                item.put("empresa_uuid", ctx.empresaUuid);
+                item.put("filial_uuid", ctx.filialUuid);
+                item.put("sync_status", "PENDENTE");
+                item.put("sync_updated_at", System.currentTimeMillis());
+                db.insertOrThrow("venda_itens", null, item);
+
+                if (!servico) {
+                    long now = System.currentTimeMillis();
+                    ContentValues estoqueV = new ContentValues();
+                    estoqueV.put("estoque", estoque - quantidade);
+                    estoqueV.put("updated_at", now);
+                    estoqueV.put("sync_status", "PENDENTE");
+                    estoqueV.put("sync_updated_at", now);
+                    db.update("produtos", estoqueV, "id=?", new String[]{String.valueOf(produtoId)});
+                    db.execSQL("UPDATE produtos SET sync_version=sync_version+1 WHERE id=?",
+                            new Object[]{produtoId});
+                }
+            }
+
+            out.vendaIdMaster = masterVendaId;
+            out.jaExistia = false;
+            db.setTransactionSuccessful();
+            return out;
+        } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException)e;
+            throw new IllegalStateException("Falha ao registrar venda no Master: " + e.getMessage(), e);
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    public void marcarVendaSincronizadaMaster(long vendaId) {
+        SQLiteDatabase db = getWritableDatabase();
+        long now = System.currentTimeMillis();
+        ContentValues v = new ContentValues();
+        v.put("sync_status", "MASTER_SYNCED");
+        v.put("sync_updated_at", now);
+        db.update("vendas", v, "id=?", new String[]{String.valueOf(vendaId)});
+        db.update("venda_itens", v, "venda_id=?", new String[]{String.valueOf(vendaId)});
+    }
+
+    public void registrarResultadoEnvioVendas(int quantidade, String erro) {
+        ContentValues v = new ContentValues();
+        v.put("last_sale_push_at", System.currentTimeMillis());
+        v.put("last_sale_push_count", Math.max(0, quantidade));
+        v.put("last_sale_push_error", erro == null ? "" : erro);
+        v.put("updated_at", System.currentTimeMillis());
+        getWritableDatabase().update("sync_context", v, "id=1", null);
     }
 
     public int countSyncPendentes() {

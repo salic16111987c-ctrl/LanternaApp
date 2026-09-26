@@ -29,6 +29,8 @@ public final class TechCellLanClient {
     private static final String PONG = "TECHCELL_PONG_V1";
     private static final String SNAPSHOT = "TECHCELL_SNAPSHOT_V1";
     private static final String SNAPSHOT_OK = "TECHCELL_SNAPSHOT_OK_V1";
+    private static final String SALE = "TECHCELL_SALE_V1";
+    private static final String SALE_OK = "TECHCELL_SALE_OK_V1";
     private static final String ERROR = "TECHCELL_ERROR_V1";
 
     public static class MasterInfo {
@@ -38,6 +40,18 @@ public final class TechCellLanClient {
         public String empresaUuid = "";
         public String filialUuid = "";
         public String dispositivoUuid = "";
+    }
+
+    public static class SnapshotDownload {
+        public String json = "";
+        public String authToken = "";
+    }
+
+    public static class SaleAck {
+        public String vendaUuid = "";
+        public long masterVendaId;
+        public boolean jaExistia;
+        public String authToken = "";
     }
 
     private TechCellLanClient(){}
@@ -124,7 +138,7 @@ public final class TechCellLanClient {
         }
     }
 
-    public static String baixarSnapshot(String host, int port, String dispositivoUuid, String codigoPareamento) throws Exception {
+    public static SnapshotDownload baixarSnapshot(String host, int port, String dispositivoUuid, String codigoPareamento) throws Exception {
         Socket socket = new Socket();
         try {
             socket.connect(new java.net.InetSocketAddress(host, port), 2500);
@@ -148,9 +162,55 @@ public final class TechCellLanClient {
                 throw new IllegalStateException("Resposta de sincronização inválida.");
             }
 
-            String payload = linha.substring((SNAPSHOT_OK + "|").length());
-            if (payload.isEmpty()) throw new IllegalStateException("O Master enviou um pacote vazio.");
-            return descompactar(payload);
+            String[] p = linha.split("\\|", 3);
+            if (p.length < 3 || p[2].isEmpty()) throw new IllegalStateException("O Master enviou um pacote vazio.");
+            SnapshotDownload out = new SnapshotDownload();
+            out.authToken = p[1];
+            out.json = descompactar(p[2]);
+            return out;
+        } finally {
+            try { socket.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    public static SaleAck enviarVenda(String host, int port, String dispositivoUuid,
+                                      String authToken, String codigoPareamento, String vendaJson) throws Exception {
+        Socket socket = new Socket();
+        try {
+            socket.connect(new java.net.InetSocketAddress(host, port), 2500);
+            socket.setSoTimeout(30000);
+
+            String credencial = authToken != null && !authToken.trim().isEmpty()
+                    ? "T:" + limpar(authToken)
+                    : "C:" + limpar(codigoPareamento);
+            if (credencial.length() <= 2) {
+                throw new SecurityException("Este Caixa ainda não está autorizado. Informe o código de pareamento do Master.");
+            }
+
+            BufferedWriter w = writer(socket);
+            BufferedReader r = reader(socket);
+            w.write(SALE + "|" + limpar(dispositivoUuid) + "|" + credencial + "|" + compactar(vendaJson));
+            w.newLine();
+            w.flush();
+
+            String linha = r.readLine();
+            if (linha == null) throw new IllegalStateException("O Master encerrou a conexão sem confirmar a venda.");
+            if (linha.startsWith(ERROR + "|")) {
+                String erro = linha.substring((ERROR + "|").length());
+                if ("NAO_AUTORIZADO".equals(erro)) throw new SecurityException("Caixa não autorizado pelo Master.");
+                if ("CODIGO_INVALIDO".equals(erro)) throw new SecurityException("Código de pareamento incorreto.");
+                throw new IllegalStateException("Master recusou a venda: " + erro);
+            }
+            if (!linha.startsWith(SALE_OK + "|")) throw new IllegalStateException("Confirmação de venda inválida.");
+
+            String[] p = linha.split("\\|", -1);
+            if (p.length < 5) throw new IllegalStateException("Confirmação de venda incompleta.");
+            SaleAck out = new SaleAck();
+            out.vendaUuid = p[1];
+            try { out.masterVendaId = Long.parseLong(p[2]); } catch (Throwable ignored) {}
+            out.jaExistia = "EXISTE".equalsIgnoreCase(p[3]);
+            out.authToken = p[4];
+            return out;
         } finally {
             try { socket.close(); } catch (Throwable ignored) {}
         }
@@ -165,7 +225,7 @@ public final class TechCellLanClient {
         return Base64.encodeToString(raw.toByteArray(), Base64.NO_WRAP);
     }
 
-    private static String descompactar(String base64) throws Exception {
+    static String descompactar(String base64) throws Exception {
         byte[] compressed = Base64.decode(base64, Base64.NO_WRAP);
         GZIPInputStream gz = new GZIPInputStream(new ByteArrayInputStream(compressed));
         ByteArrayOutputStream out = new ByteArrayOutputStream();
