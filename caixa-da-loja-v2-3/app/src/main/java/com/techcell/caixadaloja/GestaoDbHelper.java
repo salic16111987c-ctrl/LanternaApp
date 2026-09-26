@@ -9,10 +9,11 @@ import android.database.sqlite.SQLiteOpenHelper;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
+import java.util.UUID;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 11;
+    private static final int DB_VERSION = 12;
 
     public static class Produto {
         public long id;
@@ -293,11 +294,23 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String status = "ATIVO";
     }
 
+    public static class SyncContext {
+        public String empresaUuid = "";
+        public String filialUuid = "";
+        public String dispositivoUuid = "";
+        public String papelDispositivo = "LOCAL";
+        public String nomeDispositivo = "Este aparelho";
+        public String masterTipo = "NAO_CONFIGURADO";
+        public boolean cloudAtiva;
+    }
+
     public GestaoDbHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
 
     @Override public void onCreate(SQLiteDatabase db) {
+        criarSyncBase(db);
+        inicializarSyncContext(db);
         criarProdutos(db);
         criarVendas(db);
         criarEmpresaConfig(db);
@@ -401,6 +414,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         if (oldVersion < 11) {
             criarFornecedores(db);
         }
+
+        if (oldVersion < 12) {
+            migrarParaV12(db);
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -430,6 +447,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "aliquota_cofins REAL NOT NULL DEFAULT 0," +
                 "unidade_tributavel TEXT NOT NULL DEFAULT ''," +
                 "gtin_tributavel TEXT NOT NULL DEFAULT ''," +
+                syncColumnsSql() +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -476,7 +494,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "dest_email TEXT NOT NULL DEFAULT ''," +
                 "status_venda TEXT NOT NULL DEFAULT 'CONCLUIDA'," +
                 "estorno_em INTEGER NOT NULL DEFAULT 0," +
-                "estorno_motivo TEXT NOT NULL DEFAULT ''" +
+                "estorno_motivo TEXT NOT NULL DEFAULT ''," +
+                syncColumnsSqlSemVirgulaFinal() +
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_vendas_data ON vendas(data_millis)");
 
@@ -496,6 +515,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "custo_total REAL NOT NULL," +
                 "lucro REAL NOT NULL," +
                 "lucro_liquido REAL NOT NULL DEFAULT 0," +
+                syncColumnsSql() +
                 "FOREIGN KEY(venda_id) REFERENCES vendas(id)" +
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_venda_itens_venda ON venda_itens(venda_id)");
@@ -521,7 +541,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "email TEXT NOT NULL DEFAULT ''," +
                 "serie_nfce TEXT NOT NULL DEFAULT '1'," +
                 "serie_nfe TEXT NOT NULL DEFAULT '1'," +
-                "producao INTEGER NOT NULL DEFAULT 0" +
+                "producao INTEGER NOT NULL DEFAULT 0," +
+                syncColumnsSqlSemVirgulaFinal() +
                 ")");
     }
 
@@ -541,6 +562,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "uf TEXT NOT NULL DEFAULT ''," +
                 "telefone TEXT NOT NULL DEFAULT ''," +
                 "email TEXT NOT NULL DEFAULT ''," +
+                syncColumnsSql() +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -573,6 +595,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "status TEXT NOT NULL DEFAULT 'ATIVA'," +
                 "cancelada_em INTEGER NOT NULL DEFAULT 0," +
                 "cancelamento_motivo TEXT NOT NULL DEFAULT ''," +
+                syncColumnsSql() +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -600,6 +623,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "email TEXT NOT NULL DEFAULT ''," +
                 "observacao TEXT NOT NULL DEFAULT ''," +
                 "status TEXT NOT NULL DEFAULT 'ATIVO'," +
+                syncColumnsSql() +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -607,6 +631,254 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "ON fornecedores(documento) WHERE documento<>''");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_fornecedores_nome ON fornecedores(nome)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_fornecedores_status ON fornecedores(status)");
+    }
+
+    private static String syncColumnsSql() {
+        return "uuid TEXT NOT NULL DEFAULT ''," +
+                "empresa_uuid TEXT NOT NULL DEFAULT ''," +
+                "filial_uuid TEXT NOT NULL DEFAULT ''," +
+                "dispositivo_uuid TEXT NOT NULL DEFAULT ''," +
+                "sync_status TEXT NOT NULL DEFAULT 'LOCAL'," +
+                "sync_version INTEGER NOT NULL DEFAULT 1," +
+                "sync_updated_at INTEGER NOT NULL DEFAULT 0,";
+    }
+
+    private static String syncColumnsSqlSemVirgulaFinal() {
+        return "uuid TEXT NOT NULL DEFAULT ''," +
+                "empresa_uuid TEXT NOT NULL DEFAULT ''," +
+                "filial_uuid TEXT NOT NULL DEFAULT ''," +
+                "dispositivo_uuid TEXT NOT NULL DEFAULT ''," +
+                "sync_status TEXT NOT NULL DEFAULT 'LOCAL'," +
+                "sync_version INTEGER NOT NULL DEFAULT 1," +
+                "sync_updated_at INTEGER NOT NULL DEFAULT 0";
+    }
+
+    private void criarSyncBase(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS sync_context (" +
+                "id INTEGER PRIMARY KEY CHECK(id=1)," +
+                "empresa_uuid TEXT NOT NULL," +
+                "filial_uuid TEXT NOT NULL," +
+                "dispositivo_uuid TEXT NOT NULL," +
+                "papel_dispositivo TEXT NOT NULL DEFAULT 'LOCAL'," +
+                "nome_dispositivo TEXT NOT NULL DEFAULT 'Este aparelho'," +
+                "master_tipo TEXT NOT NULL DEFAULT 'NAO_CONFIGURADO'," +
+                "cloud_ativa INTEGER NOT NULL DEFAULT 0," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL" +
+                ")");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS sync_outbox (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "entidade TEXT NOT NULL," +
+                "entidade_uuid TEXT NOT NULL," +
+                "operacao TEXT NOT NULL," +
+                "status TEXT NOT NULL DEFAULT 'PENDENTE'," +
+                "tentativas INTEGER NOT NULL DEFAULT 0," +
+                "ultimo_erro TEXT NOT NULL DEFAULT ''," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL" +
+                ")");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_sync_outbox_status ON sync_outbox(status,created_at)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS sync_tombstones (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "entidade TEXT NOT NULL," +
+                "entidade_uuid TEXT NOT NULL," +
+                "empresa_uuid TEXT NOT NULL," +
+                "filial_uuid TEXT NOT NULL," +
+                "dispositivo_uuid TEXT NOT NULL," +
+                "deleted_at INTEGER NOT NULL," +
+                "sync_status TEXT NOT NULL DEFAULT 'PENDENTE'" +
+                ")");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_tombstones_uuid " +
+                "ON sync_tombstones(entidade,entidade_uuid)");
+    }
+
+    private void inicializarSyncContext(SQLiteDatabase db) {
+        Cursor c = db.rawQuery("SELECT empresa_uuid,filial_uuid,dispositivo_uuid FROM sync_context WHERE id=1", null);
+        try {
+            if (c.moveToFirst()) return;
+        } finally {
+            c.close();
+        }
+
+        long now = System.currentTimeMillis();
+        ContentValues v = new ContentValues();
+        v.put("id", 1);
+        v.put("empresa_uuid", novoUuid());
+        v.put("filial_uuid", novoUuid());
+        v.put("dispositivo_uuid", novoUuid());
+        v.put("papel_dispositivo", "LOCAL");
+        v.put("nome_dispositivo", "Este aparelho");
+        v.put("master_tipo", "NAO_CONFIGURADO");
+        v.put("cloud_ativa", 0);
+        v.put("created_at", now);
+        v.put("updated_at", now);
+        db.insertOrThrow("sync_context", null, v);
+    }
+
+    private String novoUuid() {
+        return UUID.randomUUID().toString();
+    }
+
+    public SyncContext getSyncContext() {
+        SQLiteDatabase db = getWritableDatabase();
+        criarSyncBase(db);
+        inicializarSyncContext(db);
+        return lerSyncContext(db);
+    }
+
+    private SyncContext lerSyncContext(SQLiteDatabase db) {
+        SyncContext x = new SyncContext();
+        Cursor c = db.rawQuery(
+                "SELECT empresa_uuid,filial_uuid,dispositivo_uuid,papel_dispositivo," +
+                        "nome_dispositivo,master_tipo,cloud_ativa FROM sync_context WHERE id=1",
+                null);
+        try {
+            if (c.moveToFirst()) {
+                x.empresaUuid = c.getString(0);
+                x.filialUuid = c.getString(1);
+                x.dispositivoUuid = c.getString(2);
+                x.papelDispositivo = c.getString(3);
+                x.nomeDispositivo = c.getString(4);
+                x.masterTipo = c.getString(5);
+                x.cloudAtiva = c.getInt(6) == 1;
+            }
+        } finally {
+            c.close();
+        }
+        return x;
+    }
+
+    public int countSyncPendentes() {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT " +
+                        "(SELECT COUNT(*) FROM produtos WHERE sync_status='PENDENTE')+" +
+                        "(SELECT COUNT(*) FROM vendas WHERE sync_status='PENDENTE')+" +
+                        "(SELECT COUNT(*) FROM clientes WHERE sync_status='PENDENTE')+" +
+                        "(SELECT COUNT(*) FROM despesas WHERE sync_status='PENDENTE')+" +
+                        "(SELECT COUNT(*) FROM fornecedores WHERE sync_status='PENDENTE')+" +
+                        "(SELECT COUNT(*) FROM sync_tombstones WHERE sync_status='PENDENTE')",
+                null);
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    private void migrarParaV12(SQLiteDatabase db) {
+        criarSyncBase(db);
+        inicializarSyncContext(db);
+
+        String[] tabelas = {
+                "produtos", "vendas", "venda_itens",
+                "empresa_config", "clientes", "despesas", "fornecedores"
+        };
+        for (String tabela : tabelas) {
+            adicionarColunaSeAusente(db, tabela, "uuid", "TEXT NOT NULL DEFAULT ''");
+            adicionarColunaSeAusente(db, tabela, "empresa_uuid", "TEXT NOT NULL DEFAULT ''");
+            adicionarColunaSeAusente(db, tabela, "filial_uuid", "TEXT NOT NULL DEFAULT ''");
+            adicionarColunaSeAusente(db, tabela, "dispositivo_uuid", "TEXT NOT NULL DEFAULT ''");
+            adicionarColunaSeAusente(db, tabela, "sync_status", "TEXT NOT NULL DEFAULT 'LOCAL'");
+            adicionarColunaSeAusente(db, tabela, "sync_version", "INTEGER NOT NULL DEFAULT 1");
+            adicionarColunaSeAusente(db, tabela, "sync_updated_at", "INTEGER NOT NULL DEFAULT 0");
+            preencherMetadadosExistentes(db, tabela);
+        }
+
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_produtos_uuid ON produtos(uuid) WHERE uuid<>''");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_uuid ON vendas(uuid) WHERE uuid<>''");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_uuid ON clientes(uuid) WHERE uuid<>''");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_despesas_uuid ON despesas(uuid) WHERE uuid<>''");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_fornecedores_uuid ON fornecedores(uuid) WHERE uuid<>''");
+    }
+
+    private void adicionarColunaSeAusente(SQLiteDatabase db, String tabela, String coluna, String definicao) {
+        if (!temColuna(db, tabela, coluna)) {
+            db.execSQL("ALTER TABLE " + tabela + " ADD COLUMN " + coluna + " " + definicao);
+        }
+    }
+
+    private boolean temColuna(SQLiteDatabase db, String tabela, String coluna) {
+        Cursor c = db.rawQuery("PRAGMA table_info(" + tabela + ")", null);
+        try {
+            int idx = c.getColumnIndex("name");
+            while (c.moveToNext()) {
+                if (coluna.equalsIgnoreCase(c.getString(idx))) return true;
+            }
+            return false;
+        } finally {
+            c.close();
+        }
+    }
+
+    private void preencherMetadadosExistentes(SQLiteDatabase db, String tabela) {
+        SyncContext ctx = lerSyncContext(db);
+        Cursor c = db.rawQuery("SELECT id,uuid FROM " + tabela, null);
+        long now = System.currentTimeMillis();
+        try {
+            while (c.moveToNext()) {
+                long id = c.getLong(0);
+                String uuid = c.getString(1);
+                ContentValues v = new ContentValues();
+                if (uuid == null || uuid.trim().isEmpty()) v.put("uuid", novoUuid());
+                v.put("empresa_uuid", ctx.empresaUuid);
+                v.put("filial_uuid", ctx.filialUuid);
+                v.put("dispositivo_uuid", ctx.dispositivoUuid);
+                v.put("sync_status", "LOCAL");
+                v.put("sync_version", 1);
+                v.put("sync_updated_at", now);
+                db.update(tabela, v, "id=?", new String[]{String.valueOf(id)});
+            }
+        } finally {
+            c.close();
+        }
+    }
+
+    private void aplicarMetadadosNovo(SQLiteDatabase db, ContentValues v) {
+        SyncContext ctx = lerSyncContext(db);
+        long now = System.currentTimeMillis();
+        v.put("uuid", novoUuid());
+        v.put("empresa_uuid", ctx.empresaUuid);
+        v.put("filial_uuid", ctx.filialUuid);
+        v.put("dispositivo_uuid", ctx.dispositivoUuid);
+        v.put("sync_status", "PENDENTE");
+        v.put("sync_version", 1);
+        v.put("sync_updated_at", now);
+    }
+
+    private void marcarAlteracao(SQLiteDatabase db, String tabela, long id) {
+        SyncContext ctx = lerSyncContext(db);
+        ContentValues v = new ContentValues();
+        v.put("dispositivo_uuid", ctx.dispositivoUuid);
+        v.put("sync_status", "PENDENTE");
+        v.put("sync_updated_at", System.currentTimeMillis());
+        db.update(tabela, v, "id=?", new String[]{String.valueOf(id)});
+        db.execSQL("UPDATE " + tabela + " SET sync_version=sync_version+1 WHERE id=?",
+                new Object[]{id});
+    }
+
+    private void registrarExclusao(SQLiteDatabase db, String tabela, long id, String entidade) {
+        Cursor c = db.rawQuery(
+                "SELECT uuid,empresa_uuid,filial_uuid,dispositivo_uuid FROM " + tabela + " WHERE id=?",
+                new String[]{String.valueOf(id)});
+        try {
+            if (!c.moveToFirst()) return;
+            String uuid = c.getString(0);
+            if (uuid == null || uuid.trim().isEmpty()) return;
+
+            ContentValues v = new ContentValues();
+            v.put("entidade", entidade);
+            v.put("entidade_uuid", uuid);
+            v.put("empresa_uuid", c.getString(1));
+            v.put("filial_uuid", c.getString(2));
+            v.put("dispositivo_uuid", c.getString(3));
+            v.put("deleted_at", System.currentTimeMillis());
+            v.put("sync_status", "PENDENTE");
+            db.insertWithOnConflict("sync_tombstones", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+        } finally {
+            c.close();
+        }
     }
 
     private ContentValues values(Produto p) {
@@ -645,16 +917,20 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("updated_at", now);
         if (p.id > 0) {
             db.update("produtos", v, "id=?", new String[]{String.valueOf(p.id)});
+            marcarAlteracao(db, "produtos", p.id);
             return p.id;
         } else {
             v.put("created_at", now);
+            aplicarMetadadosNovo(db, v);
             p.id = db.insertOrThrow("produtos", null, v);
             return p.id;
         }
     }
 
     public void delete(long id) {
-        getWritableDatabase().delete("produtos", "id=?", new String[]{String.valueOf(id)});
+        SQLiteDatabase db = getWritableDatabase();
+        registrarExclusao(db, "produtos", id, "PRODUTO");
+        db.delete("produtos", "id=?", new String[]{String.valueOf(id)});
     }
 
     public Produto get(long id) {
@@ -782,6 +1058,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             venda.put("estorno_em", 0);
             venda.put("estorno_motivo", "");
 
+            aplicarMetadadosNovo(db, venda);
             long vendaId = db.insertOrThrow("vendas", null, venda);
 
             double descontoRestante = desconto;
@@ -817,6 +1094,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 vi.put("custo_total", item.custoTotal());
                 vi.put("lucro", item.lucro());
                 vi.put("lucro_liquido", lucroLiquido);
+                aplicarMetadadosNovo(db, vi);
                 db.insertOrThrow("venda_itens", null, vi);
 
                 if (!p.ehServico()) {
@@ -824,6 +1102,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     est.put("estoque", p.estoque - item.quantidade);
                     est.put("updated_at", System.currentTimeMillis());
                     db.update("produtos", est, "id=?", new String[]{String.valueOf(p.id)});
+                    marcarAlteracao(db, "produtos", p.id);
                 }
             }
 
@@ -990,6 +1269,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     int alterados = db.update(
                             "produtos", estoque, "id=?",
                             new String[]{String.valueOf(produtoId)});
+                    if (alterados == 1) marcarAlteracao(db, "produtos", produtoId);
                     if (alterados != 1) {
                         throw new IllegalStateException(
                                 "Não foi possível devolver ao estoque o produto \"" + nome + "\".");
@@ -1006,6 +1286,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             int alteradas = db.update(
                     "vendas", values, "id=? AND status_venda<>'ESTORNADA'",
                     new String[]{String.valueOf(vendaId)});
+            if (alteradas == 1) marcarAlteracao(db, "vendas", vendaId);
             if (alteradas != 1) {
                 throw new IllegalStateException("Não foi possível registrar o estorno.");
             }
@@ -1023,9 +1304,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         values.put("consumidor_documento", doc);
         values.put("dest_documento", doc);
         values.put("nota_status", "PENDENTE_CONFIGURACAO");
-        getWritableDatabase().update(
+        SQLiteDatabase db = getWritableDatabase();
+        db.update(
                 "vendas", values, "id=?",
                 new String[]{String.valueOf(vendaId)});
+        marcarAlteracao(db, "vendas", vendaId);
     }
 
     public void registrarSolicitacaoNfe(long vendaId,
@@ -1049,9 +1332,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         values.put("dest_telefone", telefone == null ? "" : telefone.trim());
         values.put("dest_email", email == null ? "" : email.trim());
         values.put("nota_status", "PENDENTE_CONFIGURACAO");
-        getWritableDatabase().update(
+        SQLiteDatabase db = getWritableDatabase();
+        db.update(
                 "vendas", values, "id=?",
                 new String[]{String.valueOf(vendaId)});
+        marcarAlteracao(db, "vendas", vendaId);
     }
 
     public void atualizarNfce(long vendaId, String status, String numero,
@@ -1062,15 +1347,16 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         values.put("nota_chave", chave == null ? "" : chave);
         values.put("nota_protocolo", protocolo == null ? "" : protocolo);
         values.put("nota_xml", xml == null ? "" : xml);
-        getWritableDatabase().update(
+        SQLiteDatabase db = getWritableDatabase();
+        db.update(
                 "vendas", values, "id=?",
                 new String[]{String.valueOf(vendaId)});
+        marcarAlteracao(db, "vendas", vendaId);
     }
 
     public void saveEmpresaConfig(EmpresaConfig e) {
         SQLiteDatabase db = getWritableDatabase();
         ContentValues v = new ContentValues();
-        v.put("id", 1);
         v.put("razao", e.razao);
         v.put("fantasia", e.fantasia);
         v.put("cnpj", e.cnpj);
@@ -1088,7 +1374,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("serie_nfce", e.serieNfce);
         v.put("serie_nfe", e.serieNfe);
         v.put("producao", e.producao ? 1 : 0);
-        db.insertWithOnConflict("empresa_config", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+
+        int alteradas = db.update("empresa_config", v, "id=1", null);
+        if (alteradas == 0) {
+            v.put("id", 1);
+            aplicarMetadadosNovo(db, v);
+            db.insertOrThrow("empresa_config", null, v);
+        } else {
+            marcarAlteracao(db, "empresa_config", 1);
+        }
     }
 
     public EmpresaConfig getEmpresaConfig() {
@@ -1140,15 +1434,19 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("updated_at", now);
         if (c.id > 0) {
             db.update("clientes", v, "id=?", new String[]{String.valueOf(c.id)});
+            marcarAlteracao(db, "clientes", c.id);
             return c.id;
         }
         v.put("created_at", now);
+        aplicarMetadadosNovo(db, v);
         c.id = db.insertOrThrow("clientes", null, v);
         return c.id;
     }
 
     public void deleteCliente(long id) {
-        getWritableDatabase().delete("clientes", "id=?", new String[]{String.valueOf(id)});
+        SQLiteDatabase db = getWritableDatabase();
+        registrarExclusao(db, "clientes", id, "CLIENTE");
+        db.delete("clientes", "id=?", new String[]{String.valueOf(id)});
     }
 
     public List<Cliente> listClientes(String busca) {
@@ -1214,9 +1512,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("updated_at", now);
         if (f.id > 0) {
             db.update("fornecedores", v, "id=?", new String[]{String.valueOf(f.id)});
+            marcarAlteracao(db, "fornecedores", f.id);
             return f.id;
         }
         v.put("created_at", now);
+        aplicarMetadadosNovo(db, v);
         f.id = db.insertOrThrow("fornecedores", null, v);
         return f.id;
     }
@@ -1247,7 +1547,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         ContentValues v = new ContentValues();
         v.put("status", ativo ? "ATIVO" : "INATIVO");
         v.put("updated_at", System.currentTimeMillis());
-        getWritableDatabase().update("fornecedores", v, "id=?", new String[]{String.valueOf(id)});
+        SQLiteDatabase db = getWritableDatabase();
+        db.update("fornecedores", v, "id=?", new String[]{String.valueOf(id)});
+        marcarAlteracao(db, "fornecedores", id);
     }
 
     public Fornecedor getFornecedorPorDocumento(String documento) {
@@ -1355,10 +1657,12 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         if (d.id > 0) {
             db.update("despesas", v, "id=? AND status='ATIVA'",
                     new String[]{String.valueOf(d.id)});
+            marcarAlteracao(db, "despesas", d.id);
             return d.id;
         }
 
         v.put("created_at", now);
+        aplicarMetadadosNovo(db, v);
         d.id = db.insertOrThrow("despesas", null, v);
         return d.id;
     }
@@ -1452,8 +1756,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("cancelada_em", System.currentTimeMillis());
         v.put("cancelamento_motivo", motivo.trim());
         v.put("updated_at", System.currentTimeMillis());
-        int alteradas = getWritableDatabase().update(
+        SQLiteDatabase db = getWritableDatabase();
+        int alteradas = db.update(
                 "despesas", v, "id=? AND status='ATIVA'", new String[]{String.valueOf(id)});
+        if (alteradas == 1) marcarAlteracao(db, "despesas", id);
         if (alteradas == 0) throw new IllegalStateException("Despesa já cancelada ou não encontrada.");
     }
 
