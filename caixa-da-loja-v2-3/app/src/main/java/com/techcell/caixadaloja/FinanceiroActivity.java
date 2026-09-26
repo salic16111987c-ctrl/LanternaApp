@@ -124,7 +124,7 @@ public class FinanceiroActivity extends Activity {
         titulo.setPadding(0, dp(16), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 23", 14, false);
+        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 24", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
