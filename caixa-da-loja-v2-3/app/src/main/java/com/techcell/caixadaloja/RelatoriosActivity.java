@@ -74,7 +74,7 @@ public class RelatoriosActivity extends Activity {
         titulo.setPadding(0, dp(16), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas, resultados, produtos e estoque • Alpha 25", 14, false);
+        TextView sub = txt("Vendas, resultados, produtos e estoque • Alpha 26", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 

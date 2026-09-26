@@ -2,6 +2,7 @@ package com.techcell.caixadaloja;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
@@ -40,12 +41,12 @@ public class FinanceiroActivity extends Activity {
 
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
     private final SimpleDateFormat data = new SimpleDateFormat("dd/MM/yyyy HH:mm", new Locale("pt","BR"));
+    private final SimpleDateFormat dataCurta = new SimpleDateFormat("dd/MM/yyyy", new Locale("pt","BR"));
 
     private GestaoDbHelper db;
     private LinearLayout resumoBox;
     private LinearLayout lista;
-    private Button hojeBtn, mesBtn;
-    private boolean periodoMes = false;
+    private TextView periodoTexto;
     private long inicioAtual;
     private long fimAtual;
 
@@ -124,25 +125,59 @@ public class FinanceiroActivity extends Activity {
         titulo.setPadding(0, dp(16), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 24", 14, false);
+        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 26", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
-        LinearLayout filtros = new LinearLayout(this);
-        filtros.setOrientation(LinearLayout.HORIZONTAL);
-        filtros.setPadding(0, dp(14), 0, dp(6));
+        LinearLayout filtros1 = new LinearLayout(this);
+        filtros1.setOrientation(LinearLayout.HORIZONTAL);
+        filtros1.setPadding(0, dp(14), 0, 0);
 
-        hojeBtn = action("Hoje");
-        hojeBtn.setOnClickListener(v -> { periodoMes = false; carregar(); });
-        filtros.addView(hojeBtn, new LinearLayout.LayoutParams(0, dp(50), 1));
+        Button hojeBtn = action("Hoje");
+        hojeBtn.setOnClickListener(v -> periodoHoje());
+        filtros1.addView(hojeBtn, new LinearLayout.LayoutParams(0, dp(50), 1));
 
-        mesBtn = action("Este mês");
+        Button mesBtn = action("Este mês");
         LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0, dp(50), 1);
         mp.setMargins(dp(8),0,0,0);
-        mesBtn.setLayoutParams(mp);
-        mesBtn.setOnClickListener(v -> { periodoMes = true; carregar(); });
-        filtros.addView(mesBtn);
-        root.addView(filtros);
+        mesBtn.setOnClickListener(v -> periodoMesAtual());
+        filtros1.addView(mesBtn, mp);
+        root.addView(filtros1);
+
+        LinearLayout filtros2 = new LinearLayout(this);
+        filtros2.setOrientation(LinearLayout.HORIZONTAL);
+        filtros2.setPadding(0, dp(8), 0, 0);
+
+        Button mesAnterior = action("Mês anterior");
+        mesAnterior.setOnClickListener(v -> periodoMesAnterior());
+        filtros2.addView(mesAnterior, new LinearLayout.LayoutParams(0, dp(50), 1));
+
+        Button anoAtual = action("Este ano");
+        LinearLayout.LayoutParams aa = new LinearLayout.LayoutParams(0, dp(50), 1);
+        aa.setMargins(dp(8),0,0,0);
+        anoAtual.setOnClickListener(v -> periodoAnoAtual());
+        filtros2.addView(anoAtual, aa);
+        root.addView(filtros2);
+
+        LinearLayout filtros3 = new LinearLayout(this);
+        filtros3.setOrientation(LinearLayout.HORIZONTAL);
+        filtros3.setPadding(0, dp(8), 0, 0);
+
+        Button anoAnterior = action("Ano anterior");
+        anoAnterior.setOnClickListener(v -> periodoAnoAnterior());
+        filtros3.addView(anoAnterior, new LinearLayout.LayoutParams(0, dp(50), 1));
+
+        Button personalizado = action("Período...");
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, dp(50), 1);
+        pp.setMargins(dp(8),0,0,0);
+        personalizado.setOnClickListener(v -> escolherPeriodo());
+        filtros3.addView(personalizado, pp);
+        root.addView(filtros3);
+
+        periodoTexto = txt("", 14, true);
+        periodoTexto.setTextColor(Color.parseColor("#344054"));
+        periodoTexto.setPadding(0, dp(12), 0, dp(6));
+        root.addView(periodoTexto);
 
         resumoBox = new LinearLayout(this);
         resumoBox.setOrientation(LinearLayout.VERTICAL);
@@ -165,26 +200,114 @@ public class FinanceiroActivity extends Activity {
         root.addView(lista);
 
         setContentView(scroll);
-        carregar();
+        periodoMesAtual();
     }
 
-    private void definirPeriodo() {
-        Calendar c = Calendar.getInstance();
-        if (periodoMes) c.set(Calendar.DAY_OF_MONTH, 1);
+    private void zerarHora(Calendar c) {
         c.set(Calendar.HOUR_OF_DAY,0);
         c.set(Calendar.MINUTE,0);
         c.set(Calendar.SECOND,0);
         c.set(Calendar.MILLISECOND,0);
+    }
+
+    private void periodoHoje() {
+        Calendar c = Calendar.getInstance();
+        zerarHora(c);
         inicioAtual = c.getTimeInMillis();
-        if (periodoMes) c.add(Calendar.MONTH,1);
-        else c.add(Calendar.DAY_OF_MONTH,1);
+        c.add(Calendar.DAY_OF_MONTH, 1);
         fimAtual = c.getTimeInMillis();
+        carregar();
+    }
+
+    private void periodoMesAtual() {
+        Calendar c = Calendar.getInstance();
+        c.set(Calendar.DAY_OF_MONTH, 1);
+        zerarHora(c);
+        inicioAtual = c.getTimeInMillis();
+        c.add(Calendar.MONTH, 1);
+        fimAtual = c.getTimeInMillis();
+        carregar();
+    }
+
+    private void periodoMesAnterior() {
+        Calendar fim = Calendar.getInstance();
+        fim.set(Calendar.DAY_OF_MONTH, 1);
+        zerarHora(fim);
+        fimAtual = fim.getTimeInMillis();
+
+        Calendar ini = (Calendar) fim.clone();
+        ini.add(Calendar.MONTH, -1);
+        inicioAtual = ini.getTimeInMillis();
+        carregar();
+    }
+
+    private void periodoAnoAtual() {
+        Calendar c = Calendar.getInstance();
+        c.set(Calendar.MONTH, Calendar.JANUARY);
+        c.set(Calendar.DAY_OF_MONTH, 1);
+        zerarHora(c);
+        inicioAtual = c.getTimeInMillis();
+        c.add(Calendar.YEAR, 1);
+        fimAtual = c.getTimeInMillis();
+        carregar();
+    }
+
+    private void periodoAnoAnterior() {
+        Calendar fim = Calendar.getInstance();
+        fim.set(Calendar.MONTH, Calendar.JANUARY);
+        fim.set(Calendar.DAY_OF_MONTH, 1);
+        zerarHora(fim);
+        fimAtual = fim.getTimeInMillis();
+
+        Calendar ini = (Calendar) fim.clone();
+        ini.add(Calendar.YEAR, -1);
+        inicioAtual = ini.getTimeInMillis();
+        carregar();
+    }
+
+    private void escolherPeriodo() {
+        Calendar ini = Calendar.getInstance();
+        if (inicioAtual > 0) ini.setTimeInMillis(inicioAtual);
+
+        new DatePickerDialog(this, (v, ano, mes, dia) -> {
+            Calendar escolhidoIni = Calendar.getInstance();
+            escolhidoIni.set(ano, mes, dia);
+            zerarHora(escolhidoIni);
+
+            Calendar baseFim = Calendar.getInstance();
+            long baseMillis = fimAtual > inicioAtual
+                    ? fimAtual - 1
+                    : System.currentTimeMillis();
+            baseFim.setTimeInMillis(baseMillis);
+
+            new DatePickerDialog(this, (v2, ano2, mes2, dia2) -> {
+                Calendar escolhidoFim = Calendar.getInstance();
+                escolhidoFim.set(ano2, mes2, dia2);
+                zerarHora(escolhidoFim);
+                escolhidoFim.add(Calendar.DAY_OF_MONTH, 1);
+
+                if (escolhidoFim.getTimeInMillis() <= escolhidoIni.getTimeInMillis()) {
+                    escolhidoFim.setTimeInMillis(escolhidoIni.getTimeInMillis());
+                    escolhidoFim.add(Calendar.DAY_OF_MONTH, 1);
+                }
+
+                inicioAtual = escolhidoIni.getTimeInMillis();
+                fimAtual = escolhidoFim.getTimeInMillis();
+                carregar();
+            }, baseFim.get(Calendar.YEAR), baseFim.get(Calendar.MONTH),
+                    baseFim.get(Calendar.DAY_OF_MONTH)).show();
+
+        }, ini.get(Calendar.YEAR), ini.get(Calendar.MONTH),
+                ini.get(Calendar.DAY_OF_MONTH)).show();
     }
 
     private void carregar() {
-        definirPeriodo();
-        hojeBtn.setEnabled(periodoMes);
-        mesBtn.setEnabled(!periodoMes);
+        if (inicioAtual <= 0 || fimAtual <= inicioAtual) return;
+
+        long fimInclusivo = fimAtual - 1;
+        periodoTexto.setText("Período: " +
+                dataCurta.format(new Date(inicioAtual)) + " a " +
+                dataCurta.format(new Date(fimInclusivo)));
 
         GestaoDbHelper.ResumoFinanceiro r = db.resumoFinanceiro(inicioAtual, fimAtual);
 
@@ -230,7 +353,7 @@ public class FinanceiroActivity extends Activity {
         resumoBox.addView(formas);
 
         lista.removeAllViews();
-        List<GestaoDbHelper.Despesa> despesas = db.listDespesas(inicioAtual, fimAtual, 200);
+        List<GestaoDbHelper.Despesa> despesas = db.listDespesas(inicioAtual, fimAtual, 500);
         if (despesas.isEmpty()) {
             TextView vazio = txt("Nenhuma saída registrada neste período.", 14, false);
             vazio.setTextColor(Color.parseColor("#667085"));
