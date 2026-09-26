@@ -4,6 +4,8 @@ import android.util.Base64;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.net.DatagramPacket;
@@ -16,6 +18,8 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 public final class TechCellLanClient {
     public static final int DISCOVERY_PORT = 8766;
@@ -23,6 +27,9 @@ public final class TechCellLanClient {
     private static final String MASTER = "TECHCELL_MASTER_V1";
     private static final String PING = "TECHCELL_PING_V1";
     private static final String PONG = "TECHCELL_PONG_V1";
+    private static final String SNAPSHOT = "TECHCELL_SNAPSHOT_V1";
+    private static final String SNAPSHOT_OK = "TECHCELL_SNAPSHOT_OK_V1";
+    private static final String ERROR = "TECHCELL_ERROR_V1";
 
     public static class MasterInfo {
         public String host = "";
@@ -88,11 +95,11 @@ public final class TechCellLanClient {
     public static MasterInfo testarConexao(String host, int port, String dispositivoUuid) throws Exception {
         Socket socket = new Socket();
         try {
-            socket.connect(new java.net.InetSocketAddress(host, port), 1800);
-            socket.setSoTimeout(2200);
+            socket.connect(new java.net.InetSocketAddress(host, port), 2000);
+            socket.setSoTimeout(3500);
 
-            BufferedWriter w = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
-            BufferedReader r = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+            BufferedWriter w = writer(socket);
+            BufferedReader r = reader(socket);
             w.write(PING + "|" + limpar(dispositivoUuid));
             w.newLine();
             w.flush();
@@ -115,6 +122,68 @@ public final class TechCellLanClient {
         } finally {
             try { socket.close(); } catch (Throwable ignored) {}
         }
+    }
+
+    public static String baixarSnapshot(String host, int port, String dispositivoUuid, String codigoPareamento) throws Exception {
+        Socket socket = new Socket();
+        try {
+            socket.connect(new java.net.InetSocketAddress(host, port), 2500);
+            socket.setSoTimeout(30000);
+
+            BufferedWriter w = writer(socket);
+            BufferedReader r = reader(socket);
+            w.write(SNAPSHOT + "|" + limpar(dispositivoUuid) + "|" + limpar(codigoPareamento));
+            w.newLine();
+            w.flush();
+
+            String linha = r.readLine();
+            if (linha == null) throw new IllegalStateException("O Master encerrou a conexão sem enviar dados.");
+            if (linha.startsWith(ERROR + "|")) {
+                String erro = linha.substring((ERROR + "|").length());
+                if ("CODIGO_INVALIDO".equals(erro)) throw new SecurityException("Código de pareamento incorreto.");
+                if ("NAO_MASTER".equals(erro)) throw new IllegalStateException("O aparelho remoto não está configurado como Master.");
+                throw new IllegalStateException("Master recusou a sincronização: " + erro);
+            }
+            if (!linha.startsWith(SNAPSHOT_OK + "|")) {
+                throw new IllegalStateException("Resposta de sincronização inválida.");
+            }
+
+            String payload = linha.substring((SNAPSHOT_OK + "|").length());
+            if (payload.isEmpty()) throw new IllegalStateException("O Master enviou um pacote vazio.");
+            return descompactar(payload);
+        } finally {
+            try { socket.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    static String compactar(String texto) throws Exception {
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        GZIPOutputStream gz = new GZIPOutputStream(raw);
+        gz.write((texto == null ? "" : texto).getBytes(StandardCharsets.UTF_8));
+        gz.finish();
+        gz.close();
+        return Base64.encodeToString(raw.toByteArray(), Base64.NO_WRAP);
+    }
+
+    private static String descompactar(String base64) throws Exception {
+        byte[] compressed = Base64.decode(base64, Base64.NO_WRAP);
+        GZIPInputStream gz = new GZIPInputStream(new ByteArrayInputStream(compressed));
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int n;
+        while ((n = gz.read(buffer)) >= 0) {
+            if (n > 0) out.write(buffer, 0, n);
+        }
+        gz.close();
+        return out.toString(StandardCharsets.UTF_8.name());
+    }
+
+    private static BufferedWriter writer(Socket socket) throws Exception {
+        return new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
+    }
+
+    private static BufferedReader reader(Socket socket) throws Exception {
+        return new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
     }
 
     private static MasterInfo parseMaster(String linha) {

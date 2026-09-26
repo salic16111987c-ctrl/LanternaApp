@@ -21,6 +21,8 @@ import android.widget.Toast;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Enumeration;
 import java.util.Locale;
 
@@ -30,12 +32,15 @@ public class ConfiguracaoDispositivoActivity extends Activity {
     private EditText nome;
     private EditText masterHost;
     private EditText masterPort;
+    private EditText pairingCode;
     private RadioGroup papeis;
     private LinearLayout blocoMasterRemoto;
     private TextView dicaRede;
     private TextView resultadoRede;
+    private TextView resumoSync;
     private Button buscarMaster;
     private Button testarConexao;
+    private Button sincronizarAgora;
 
     private int dp(int v){ return TechCellUi.dp(this,v); }
     private TextView text(String v,int s,boolean b){
@@ -87,7 +92,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView titulo=text("Dispositivo e rede",27,true);
         titulo.setPadding(0,dp(16),0,0);root.addView(titulo);
-        TextView sub=text("Descoberta e conexão local pelo roteador • Alpha 32",13,false);
+        TextView sub=text("Pareamento e sincronização inicial • Alpha 33",13,false);
         sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout identidade=TechCellUi.card(this);
@@ -112,7 +117,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView funcao=text("Função deste aparelho",14,true);
         funcao.setPadding(0,dp(18),0,dp(4));root.addView(funcao);
-        TextView explicacao=text("O Master concentra os dados. Os demais aparelhos localizam o Master automaticamente dentro da mesma rede Wi-Fi/LAN.",12,false);
+        TextView explicacao=text("O Master guarda a base principal. O terminal recebe uma cópia local inicial para produtos, estoque, clientes, fornecedores e configuração da empresa.",12,false);
         explicacao.setTextColor(TechCellUi.MUTED);root.addView(explicacao);
 
         papeis=new RadioGroup(this);papeis.setOrientation(RadioGroup.VERTICAL);
@@ -143,7 +148,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView h=text("Endereço do Master",12,true);h.setTextColor(TechCellUi.MUTED);
         h.setPadding(0,dp(12),0,dp(5));blocoMasterRemoto.addView(h);
-        masterHost=input("Será preenchido automaticamente");
+        masterHost=input("Ex.: 10.0.0.195");
         masterHost.setText(atual.masterHost==null?"":atual.masterHost);
         blocoMasterRemoto.addView(masterHost,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
 
@@ -153,12 +158,25 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         masterPort.setText(String.valueOf(atual.masterPort>0?atual.masterPort:8765));
         blocoMasterRemoto.addView(masterPort,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
 
+        TextView pc=text("Código de pareamento do Master",12,true);pc.setTextColor(TechCellUi.MUTED);
+        pc.setPadding(0,dp(10),0,dp(5));blocoMasterRemoto.addView(pc);
+        pairingCode=input("6 dígitos mostrados no Master");
+        pairingCode.setInputType(InputType.TYPE_CLASS_NUMBER);
+        blocoMasterRemoto.addView(pairingCode,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+
         testarConexao=new Button(this);
-        testarConexao.setText("Testar conexão com o Master");
+        testarConexao.setText("Testar / vincular ao Master");
         TechCellUi.styleSecondary(this,testarConexao);
-        testarConexao.setOnClickListener(v->testarMasterSalvo());
+        testarConexao.setOnClickListener(v->testarMasterManual());
         LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));
         tp.setMargins(0,dp(10),0,0);blocoMasterRemoto.addView(testarConexao,tp);
+
+        sincronizarAgora=new Button(this);
+        sincronizarAgora.setText("↓  Sincronizar dados agora");
+        sincronizarAgora.setTextSize(15);TechCellUi.stylePrimary(this,sincronizarAgora,TechCellUi.GREEN);
+        sincronizarAgora.setOnClickListener(v->sincronizarComMasterSalvo());
+        LinearLayout.LayoutParams sy=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));
+        sy.setMargins(0,dp(10),0,0);blocoMasterRemoto.addView(sincronizarAgora,sy);
 
         if(atual.masterName!=null&&!atual.masterName.trim().isEmpty()){
             TextView vinc=text("Vinculado a: "+atual.masterName+" • "+atual.masterHost,12,true);
@@ -177,6 +195,12 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         resultadoRede.setBackground(TechCellUi.cardBackground(this));
         root.addView(resultadoRede,TechCellUi.fullCardParams(this,8));
 
+        resumoSync=text(resumoSincronizacao(),12,true);
+        resumoSync.setTextColor(atual.lastSnapshotAt>0?TechCellUi.GREEN:TechCellUi.MUTED);
+        resumoSync.setPadding(dp(12),dp(10),dp(12),dp(10));
+        resumoSync.setBackground(TechCellUi.cardBackground(this));
+        root.addView(resumoSync,TechCellUi.fullCardParams(this,8));
+
         papeis.setOnCheckedChangeListener((group,checkedId)->atualizarTipo());
         atualizarTipo();
 
@@ -186,11 +210,19 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));
         sp.setMargins(0,dp(16),0,0);root.addView(salvar,sp);
 
-        TextView aviso=text("Alpha 32 testa descoberta, pareamento e comunicação local. Produtos e vendas ainda não são transferidos entre os aparelhos.",11,false);
+        TextView aviso=text("Alpha 33 faz o espelho inicial do Master para o terminal. Vendas feitas no Caixa ainda não retornam automaticamente ao Master nesta etapa.",11,false);
         aviso.setTextColor(TechCellUi.MUTED);aviso.setGravity(Gravity.CENTER);
         aviso.setPadding(dp(8),dp(12),dp(8),0);root.addView(aviso);
 
         setContentView(scroll);
+    }
+
+    private String resumoSincronizacao(){
+        if(atual.lastSnapshotAt<=0)return "Dados do Master: ainda não sincronizados.";
+        String hora=new SimpleDateFormat("dd/MM/yyyy HH:mm:ss",new Locale("pt","BR")).format(new Date(atual.lastSnapshotAt));
+        return "Última sincronização: "+hora+"\n"+
+                "Produtos: "+atual.lastSnapshotProdutos+"  •  Clientes: "+atual.lastSnapshotClientes+
+                "  •  Fornecedores: "+atual.lastSnapshotFornecedores;
     }
 
     private String papelSelecionado(){
@@ -205,15 +237,16 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         blocoMasterRemoto.setVisibility(ehMaster?View.GONE:View.VISIBLE);
         if(ehMaster){
             String ip=ipv4Local();
+            String codigo=atual.lanPairingCode==null||atual.lanPairingCode.trim().isEmpty()?"—":atual.lanPairingCode;
             dicaRede.setText(
                     "Modo Master Android\n"+
-                    "Servidor local na porta "+portaDigitada()+".\n"+
-                    "IP atual: "+(ip.isEmpty()?"não identificado":ip)+
-                    "\nMantenha todos os aparelhos no mesmo roteador.");
+                    "IP atual: "+(ip.isEmpty()?"não identificado":ip)+"  •  Porta "+portaDigitada()+
+                    "\nCódigo de pareamento: "+codigo+
+                    "\nO código é necessário para um novo terminal copiar os dados.");
         }else{
             dicaRede.setText(
                     "Modo terminal\n"+
-                    "Use “Procurar Master na rede”. Internet não é necessária; apenas a rede local do roteador.");
+                    "Pode usar a busca automática ou informar o IP do Master manualmente. Internet não é necessária.");
         }
     }
 
@@ -235,16 +268,17 @@ public class ConfiguracaoDispositivoActivity extends Activity {
             atual=db.getSyncContext();
             if("MASTER".equals(papel)){
                 reiniciarMaster();
-                resultadoRede.setText("Master local iniciado. Outro Android já pode procurar este aparelho na mesma rede.");
+                resultadoRede.setText("Master local iniciado. Os terminais podem conectar usando o código de pareamento.");
                 resultadoRede.setTextColor(TechCellUi.GREEN);
             }else{
                 pararMaster();
             }
+            atualizarTipo();
             Toast.makeText(this,"Configuração do dispositivo salva.",Toast.LENGTH_SHORT).show();
             if(fechar)finish();
             return true;
         }catch(Throwable e){
-            Toast.makeText(this,e.getMessage()==null?"Não foi possível salvar.":e.getMessage(),Toast.LENGTH_LONG).show();
+            Toast.makeText(this,mensagem(e),Toast.LENGTH_LONG).show();
             return false;
         }
     }
@@ -267,7 +301,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
                     runOnUiThread(()->{
                         buscarMaster.setEnabled(true);
                         resultadoRede.setTextColor(TechCellUi.RED);
-                        resultadoRede.setText("Nenhum Master encontrado. Confira se os dois aparelhos estão no mesmo roteador e se o Master está aberto/configurado.");
+                        resultadoRede.setText("Busca automática não encontrou o Master. Você pode informar o IP manualmente e usar “Testar / vincular”.");
                     });
                     return;
                 }
@@ -284,61 +318,25 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         },"TechCell-Discovery").start();
     }
 
-    private void mostrarMasterEncontrado(TechCellLanClient.MasterInfo info){
-        buscarMaster.setEnabled(true);
-        resultadoRede.setTextColor(TechCellUi.GREEN);
-        resultadoRede.setText("Master encontrado: "+nomeMaster(info)+" • "+info.host+":"+info.port);
-
-        String msg="Master: "+nomeMaster(info)+"\n"+
-                "IP: "+info.host+":"+info.port+"\n"+
-                "Empresa: "+curto(info.empresaUuid)+"\n"+
-                "Filial: "+curto(info.filialUuid)+"\n\n"+
-                "Ao conectar, este aparelho passará a pertencer à empresa/filial do Master.";
-
-        new AlertDialog.Builder(this)
-                .setTitle("Master Tech Cell encontrado")
-                .setMessage(msg)
-                .setNegativeButton("Cancelar",null)
-                .setPositiveButton("Conectar",(d,w)->vincular(info))
-                .show();
-    }
-
-    private void vincular(TechCellLanClient.MasterInfo info){
-        try{
-            String papel=papelSelecionado();
-            if("MASTER".equals(papel)||papel.isEmpty())throw new IllegalStateException("Selecione Caixa, Administrador ou Consulta.");
-            db.salvarConfiguracaoDispositivo(nome.getText().toString(),papel,info.host,info.port);
-            db.vincularAoMaster(info.host,info.port,info.empresaUuid,info.filialUuid,info.dispositivoUuid,info.nome);
-            atual=db.getSyncContext();
-            masterHost.setText(info.host);masterPort.setText(String.valueOf(info.port));
-            resultadoRede.setTextColor(TechCellUi.GREEN);
-            resultadoRede.setText("CONECTADO ✓  "+nomeMaster(info)+" • empresa "+curto(info.empresaUuid)+" • filial "+curto(info.filialUuid));
-            Toast.makeText(this,"Aparelho vinculado ao Master.",Toast.LENGTH_LONG).show();
-        }catch(Throwable e){
-            resultadoRede.setTextColor(TechCellUi.RED);
-            resultadoRede.setText("Vínculo bloqueado: "+mensagem(e));
-            new AlertDialog.Builder(this).setTitle("Não foi possível vincular").setMessage(mensagem(e)).setPositiveButton("OK",null).show();
-        }
-    }
-
-    private void testarMasterSalvo(){
+    private void testarMasterManual(){
+        if(!salvar(false))return;
         String host=masterHost.getText().toString().trim();
         int porta=portaDigitada();
         if(host.isEmpty()){
-            Toast.makeText(this,"Procure o Master primeiro ou informe o endereço.",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,"Informe o IP do Master.",Toast.LENGTH_LONG).show();
             return;
         }
+
         testarConexao.setEnabled(false);
         resultadoRede.setTextColor(TechCellUi.BLUE);
         resultadoRede.setText("Testando "+host+":"+porta+"…");
+
         new Thread(()->{
             try{
                 TechCellLanClient.MasterInfo info=TechCellLanClient.testarConexao(host,porta,atual.dispositivoUuid);
-                db.registrarMasterOnline(info.host);
                 runOnUiThread(()->{
                     testarConexao.setEnabled(true);
-                    resultadoRede.setTextColor(TechCellUi.GREEN);
-                    resultadoRede.setText("CONEXÃO LOCAL OK ✓  "+nomeMaster(info)+" • "+info.host+":"+info.port);
+                    mostrarMasterEncontrado(info);
                 });
             }catch(Throwable e){
                 runOnUiThread(()->{
@@ -347,7 +345,131 @@ public class ConfiguracaoDispositivoActivity extends Activity {
                     resultadoRede.setText("Sem resposta do Master: "+mensagem(e));
                 });
             }
-        },"TechCell-Ping").start();
+        },"TechCell-Manual-Ping").start();
+    }
+
+    private void mostrarMasterEncontrado(TechCellLanClient.MasterInfo info){
+        buscarMaster.setEnabled(true);
+        resultadoRede.setTextColor(TechCellUi.GREEN);
+        resultadoRede.setText("Master respondeu: "+nomeMaster(info)+" • "+info.host+":"+info.port);
+
+        String msg="Master: "+nomeMaster(info)+"\n"+
+                "IP: "+info.host+":"+info.port+"\n"+
+                "Empresa: "+curto(info.empresaUuid)+"\n"+
+                "Filial: "+curto(info.filialUuid)+"\n\n"+
+                "Vincular este aparelho a esse Master?";
+
+        new AlertDialog.Builder(this)
+                .setTitle("Master Tech Cell encontrado")
+                .setMessage(msg)
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Vincular",(d,w)->vincular(info,true))
+                .show();
+    }
+
+    private void vincular(TechCellLanClient.MasterInfo info, boolean oferecerSync){
+        try{
+            String papel=papelSelecionado();
+            if("MASTER".equals(papel)||papel.isEmpty())throw new IllegalStateException("Selecione Caixa, Administrador ou Consulta.");
+            db.salvarConfiguracaoDispositivo(nome.getText().toString(),papel,info.host,info.port);
+            db.vincularAoMaster(info.host,info.port,info.empresaUuid,info.filialUuid,info.dispositivoUuid,info.nome);
+            atual=db.getSyncContext();
+            masterHost.setText(info.host);masterPort.setText(String.valueOf(info.port));
+            resultadoRede.setTextColor(TechCellUi.GREEN);
+            resultadoRede.setText("VINCULADO ✓  "+nomeMaster(info)+" • empresa "+curto(info.empresaUuid)+" • filial "+curto(info.filialUuid));
+
+            if(oferecerSync){
+                new AlertDialog.Builder(this)
+                        .setTitle("Vínculo concluído")
+                        .setMessage("O Caixa já pertence à empresa do Master. Agora podemos copiar configuração, produtos/estoque, clientes e fornecedores.")
+                        .setNegativeButton("Depois",null)
+                        .setPositiveButton("Sincronizar agora",(d,w)->sincronizar(info))
+                        .show();
+            }
+        }catch(Throwable e){
+            resultadoRede.setTextColor(TechCellUi.RED);
+            resultadoRede.setText("Vínculo bloqueado: "+mensagem(e));
+            new AlertDialog.Builder(this).setTitle("Não foi possível vincular").setMessage(mensagem(e)).setPositiveButton("OK",null).show();
+        }
+    }
+
+    private void sincronizarComMasterSalvo(){
+        String host=masterHost.getText().toString().trim();
+        int porta=portaDigitada();
+        if(host.isEmpty()){
+            Toast.makeText(this,"Vincule ou informe o Master primeiro.",Toast.LENGTH_LONG).show();
+            return;
+        }
+        sincronizarAgora.setEnabled(false);
+        resultadoRede.setTextColor(TechCellUi.BLUE);
+        resultadoRede.setText("Validando o Master…");
+        new Thread(()->{
+            try{
+                TechCellLanClient.MasterInfo info=TechCellLanClient.testarConexao(host,porta,atual.dispositivoUuid);
+                runOnUiThread(()->{
+                    sincronizarAgora.setEnabled(true);
+                    if(atual.masterDeviceUuid==null || atual.masterDeviceUuid.trim().isEmpty() ||
+                            !info.dispositivoUuid.equalsIgnoreCase(atual.masterDeviceUuid)){
+                        vincular(info,false);
+                    }
+                    sincronizar(info);
+                });
+            }catch(Throwable e){
+                runOnUiThread(()->{
+                    sincronizarAgora.setEnabled(true);
+                    resultadoRede.setTextColor(TechCellUi.RED);
+                    resultadoRede.setText("Não foi possível validar o Master: "+mensagem(e));
+                });
+            }
+        },"TechCell-Validate-Sync").start();
+    }
+
+    private void sincronizar(TechCellLanClient.MasterInfo info){
+        String codigo=pairingCode.getText().toString().trim();
+        if(codigo.isEmpty()){
+            pairingCode.requestFocus();
+            Toast.makeText(this,"Digite o código de pareamento mostrado no Master.",Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        sincronizarAgora.setEnabled(false);
+        buscarMaster.setEnabled(false);
+        testarConexao.setEnabled(false);
+        resultadoRede.setTextColor(TechCellUi.BLUE);
+        resultadoRede.setText("Baixando dados do Master…");
+
+        new Thread(()->{
+            try{
+                String json=TechCellLanClient.baixarSnapshot(info.host,info.port,atual.dispositivoUuid,codigo);
+                GestaoDbHelper.SnapshotStats st=db.aplicarSnapshotInicial(json);
+                db.registrarMasterOnline(info.host);
+                runOnUiThread(()->{
+                    atual=db.getSyncContext();
+                    sincronizarAgora.setEnabled(true);buscarMaster.setEnabled(true);testarConexao.setEnabled(true);
+                    resultadoRede.setTextColor(TechCellUi.GREEN);
+                    resultadoRede.setText("SINCRONIZAÇÃO OK ✓  Dados recebidos do Master.");
+                    resumoSync.setText(resumoSincronizacao());
+                    resumoSync.setTextColor(TechCellUi.GREEN);
+                    new AlertDialog.Builder(this)
+                            .setTitle("Sincronização concluída")
+                            .setMessage("Produtos/estoque: "+st.produtos+"\nClientes: "+st.clientes+"\nFornecedores: "+st.fornecedores+
+                                    "\n\nAbra Produtos ou Estoque neste aparelho para conferir os dados do Master.")
+                            .setPositiveButton("OK",null)
+                            .show();
+                });
+            }catch(Throwable e){
+                runOnUiThread(()->{
+                    sincronizarAgora.setEnabled(true);buscarMaster.setEnabled(true);testarConexao.setEnabled(true);
+                    resultadoRede.setTextColor(TechCellUi.RED);
+                    resultadoRede.setText("Falha na sincronização: "+mensagem(e));
+                    new AlertDialog.Builder(this)
+                            .setTitle("Sincronização não concluída")
+                            .setMessage(mensagem(e))
+                            .setPositiveButton("OK",null)
+                            .show();
+                });
+            }
+        },"TechCell-Snapshot").start();
     }
 
     private String nomeMaster(TechCellLanClient.MasterInfo info){
@@ -360,10 +482,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         return m==null||m.trim().isEmpty()?e.getClass().getSimpleName():m;
     }
 
-    private void reiniciarMaster(){
-        pararMaster();
-        iniciarMaster();
-    }
+    private void reiniciarMaster(){ pararMaster(); iniciarMaster(); }
 
     private void iniciarMaster(){
         try{

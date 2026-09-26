@@ -101,7 +101,7 @@ public class ProdutosActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView info = txt("Cadastro e controle de mercadorias • Alpha 32", 12, false);
+        TextView info = txt("Cadastro e controle de mercadorias • Alpha 33", 12, false);
         info.setTextColor(TechCellUi.MUTED);
         root.addView(info);
 

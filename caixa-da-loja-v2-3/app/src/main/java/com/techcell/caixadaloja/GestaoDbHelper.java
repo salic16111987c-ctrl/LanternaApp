@@ -11,9 +11,12 @@ import java.util.Calendar;
 import java.util.List;
 import java.util.UUID;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 14;
+    private static final int DB_VERSION = 15;
 
     public static class Produto {
         public long id;
@@ -306,6 +309,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String masterDeviceUuid = "";
         public String masterName = "";
         public long masterLastSeen;
+        public String lanPairingCode = "";
+        public long lastSnapshotAt;
+        public int lastSnapshotProdutos;
+        public int lastSnapshotClientes;
+        public int lastSnapshotFornecedores;
         public boolean configurado;
         public boolean cloudAtiva;
     }
@@ -431,6 +439,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         if (oldVersion < 14) {
             migrarParaV14(db);
+        }
+
+        if (oldVersion < 15) {
+            migrarParaV15(db);
         }
     }
 
@@ -681,6 +693,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "master_device_uuid TEXT NOT NULL DEFAULT ''," +
                 "master_name TEXT NOT NULL DEFAULT ''," +
                 "master_last_seen INTEGER NOT NULL DEFAULT 0," +
+                "lan_pairing_code TEXT NOT NULL DEFAULT ''," +
+                "last_snapshot_at INTEGER NOT NULL DEFAULT 0," +
+                "last_snapshot_produtos INTEGER NOT NULL DEFAULT 0," +
+                "last_snapshot_clientes INTEGER NOT NULL DEFAULT 0," +
+                "last_snapshot_fornecedores INTEGER NOT NULL DEFAULT 0," +
                 "configurado INTEGER NOT NULL DEFAULT 0," +
                 "cloud_ativa INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL," +
@@ -736,6 +753,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("master_device_uuid", "");
         v.put("master_name", "");
         v.put("master_last_seen", 0);
+        v.put("lan_pairing_code", novoCodigoPareamento());
+        v.put("last_snapshot_at", 0);
+        v.put("last_snapshot_produtos", 0);
+        v.put("last_snapshot_clientes", 0);
+        v.put("last_snapshot_fornecedores", 0);
         v.put("configurado", 0);
         v.put("cloud_ativa", 0);
         v.put("created_at", now);
@@ -745,6 +767,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
     private String novoUuid() {
         return UUID.randomUUID().toString();
+    }
+
+    private String novoCodigoPareamento() {
+        long v = Math.abs(UUID.randomUUID().getMostSignificantBits()) % 1000000L;
+        return String.format(java.util.Locale.US, "%06d", v);
     }
 
     public SyncContext getSyncContext() {
@@ -759,7 +786,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         Cursor c = db.rawQuery(
                 "SELECT empresa_uuid,filial_uuid,dispositivo_uuid,papel_dispositivo," +
                         "nome_dispositivo,master_tipo,master_host,master_port,master_device_uuid," +
-                        "master_name,master_last_seen,configurado,cloud_ativa FROM sync_context WHERE id=1",
+                        "master_name,master_last_seen,lan_pairing_code,last_snapshot_at," +
+                        "last_snapshot_produtos,last_snapshot_clientes,last_snapshot_fornecedores," +
+                        "configurado,cloud_ativa FROM sync_context WHERE id=1",
                 null);
         try {
             if (c.moveToFirst()) {
@@ -774,8 +803,13 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 x.masterDeviceUuid = c.getString(8);
                 x.masterName = c.getString(9);
                 x.masterLastSeen = c.getLong(10);
-                x.configurado = c.getInt(11) == 1;
-                x.cloudAtiva = c.getInt(12) == 1;
+                x.lanPairingCode = c.getString(11);
+                x.lastSnapshotAt = c.getLong(12);
+                x.lastSnapshotProdutos = c.getInt(13);
+                x.lastSnapshotClientes = c.getInt(14);
+                x.lastSnapshotFornecedores = c.getInt(15);
+                x.configurado = c.getInt(16) == 1;
+                x.cloudAtiva = c.getInt(17) == 1;
             }
         } finally {
             c.close();
@@ -795,6 +829,17 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         adicionarColunaSeAusente(db, "sync_context", "master_device_uuid", "TEXT NOT NULL DEFAULT ''");
         adicionarColunaSeAusente(db, "sync_context", "master_name", "TEXT NOT NULL DEFAULT ''");
         adicionarColunaSeAusente(db, "sync_context", "master_last_seen", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private void migrarParaV15(SQLiteDatabase db) {
+        criarSyncBase(db);
+        adicionarColunaSeAusente(db, "sync_context", "lan_pairing_code", "TEXT NOT NULL DEFAULT ''");
+        adicionarColunaSeAusente(db, "sync_context", "last_snapshot_at", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "sync_context", "last_snapshot_produtos", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "sync_context", "last_snapshot_clientes", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "sync_context", "last_snapshot_fornecedores", "INTEGER NOT NULL DEFAULT 0");
+        db.execSQL("UPDATE sync_context SET lan_pairing_code=? WHERE id=1 AND TRIM(lan_pairing_code)=''",
+                new Object[]{novoCodigoPareamento()});
     }
 
     public void salvarConfiguracaoDispositivo(String nome, String papel, String masterHost, int masterPort) {
@@ -886,6 +931,185 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("master_last_seen", System.currentTimeMillis());
         v.put("updated_at", System.currentTimeMillis());
         db.update("sync_context", v, "id=1", null);
+    }
+
+    public static class SnapshotStats {
+        public int produtos;
+        public int clientes;
+        public int fornecedores;
+        public long sincronizadoEm;
+    }
+
+    public boolean validarCodigoPareamento(String codigo) {
+        SyncContext ctx = getSyncContext();
+        String recebido = codigo == null ? "" : codigo.trim();
+        return !recebido.isEmpty() && recebido.equals(ctx.lanPairingCode);
+    }
+
+    public String exportarSnapshotInicial() {
+        SQLiteDatabase db = getReadableDatabase();
+        try {
+            SyncContext ctx = lerSyncContext(db);
+            JSONObject root = new JSONObject();
+            root.put("schema", 1);
+            root.put("empresa_uuid", ctx.empresaUuid);
+            root.put("filial_uuid", ctx.filialUuid);
+            root.put("master_device_uuid", ctx.dispositivoUuid);
+            root.put("gerado_em", System.currentTimeMillis());
+
+            JSONObject tabelas = new JSONObject();
+            tabelas.put("empresa_config", exportarTabela(db, "empresa_config"));
+            tabelas.put("produtos", exportarTabela(db, "produtos"));
+            tabelas.put("clientes", exportarTabela(db, "clientes"));
+            tabelas.put("fornecedores", exportarTabela(db, "fornecedores"));
+            root.put("tabelas", tabelas);
+            return root.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao preparar dados do Master: " + e.getMessage(), e);
+        }
+    }
+
+    private JSONArray exportarTabela(SQLiteDatabase db, String tabela) throws Exception {
+        JSONArray out = new JSONArray();
+        Cursor c = db.rawQuery("SELECT * FROM " + tabela, null);
+        try {
+            String[] cols = c.getColumnNames();
+            while (c.moveToNext()) {
+                JSONObject row = new JSONObject();
+                for (int i = 0; i < cols.length; i++) {
+                    switch (c.getType(i)) {
+                        case Cursor.FIELD_TYPE_NULL: row.put(cols[i], JSONObject.NULL); break;
+                        case Cursor.FIELD_TYPE_INTEGER: row.put(cols[i], c.getLong(i)); break;
+                        case Cursor.FIELD_TYPE_FLOAT: row.put(cols[i], c.getDouble(i)); break;
+                        case Cursor.FIELD_TYPE_BLOB:
+                            row.put(cols[i], android.util.Base64.encodeToString(c.getBlob(i), android.util.Base64.NO_WRAP));
+                            break;
+                        default: row.put(cols[i], c.getString(i));
+                    }
+                }
+                out.put(row);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    public SnapshotStats aplicarSnapshotInicial(String json) {
+        if (json == null || json.trim().isEmpty()) throw new IllegalArgumentException("Snapshot vazio.");
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            JSONObject root = new JSONObject(json);
+            if (root.optInt("schema", 0) != 1) throw new IllegalStateException("Versão de sincronização incompatível.");
+
+            SyncContext ctx = lerSyncContext(db);
+            String empresa = root.optString("empresa_uuid", "");
+            String filial = root.optString("filial_uuid", "");
+            if (!empresa.equalsIgnoreCase(ctx.empresaUuid) || !filial.equalsIgnoreCase(ctx.filialUuid)) {
+                throw new IllegalStateException("Os dados recebidos pertencem a outra empresa/filial.");
+            }
+            if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+                throw new IllegalStateException("O Master não pode importar o próprio snapshot.");
+            }
+
+            JSONObject tabelas = root.getJSONObject("tabelas");
+            importarEmpresaConfig(db, tabelas.optJSONArray("empresa_config"));
+            int produtos = importarTabelaPorUuid(db, "produtos", tabelas.optJSONArray("produtos"));
+            int clientes = importarTabelaPorUuid(db, "clientes", tabelas.optJSONArray("clientes"));
+            int fornecedores = importarTabelaPorUuid(db, "fornecedores", tabelas.optJSONArray("fornecedores"));
+
+            long agora = System.currentTimeMillis();
+            ContentValues sc = new ContentValues();
+            sc.put("last_snapshot_at", agora);
+            sc.put("last_snapshot_produtos", produtos);
+            sc.put("last_snapshot_clientes", clientes);
+            sc.put("last_snapshot_fornecedores", fornecedores);
+            sc.put("master_last_seen", agora);
+            sc.put("updated_at", agora);
+            db.update("sync_context", sc, "id=1", null);
+
+            db.setTransactionSuccessful();
+
+            SnapshotStats st = new SnapshotStats();
+            st.produtos = produtos;
+            st.clientes = clientes;
+            st.fornecedores = fornecedores;
+            st.sincronizadoEm = agora;
+            return st;
+        } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException)e;
+            throw new IllegalStateException("Falha ao aplicar dados do Master: " + e.getMessage(), e);
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    private void importarEmpresaConfig(SQLiteDatabase db, JSONArray arr) throws Exception {
+        if (arr == null || arr.length() == 0) return;
+        JSONObject row = arr.getJSONObject(0);
+        ContentValues v = jsonParaValues(row, false);
+        v.put("id", 1);
+        v.put("sync_status", "MASTER_SYNCED");
+        db.insertWithOnConflict("empresa_config", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    private int importarTabelaPorUuid(SQLiteDatabase db, String tabela, JSONArray arr) throws Exception {
+        if (arr == null) return 0;
+        int total = 0;
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject row = arr.getJSONObject(i);
+            String uuid = row.optString("uuid", "").trim();
+            if (uuid.isEmpty()) continue;
+
+            ContentValues v = jsonParaValues(row, true);
+            v.put("sync_status", "MASTER_SYNCED");
+
+            long existente = idPorUuid(db, tabela, uuid);
+            if (existente > 0) {
+                db.update(tabela, v, "id=?", new String[]{String.valueOf(existente)});
+            } else {
+                db.insertOrThrow(tabela, null, v);
+            }
+            total++;
+        }
+        return total;
+    }
+
+    private long idPorUuid(SQLiteDatabase db, String tabela, String uuid) {
+        Cursor c = db.rawQuery("SELECT id FROM " + tabela + " WHERE uuid=? LIMIT 1", new String[]{uuid});
+        try {
+            return c.moveToFirst() ? c.getLong(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    private ContentValues jsonParaValues(JSONObject row, boolean removerId) throws Exception {
+        ContentValues v = new ContentValues();
+        JSONArray nomes = row.names();
+        if (nomes == null) return v;
+        for (int i = 0; i < nomes.length(); i++) {
+            String nome = nomes.getString(i);
+            if (removerId && "id".equalsIgnoreCase(nome)) continue;
+            Object valor = row.opt(nome);
+            if (valor == null || valor == JSONObject.NULL) {
+                v.putNull(nome);
+            } else if (valor instanceof Boolean) {
+                v.put(nome, ((Boolean)valor) ? 1 : 0);
+            } else if (valor instanceof Integer) {
+                v.put(nome, (Integer)valor);
+            } else if (valor instanceof Long) {
+                v.put(nome, (Long)valor);
+            } else if (valor instanceof Float) {
+                v.put(nome, (Float)valor);
+            } else if (valor instanceof Double) {
+                v.put(nome, (Double)valor);
+            } else {
+                v.put(nome, String.valueOf(valor));
+            }
+        }
+        return v;
     }
 
     public int countSyncPendentes() {

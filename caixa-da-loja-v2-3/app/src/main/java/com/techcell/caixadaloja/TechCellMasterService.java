@@ -26,6 +26,9 @@ public class TechCellMasterService extends Service {
     private static final String MASTER = "TECHCELL_MASTER_V1";
     private static final String PING = "TECHCELL_PING_V1";
     private static final String PONG = "TECHCELL_PONG_V1";
+    private static final String SNAPSHOT = "TECHCELL_SNAPSHOT_V1";
+    private static final String SNAPSHOT_OK = "TECHCELL_SNAPSHOT_OK_V1";
+    private static final String ERROR = "TECHCELL_ERROR_V1";
 
     private volatile boolean ativo;
     private DatagramSocket udp;
@@ -102,7 +105,7 @@ public class TechCellMasterService extends Service {
             while (ativo) {
                 try {
                     Socket cliente = tcp.accept();
-                    atender(cliente);
+                    new Thread(() -> atender(cliente), "TechCell-Master-Client").start();
                 } catch (SocketTimeoutException ignored) {
                 }
             }
@@ -114,26 +117,75 @@ public class TechCellMasterService extends Service {
 
     private void atender(Socket cliente) {
         try {
-            cliente.setSoTimeout(2200);
+            cliente.setSoTimeout(30000);
             BufferedReader r = new BufferedReader(new InputStreamReader(cliente.getInputStream(), StandardCharsets.UTF_8));
             BufferedWriter w = new BufferedWriter(new OutputStreamWriter(cliente.getOutputStream(), StandardCharsets.UTF_8));
             String linha = r.readLine();
-            if (linha != null && linha.startsWith(PING + "|")) {
-                GestaoDbHelper.SyncContext ctx = new GestaoDbHelper(this).getSyncContext();
-                String resposta = PONG + "|" +
-                        TechCellLanClient.encodeNome(ctx.nomeDispositivo) + "|" +
-                        seguro(ctx.empresaUuid) + "|" +
-                        seguro(ctx.filialUuid) + "|" +
-                        seguro(ctx.dispositivoUuid) + "|" +
-                        (ctx.masterPort > 0 ? ctx.masterPort : 8765);
-                w.write(resposta);
-                w.newLine();
-                w.flush();
+            if (linha == null) return;
+
+            if (linha.startsWith(PING + "|")) {
+                responderPing(w);
+                return;
             }
+
+            if (linha.startsWith(SNAPSHOT + "|")) {
+                responderSnapshot(linha, w);
+                return;
+            }
+
+            w.write(ERROR + "|COMANDO_INVALIDO");
+            w.newLine();
+            w.flush();
         } catch (Throwable ignored) {
         } finally {
             try { cliente.close(); } catch (Throwable ignored) {}
         }
+    }
+
+    private void responderPing(BufferedWriter w) throws Exception {
+        GestaoDbHelper.SyncContext ctx = new GestaoDbHelper(this).getSyncContext();
+        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            w.write(ERROR + "|NAO_MASTER");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        String resposta = PONG + "|" +
+                TechCellLanClient.encodeNome(ctx.nomeDispositivo) + "|" +
+                seguro(ctx.empresaUuid) + "|" +
+                seguro(ctx.filialUuid) + "|" +
+                seguro(ctx.dispositivoUuid) + "|" +
+                (ctx.masterPort > 0 ? ctx.masterPort : 8765);
+        w.write(resposta);
+        w.newLine();
+        w.flush();
+    }
+
+    private void responderSnapshot(String linha, BufferedWriter w) throws Exception {
+        GestaoDbHelper db = new GestaoDbHelper(this);
+        GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            w.write(ERROR + "|NAO_MASTER");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        String[] p = linha.split("\\|", -1);
+        String codigo = p.length >= 3 ? p[2] : "";
+        if (!db.validarCodigoPareamento(codigo)) {
+            w.write(ERROR + "|CODIGO_INVALIDO");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        String json = db.exportarSnapshotInicial();
+        String compactado = TechCellLanClient.compactar(json);
+        w.write(SNAPSHOT_OK + "|" + compactado);
+        w.newLine();
+        w.flush();
     }
 
     private String seguro(String s) {
