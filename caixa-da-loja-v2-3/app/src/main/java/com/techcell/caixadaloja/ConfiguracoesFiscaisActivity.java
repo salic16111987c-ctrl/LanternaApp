@@ -77,7 +77,7 @@ public class ConfiguracoesFiscaisActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Dados da empresa emitente • Alpha 22", 15, false);
+        TextView sub = txt("Dados da empresa emitente • Alpha 23", 15, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
