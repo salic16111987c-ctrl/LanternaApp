@@ -79,7 +79,7 @@ public class FornecedoresActivity extends Activity {
         title.setPadding(0, dp(18), 0, dp(2));
         root.addView(title);
 
-        TextView sub = txt("Cadastro de fornecedores • Alpha 23", 14, false);
+        TextView sub = txt("Cadastro de fornecedores • Alpha 24", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
