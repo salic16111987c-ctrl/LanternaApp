@@ -131,6 +131,27 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double lucroLiquido;
     }
 
+    public static class RelatorioProduto {
+        public String nome = "";
+        public String unidade = "";
+        public double quantidade;
+        public double faturamento;
+        public double custo;
+        public double lucro;
+    }
+
+    public static class RelatorioGrupoValor {
+        public String rotulo = "";
+        public double valor;
+    }
+
+    public static class RelatorioEstoque {
+        public String nome = "";
+        public String unidade = "";
+        public double estoque;
+        public double minimo;
+    }
+
     public static class VendaItemRegistro {
         public String codigo = "";
         public String nome = "";
@@ -1430,6 +1451,96 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         // já entra no resultado quando o item é vendido.
         r.lucroLiquido = r.vendas.lucro - r.despesasOperacionais - r.outrasSaidas;
         return r;
+    }
+
+    public List<RelatorioProduto> topProdutosPeriodo(long inicio, long fim, int limite) {
+        List<RelatorioProduto> out = new ArrayList<>();
+        int max = Math.max(1, Math.min(limite, 100));
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT vi.nome,COALESCE(vi.unidade,''),COALESCE(SUM(vi.quantidade),0)," +
+                        "COALESCE(SUM(vi.total_liquido),0),COALESCE(SUM(vi.custo_total),0)," +
+                        "COALESCE(SUM(vi.lucro_liquido),0) " +
+                        "FROM venda_itens vi INNER JOIN vendas v ON v.id=vi.venda_id " +
+                        "WHERE v.data_millis>=? AND v.data_millis<? AND v.status_venda<>'ESTORNADA' " +
+                        "GROUP BY vi.produto_id,vi.nome,vi.unidade " +
+                        "ORDER BY SUM(vi.quantidade) DESC,SUM(vi.total_liquido) DESC LIMIT " + max,
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            while (c.moveToNext()) {
+                RelatorioProduto x = new RelatorioProduto();
+                x.nome = c.getString(0);
+                x.unidade = c.getString(1);
+                x.quantidade = c.getDouble(2);
+                x.faturamento = c.getDouble(3);
+                x.custo = c.getDouble(4);
+                x.lucro = c.getDouble(5);
+                out.add(x);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
+    public List<RelatorioGrupoValor> despesasPorCategoriaPeriodo(long inicio, long fim, int limite) {
+        List<RelatorioGrupoValor> out = new ArrayList<>();
+        int max = Math.max(1, Math.min(limite, 100));
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT CASE WHEN TRIM(categoria)='' THEN 'Sem categoria' ELSE categoria END," +
+                        "COALESCE(SUM(valor),0) FROM despesas " +
+                        "WHERE data_millis>=? AND data_millis<? AND status='ATIVA' " +
+                        "AND tipo<>'COMPRA_ESTOQUE' GROUP BY 1 ORDER BY SUM(valor) DESC LIMIT " + max,
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            while (c.moveToNext()) {
+                RelatorioGrupoValor x = new RelatorioGrupoValor();
+                x.rotulo = c.getString(0);
+                x.valor = c.getDouble(1);
+                out.add(x);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
+    public List<RelatorioGrupoValor> saidasPorFavorecidoPeriodo(long inicio, long fim, int limite) {
+        List<RelatorioGrupoValor> out = new ArrayList<>();
+        int max = Math.max(1, Math.min(limite, 100));
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT CASE WHEN TRIM(favorecido_nome)='' THEN " +
+                        "CASE WHEN TRIM(documento_emitente_nome)='' THEN 'Sem favorecido' ELSE documento_emitente_nome END " +
+                        "ELSE favorecido_nome END,COALESCE(SUM(valor),0) " +
+                        "FROM despesas WHERE data_millis>=? AND data_millis<? AND status='ATIVA' " +
+                        "GROUP BY 1 ORDER BY SUM(valor) DESC LIMIT " + max,
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            while (c.moveToNext()) {
+                RelatorioGrupoValor x = new RelatorioGrupoValor();
+                x.rotulo = c.getString(0);
+                x.valor = c.getDouble(1);
+                out.add(x);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
+    public List<RelatorioEstoque> produtosEstoqueBaixo(int limite) {
+        List<RelatorioEstoque> out = new ArrayList<>();
+        int max = Math.max(1, Math.min(limite, 200));
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT nome,COALESCE(unidade,''),estoque,estoque_minimo FROM produtos " +
+                        "WHERE UPPER(TRIM(COALESCE(unidade,'')))<>'SERVIÇO' " +
+                        "AND ((estoque_minimo>0 AND estoque<=estoque_minimo) OR estoque<=0) " +
+                        "ORDER BY CASE WHEN estoque<=0 THEN 0 ELSE 1 END,estoque ASC,nome COLLATE NOCASE LIMIT " + max,
+                null);
+        try {
+            while (c.moveToNext()) {
+                RelatorioEstoque x = new RelatorioEstoque();
+                x.nome = c.getString(0);
+                x.unidade = c.getString(1);
+                x.estoque = c.getDouble(2);
+                x.minimo = c.getDouble(3);
+                out.add(x);
+            }
+        } finally { c.close(); }
+        return out;
     }
 
     private Produto getProdutoNaTransacao(SQLiteDatabase db, long id) {
