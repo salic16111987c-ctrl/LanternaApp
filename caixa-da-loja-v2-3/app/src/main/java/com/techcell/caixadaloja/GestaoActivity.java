@@ -45,7 +45,7 @@ public class GestaoActivity extends Activity {
         TechCellUi.applyWindowChrome(this);GestaoDbHelper db=new GestaoDbHelper(this);GestaoDbHelper.ResumoVendas hoje=db.resumoHoje();
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(18),dp(16),dp(30));scroll.addView(root);
         Button back=new Button(this);back.setText("←  Voltar");TechCellUi.styleSecondary(this,back);back.setOnClickListener(v->finish());root.addView(back,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
-        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);TextView sub=text("Painel principal • Alpha 30",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
+        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);TextView sub=text("Painel principal • Alpha 31",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
         TextView ht=text("Hoje",17,true);ht.setPadding(0,dp(16),0,0);root.addView(ht);
         addMetricRow(root,metric("TOTAL VENDIDO",moeda.format(hoje.total),TechCellUi.GREEN),metric("LUCRO BRUTO",moeda.format(hoje.lucro),TechCellUi.GREEN));
         addMetricRow(root,metric("VENDAS",String.valueOf(hoje.quantidadeVendas),TechCellUi.BLUE),metric("CUSTO",moeda.format(hoje.custo),TechCellUi.TEXT));
@@ -59,12 +59,16 @@ public class GestaoActivity extends Activity {
         Button fin=moduleButton("💰  Financeiro");fin.setOnClickListener(v->startActivity(new Intent(this,FinanceiroActivity.class)));Button rel=moduleButton("📊  Relatórios");rel.setOnClickListener(v->startActivity(new Intent(this,RelatoriosActivity.class)));addModuleRow(root,fin,rel);
         Button cli=moduleButton("👤  Clientes");cli.setOnClickListener(v->startActivity(new Intent(this,ClientesActivity.class)));Button forn=moduleButton("🚚  Fornecedores");forn.setOnClickListener(v->startActivity(new Intent(this,FornecedoresActivity.class)));addModuleRow(root,cli,forn);
         Button hist=moduleButton("🧾  Vendas");hist.setOnClickListener(v->startActivity(new Intent(this,HistoricoVendasActivity.class)));Button fiscal=moduleButton("⚙  Fiscal");fiscal.setOnClickListener(v->startActivity(new Intent(this,ConfiguracoesFiscaisActivity.class)));addModuleRow(root,hist,fiscal);
+        Button rede=moduleButton("📡  Dispositivo / Rede");rede.setOnClickListener(v->startActivity(new Intent(this,ConfiguracaoDispositivoActivity.class)));
+        LinearLayout.LayoutParams rpRede=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rpRede.setMargins(0,dp(8),0,0);root.addView(rede,rpRede);
         Button prep=moduleButton("✅  Homologação");prep.setOnClickListener(v->startActivity(new Intent(this,PreparacaoFiscalActivity.class)));Button smb=moduleButton("🗃️  Importação SMB");smb.setOnClickListener(v->Toast.makeText(this,"Importação bloqueada até conferirmos os registros do SMB.",Toast.LENGTH_LONG).show());addModuleRow(root,prep,smb);
         GestaoDbHelper.SyncContext sync=db.getSyncContext();
         int pendentes=db.countSyncPendentes();
+        String papel=sync.configurado ? sync.papelDispositivo : "NÃO CONFIGURADO";
         TextView infra=text(
-                "Estrutura local v12 preparada para multiempresa\n"+
+                "Estrutura local v13 • multiempresa e rede preparada\n"+
                 "Empresa "+curto(sync.empresaUuid)+"  •  Filial "+curto(sync.filialUuid)+"  •  Dispositivo "+curto(sync.dispositivoUuid)+
+                "\n"+(sync.configurado ? sync.nomeDispositivo+"  •  Função: "+papel : "Função do aparelho: "+papel)+
                 "\nNuvem: "+(sync.cloudAtiva ? "ativa" : "ainda não configurada")+
                 "  •  Alterações locais pendentes: "+pendentes,
                 11,true);

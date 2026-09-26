@@ -13,7 +13,7 @@ import java.util.UUID;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 12;
+    private static final int DB_VERSION = 13;
 
     public static class Produto {
         public long id;
@@ -301,6 +301,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String papelDispositivo = "LOCAL";
         public String nomeDispositivo = "Este aparelho";
         public String masterTipo = "NAO_CONFIGURADO";
+        public String masterHost = "";
+        public int masterPort = 8765;
+        public boolean configurado;
         public boolean cloudAtiva;
     }
 
@@ -417,6 +420,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         if (oldVersion < 12) {
             migrarParaV12(db);
+        }
+
+        if (oldVersion < 13) {
+            migrarParaV13(db);
         }
     }
 
@@ -662,6 +669,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "papel_dispositivo TEXT NOT NULL DEFAULT 'LOCAL'," +
                 "nome_dispositivo TEXT NOT NULL DEFAULT 'Este aparelho'," +
                 "master_tipo TEXT NOT NULL DEFAULT 'NAO_CONFIGURADO'," +
+                "master_host TEXT NOT NULL DEFAULT ''," +
+                "master_port INTEGER NOT NULL DEFAULT 8765," +
+                "configurado INTEGER NOT NULL DEFAULT 0," +
                 "cloud_ativa INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
@@ -711,6 +721,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("papel_dispositivo", "LOCAL");
         v.put("nome_dispositivo", "Este aparelho");
         v.put("master_tipo", "NAO_CONFIGURADO");
+        v.put("master_host", "");
+        v.put("master_port", 8765);
+        v.put("configurado", 0);
         v.put("cloud_ativa", 0);
         v.put("created_at", now);
         v.put("updated_at", now);
@@ -732,7 +745,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         SyncContext x = new SyncContext();
         Cursor c = db.rawQuery(
                 "SELECT empresa_uuid,filial_uuid,dispositivo_uuid,papel_dispositivo," +
-                        "nome_dispositivo,master_tipo,cloud_ativa FROM sync_context WHERE id=1",
+                        "nome_dispositivo,master_tipo,master_host,master_port,configurado,cloud_ativa " +
+                        "FROM sync_context WHERE id=1",
                 null);
         try {
             if (c.moveToFirst()) {
@@ -742,12 +756,50 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 x.papelDispositivo = c.getString(3);
                 x.nomeDispositivo = c.getString(4);
                 x.masterTipo = c.getString(5);
-                x.cloudAtiva = c.getInt(6) == 1;
+                x.masterHost = c.getString(6);
+                x.masterPort = c.getInt(7);
+                x.configurado = c.getInt(8) == 1;
+                x.cloudAtiva = c.getInt(9) == 1;
             }
         } finally {
             c.close();
         }
         return x;
+    }
+
+    private void migrarParaV13(SQLiteDatabase db) {
+        criarSyncBase(db);
+        adicionarColunaSeAusente(db, "sync_context", "master_host", "TEXT NOT NULL DEFAULT ''");
+        adicionarColunaSeAusente(db, "sync_context", "master_port", "INTEGER NOT NULL DEFAULT 8765");
+        adicionarColunaSeAusente(db, "sync_context", "configurado", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    public void salvarConfiguracaoDispositivo(String nome, String papel, String masterHost, int masterPort) {
+        String nomeLimpo = nome == null ? "" : nome.trim();
+        if (nomeLimpo.isEmpty()) throw new IllegalArgumentException("Informe um nome para este dispositivo.");
+
+        String papelLimpo = papel == null ? "" : papel.trim().toUpperCase();
+        if (!"MASTER".equals(papelLimpo) && !"CAIXA".equals(papelLimpo) &&
+                !"ADMIN".equals(papelLimpo) && !"CONSULTA".equals(papelLimpo)) {
+            throw new IllegalArgumentException("Selecione a função deste dispositivo.");
+        }
+
+        int porta = masterPort <= 0 || masterPort > 65535 ? 8765 : masterPort;
+        String host = masterHost == null ? "" : masterHost.trim();
+
+        SQLiteDatabase db = getWritableDatabase();
+        criarSyncBase(db);
+        inicializarSyncContext(db);
+
+        ContentValues v = new ContentValues();
+        v.put("nome_dispositivo", nomeLimpo);
+        v.put("papel_dispositivo", papelLimpo);
+        v.put("master_tipo", "MASTER".equals(papelLimpo) ? "ANDROID" : "REMOTO");
+        v.put("master_host", "MASTER".equals(papelLimpo) ? "" : host);
+        v.put("master_port", porta);
+        v.put("configurado", 1);
+        v.put("updated_at", System.currentTimeMillis());
+        db.update("sync_context", v, "id=1", null);
     }
 
     public int countSyncPendentes() {
