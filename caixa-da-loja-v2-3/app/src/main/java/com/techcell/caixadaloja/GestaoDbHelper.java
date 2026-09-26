@@ -13,7 +13,7 @@ import java.util.UUID;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 13;
+    private static final int DB_VERSION = 14;
 
     public static class Produto {
         public long id;
@@ -303,6 +303,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String masterTipo = "NAO_CONFIGURADO";
         public String masterHost = "";
         public int masterPort = 8765;
+        public String masterDeviceUuid = "";
+        public String masterName = "";
+        public long masterLastSeen;
         public boolean configurado;
         public boolean cloudAtiva;
     }
@@ -424,6 +427,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         if (oldVersion < 13) {
             migrarParaV13(db);
+        }
+
+        if (oldVersion < 14) {
+            migrarParaV14(db);
         }
     }
 
@@ -671,6 +678,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "master_tipo TEXT NOT NULL DEFAULT 'NAO_CONFIGURADO'," +
                 "master_host TEXT NOT NULL DEFAULT ''," +
                 "master_port INTEGER NOT NULL DEFAULT 8765," +
+                "master_device_uuid TEXT NOT NULL DEFAULT ''," +
+                "master_name TEXT NOT NULL DEFAULT ''," +
+                "master_last_seen INTEGER NOT NULL DEFAULT 0," +
                 "configurado INTEGER NOT NULL DEFAULT 0," +
                 "cloud_ativa INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL," +
@@ -723,6 +733,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("master_tipo", "NAO_CONFIGURADO");
         v.put("master_host", "");
         v.put("master_port", 8765);
+        v.put("master_device_uuid", "");
+        v.put("master_name", "");
+        v.put("master_last_seen", 0);
         v.put("configurado", 0);
         v.put("cloud_ativa", 0);
         v.put("created_at", now);
@@ -745,8 +758,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         SyncContext x = new SyncContext();
         Cursor c = db.rawQuery(
                 "SELECT empresa_uuid,filial_uuid,dispositivo_uuid,papel_dispositivo," +
-                        "nome_dispositivo,master_tipo,master_host,master_port,configurado,cloud_ativa " +
-                        "FROM sync_context WHERE id=1",
+                        "nome_dispositivo,master_tipo,master_host,master_port,master_device_uuid," +
+                        "master_name,master_last_seen,configurado,cloud_ativa FROM sync_context WHERE id=1",
                 null);
         try {
             if (c.moveToFirst()) {
@@ -758,8 +771,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 x.masterTipo = c.getString(5);
                 x.masterHost = c.getString(6);
                 x.masterPort = c.getInt(7);
-                x.configurado = c.getInt(8) == 1;
-                x.cloudAtiva = c.getInt(9) == 1;
+                x.masterDeviceUuid = c.getString(8);
+                x.masterName = c.getString(9);
+                x.masterLastSeen = c.getLong(10);
+                x.configurado = c.getInt(11) == 1;
+                x.cloudAtiva = c.getInt(12) == 1;
             }
         } finally {
             c.close();
@@ -772,6 +788,13 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         adicionarColunaSeAusente(db, "sync_context", "master_host", "TEXT NOT NULL DEFAULT ''");
         adicionarColunaSeAusente(db, "sync_context", "master_port", "INTEGER NOT NULL DEFAULT 8765");
         adicionarColunaSeAusente(db, "sync_context", "configurado", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private void migrarParaV14(SQLiteDatabase db) {
+        criarSyncBase(db);
+        adicionarColunaSeAusente(db, "sync_context", "master_device_uuid", "TEXT NOT NULL DEFAULT ''");
+        adicionarColunaSeAusente(db, "sync_context", "master_name", "TEXT NOT NULL DEFAULT ''");
+        adicionarColunaSeAusente(db, "sync_context", "master_last_seen", "INTEGER NOT NULL DEFAULT 0");
     }
 
     public void salvarConfiguracaoDispositivo(String nome, String papel, String masterHost, int masterPort) {
@@ -797,7 +820,70 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("master_tipo", "MASTER".equals(papelLimpo) ? "ANDROID" : "REMOTO");
         v.put("master_host", "MASTER".equals(papelLimpo) ? "" : host);
         v.put("master_port", porta);
+        if ("MASTER".equals(papelLimpo)) {
+            v.put("master_device_uuid", "");
+            v.put("master_name", "");
+            v.put("master_last_seen", 0);
+        }
         v.put("configurado", 1);
+        v.put("updated_at", System.currentTimeMillis());
+        db.update("sync_context", v, "id=1", null);
+    }
+
+    public int countDadosLocaisParaVinculo() {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT " +
+                        "(SELECT COUNT(*) FROM produtos)+" +
+                        "(SELECT COUNT(*) FROM vendas)+" +
+                        "(SELECT COUNT(*) FROM clientes)+" +
+                        "(SELECT COUNT(*) FROM despesas)+" +
+                        "(SELECT COUNT(*) FROM fornecedores)+" +
+                        "(SELECT COUNT(*) FROM empresa_config WHERE " +
+                        "TRIM(COALESCE(razao,''))<>'' OR TRIM(COALESCE(fantasia,''))<>'' OR TRIM(COALESCE(cnpj,''))<>'')",
+                null);
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    public void vincularAoMaster(String host, int port, String empresaUuid, String filialUuid,
+                                 String masterDeviceUuid, String masterName) {
+        if (host == null || host.trim().isEmpty()) throw new IllegalArgumentException("Endereço do Master inválido.");
+        if (empresaUuid == null || empresaUuid.trim().isEmpty()) throw new IllegalArgumentException("Empresa do Master inválida.");
+        if (filialUuid == null || filialUuid.trim().isEmpty()) throw new IllegalArgumentException("Filial do Master inválida.");
+        if (masterDeviceUuid == null || masterDeviceUuid.trim().isEmpty()) throw new IllegalArgumentException("Identificação do Master inválida.");
+
+        SQLiteDatabase db = getWritableDatabase();
+        SyncContext atual = lerSyncContext(db);
+        String empresaNova = empresaUuid.trim();
+        String filialNova = filialUuid.trim();
+
+        if (!empresaNova.equalsIgnoreCase(atual.empresaUuid) && countDadosLocaisParaVinculo() > 0) {
+            throw new IllegalStateException(
+                    "Este aparelho já possui dados locais de outra empresa. Para segurança, o vínculo automático foi bloqueado.");
+        }
+
+        ContentValues v = new ContentValues();
+        v.put("empresa_uuid", empresaNova);
+        v.put("filial_uuid", filialNova);
+        v.put("master_tipo", "ANDROID");
+        v.put("master_host", host.trim());
+        v.put("master_port", port > 0 && port <= 65535 ? port : 8765);
+        v.put("master_device_uuid", masterDeviceUuid.trim());
+        v.put("master_name", masterName == null ? "" : masterName.trim());
+        v.put("master_last_seen", System.currentTimeMillis());
+        v.put("configurado", 1);
+        v.put("updated_at", System.currentTimeMillis());
+        db.update("sync_context", v, "id=1", null);
+    }
+
+    public void registrarMasterOnline(String host) {
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues v = new ContentValues();
+        if (host != null && !host.trim().isEmpty()) v.put("master_host", host.trim());
+        v.put("master_last_seen", System.currentTimeMillis());
         v.put("updated_at", System.currentTimeMillis());
         db.update("sync_context", v, "id=1", null);
     }
