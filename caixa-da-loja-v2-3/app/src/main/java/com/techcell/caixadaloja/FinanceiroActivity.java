@@ -124,7 +124,7 @@ public class FinanceiroActivity extends Activity {
         titulo.setPadding(0, dp(16), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 21", 14, false);
+        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 22", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
@@ -527,8 +527,11 @@ public class FinanceiroActivity extends Activity {
             byte[] bytes = lerTudo(uri);
             DocumentoNfe x = lerNfe(bytes);
 
-            if (x.chave.isEmpty() && x.numero.isEmpty() && x.emitenteCnpj.isEmpty()) {
-                throw new IllegalArgumentException("O arquivo não parece ser um XML de NF-e.");
+            if (!formularioDocumentoDisponivel()) {
+                Toast.makeText(this,
+                        "A tela foi recarregada pelo Android. Abra novamente 'Registrar saída' e importe o XML.",
+                        Toast.LENGTH_LONG).show();
+                return;
             }
 
             xmlPendente = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
@@ -560,11 +563,30 @@ public class FinanceiroActivity extends Activity {
             Toast.makeText(this,
                     "XML importado. Confira os dados antes de salvar.",
                     Toast.LENGTH_LONG).show();
+        } catch (IllegalArgumentException e) {
+            Toast.makeText(this,
+                    e.getMessage() == null || e.getMessage().trim().isEmpty()
+                            ? "Este arquivo não é uma NF-e válida."
+                            : e.getMessage(),
+                    Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             Toast.makeText(this,
-                    "Não foi possível importar o XML: " + e.getMessage(),
+                    "Não foi possível ler este XML. Se for uma NF-e real, tente novamente ou envie o arquivo para conferência.",
                     Toast.LENGTH_LONG).show();
         }
+    }
+
+    private boolean formularioDocumentoDisponivel() {
+        return docTipoForm != null &&
+                docNumeroForm != null &&
+                docSerieForm != null &&
+                docChaveForm != null &&
+                docEmitenteForm != null &&
+                docEmitenteCnpjForm != null &&
+                favorecidoForm != null &&
+                favorecidoDocForm != null &&
+                valorForm != null &&
+                descricaoForm != null;
     }
 
     private byte[] lerTudo(Uri uri) throws Exception {
@@ -573,48 +595,117 @@ public class FinanceiroActivity extends Activity {
             if (in == null) throw new IllegalStateException("Arquivo indisponível.");
             byte[] buffer = new byte[8192];
             int n;
-            while ((n = in.read(buffer)) >= 0) out.write(buffer, 0, n);
-            return out.toByteArray();
+            int total = 0;
+            while ((n = in.read(buffer)) >= 0) {
+                total += n;
+                if (total > 10 * 1024 * 1024) {
+                    throw new IllegalArgumentException("O XML é muito grande para importação.");
+                }
+                out.write(buffer, 0, n);
+            }
+            byte[] bytes = out.toByteArray();
+            if (bytes.length == 0) {
+                throw new IllegalArgumentException("O arquivo XML está vazio.");
+            }
+            return bytes;
         }
     }
 
     private DocumentoNfe lerNfe(byte[] bytes) throws Exception {
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("O arquivo XML está vazio.");
+        }
+
+        String inicio = new String(
+                bytes, 0, Math.min(bytes.length, 4096),
+                java.nio.charset.StandardCharsets.UTF_8);
+        if (inicio.toUpperCase(Locale.ROOT).contains("<!DOCTYPE")) {
+            throw new IllegalArgumentException("XML não aceito por segurança.");
+        }
+
         DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
         f.setNamespaceAware(true);
         try { f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true); } catch (Exception ignored) {}
         try { f.setFeature("http://xml.org/sax/features/external-general-entities", false); } catch (Exception ignored) {}
         try { f.setFeature("http://xml.org/sax/features/external-parameter-entities", false); } catch (Exception ignored) {}
+        try { f.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false); } catch (Exception ignored) {}
+        try { f.setXIncludeAware(false); } catch (Exception ignored) {}
+        try { f.setExpandEntityReferences(false); } catch (Exception ignored) {}
 
-        Document doc = f.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(bytes));
+        Document doc;
+        try {
+            doc = f.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(bytes));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("O arquivo não contém um XML válido.");
+        }
+
+        if (doc == null || doc.getDocumentElement() == null) {
+            throw new IllegalArgumentException("O arquivo não contém uma NF-e.");
+        }
         doc.getDocumentElement().normalize();
 
-        DocumentoNfe x = new DocumentoNfe();
         Element inf = primeiro(doc, "infNFe");
-        if (inf != null) {
-            String id = inf.getAttribute("Id");
-            if (id != null) x.chave = CadastroBrasilUtils.apenasDigitos(id);
-        }
-
         Element ide = primeiro(doc, "ide");
-        if (ide != null) {
-            x.numero = texto(ide, "nNF");
-            x.serie = texto(ide, "serie");
-            String dh = texto(ide, "dhEmi");
-            if (dh.isEmpty()) dh = texto(ide, "dEmi");
-            x.emissaoMillis = parseDataXml(dh);
-        }
-
         Element emit = primeiro(doc, "emit");
-        if (emit != null) {
-            x.emitenteCnpj = CadastroBrasilUtils.apenasDigitos(texto(emit, "CNPJ"));
-            x.emitenteNome = texto(emit, "xNome");
-            if (x.emitenteNome.isEmpty()) x.emitenteNome = texto(emit, "xFant");
+        Element total = primeiro(doc, "ICMSTot");
+
+        if (inf == null || ide == null || emit == null || total == null) {
+            throw new IllegalArgumentException("Este XML não possui a estrutura de uma NF-e.");
         }
 
-        Element total = primeiro(doc, "ICMSTot");
-        if (total != null) {
-            try { x.valor = Double.parseDouble(texto(total, "vNF").replace(",", ".")); }
-            catch (Exception ignored) {}
+        String modelo = texto(ide, "mod");
+        if ("65".equals(modelo)) {
+            throw new IllegalArgumentException("Este XML é de NFC-e (modelo 65). Selecione NFC-e / Cupom.");
+        }
+        if (!"55".equals(modelo)) {
+            throw new IllegalArgumentException("Este XML não é uma NF-e modelo 55.");
+        }
+
+        DocumentoNfe x = new DocumentoNfe();
+
+        String id = inf.getAttribute("Id");
+        if (id != null && !id.trim().isEmpty()) {
+            x.chave = CadastroBrasilUtils.apenasDigitos(id);
+        }
+        if (x.chave.length() != 44) {
+            Element prot = primeiro(doc, "infProt");
+            if (prot != null) {
+                x.chave = CadastroBrasilUtils.apenasDigitos(texto(prot, "chNFe"));
+            }
+        }
+        if (x.chave.length() != 44) {
+            throw new IllegalArgumentException("A NF-e não possui uma chave de acesso válida com 44 dígitos.");
+        }
+
+        x.numero = texto(ide, "nNF");
+        x.serie = texto(ide, "serie");
+        if (x.numero.isEmpty()) {
+            throw new IllegalArgumentException("A NF-e não possui número identificável.");
+        }
+
+        String dh = texto(ide, "dhEmi");
+        if (dh.isEmpty()) dh = texto(ide, "dEmi");
+        x.emissaoMillis = parseDataXml(dh);
+
+        x.emitenteCnpj = CadastroBrasilUtils.apenasDigitos(texto(emit, "CNPJ"));
+        x.emitenteNome = texto(emit, "xNome");
+        if (x.emitenteNome.isEmpty()) x.emitenteNome = texto(emit, "xFant");
+
+        if (x.emitenteCnpj.length() != 14 || !CadastroBrasilUtils.cnpjValido(x.emitenteCnpj)) {
+            throw new IllegalArgumentException("O CNPJ do emitente da NF-e é inválido.");
+        }
+        if (x.emitenteNome.isEmpty()) {
+            throw new IllegalArgumentException("A NF-e não informa o nome do emitente.");
+        }
+
+        String vNf = texto(total, "vNF");
+        try {
+            x.valor = Double.parseDouble(vNf.replace(",", "."));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Não foi possível identificar o valor total da NF-e.");
+        }
+        if (x.valor < 0) {
+            throw new IllegalArgumentException("O valor total da NF-e é inválido.");
         }
 
         return x;
