@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 10;
+    private static final int DB_VERSION = 11;
 
     public static class Produto {
         public long id;
@@ -222,6 +222,27 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String email = "";
     }
 
+    public static class Fornecedor {
+        public long id;
+        public String tipo = "PJ";
+        public String nome = "";
+        public String fantasia = "";
+        public String documento = "";
+        public String ie = "";
+        public String contato = "";
+        public String logradouro = "";
+        public String numero = "";
+        public String complemento = "";
+        public String bairro = "";
+        public String cep = "";
+        public String municipio = "";
+        public String uf = "";
+        public String telefone = "";
+        public String email = "";
+        public String observacao = "";
+        public String status = "ATIVO";
+    }
+
     public GestaoDbHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
@@ -232,6 +253,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         criarEmpresaConfig(db);
         criarClientes(db);
         criarDespesas(db);
+        criarFornecedores(db);
     }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
@@ -324,6 +346,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE despesas ADD COLUMN documento_valor REAL NOT NULL DEFAULT 0");
             db.execSQL("ALTER TABLE despesas ADD COLUMN documento_xml TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE despesas ADD COLUMN documento_uri TEXT NOT NULL DEFAULT ''");
+        }
+
+        if (oldVersion < 11) {
+            criarFornecedores(db);
         }
     }
 
@@ -502,6 +528,35 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_despesas_data ON despesas(data_millis)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_despesas_status ON despesas(status)");
+    }
+
+    private void criarFornecedores(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS fornecedores (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "tipo TEXT NOT NULL DEFAULT 'PJ'," +
+                "nome TEXT NOT NULL," +
+                "fantasia TEXT NOT NULL DEFAULT ''," +
+                "documento TEXT NOT NULL DEFAULT ''," +
+                "ie TEXT NOT NULL DEFAULT ''," +
+                "contato TEXT NOT NULL DEFAULT ''," +
+                "logradouro TEXT NOT NULL DEFAULT ''," +
+                "numero TEXT NOT NULL DEFAULT ''," +
+                "complemento TEXT NOT NULL DEFAULT ''," +
+                "bairro TEXT NOT NULL DEFAULT ''," +
+                "cep TEXT NOT NULL DEFAULT ''," +
+                "municipio TEXT NOT NULL DEFAULT ''," +
+                "uf TEXT NOT NULL DEFAULT ''," +
+                "telefone TEXT NOT NULL DEFAULT ''," +
+                "email TEXT NOT NULL DEFAULT ''," +
+                "observacao TEXT NOT NULL DEFAULT ''," +
+                "status TEXT NOT NULL DEFAULT 'ATIVO'," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL" +
+                ")");
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_fornecedores_documento " +
+                "ON fornecedores(documento) WHERE documento<>''");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_fornecedores_nome ON fornecedores(nome)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_fornecedores_status ON fornecedores(status)");
     }
 
     private ContentValues values(Produto p) {
@@ -1082,6 +1137,100 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         x.telefone = c.getString(c.getColumnIndexOrThrow("telefone"));
         x.email = c.getString(c.getColumnIndexOrThrow("email"));
         return x;
+    }
+
+    public long saveFornecedor(Fornecedor f) {
+        if (f == null) throw new IllegalArgumentException("Fornecedor inválido.");
+        SQLiteDatabase db = getWritableDatabase();
+        long now = System.currentTimeMillis();
+        ContentValues v = new ContentValues();
+        v.put("tipo", f.tipo == null ? "PJ" : f.tipo);
+        v.put("nome", f.nome == null ? "" : f.nome.trim());
+        v.put("fantasia", f.fantasia == null ? "" : f.fantasia.trim());
+        v.put("documento", f.documento == null ? "" : f.documento.trim());
+        v.put("ie", f.ie == null ? "" : f.ie.trim());
+        v.put("contato", f.contato == null ? "" : f.contato.trim());
+        v.put("logradouro", f.logradouro == null ? "" : f.logradouro.trim());
+        v.put("numero", f.numero == null ? "" : f.numero.trim());
+        v.put("complemento", f.complemento == null ? "" : f.complemento.trim());
+        v.put("bairro", f.bairro == null ? "" : f.bairro.trim());
+        v.put("cep", f.cep == null ? "" : f.cep.trim());
+        v.put("municipio", f.municipio == null ? "" : f.municipio.trim());
+        v.put("uf", f.uf == null ? "" : f.uf.trim().toUpperCase());
+        v.put("telefone", f.telefone == null ? "" : f.telefone.trim());
+        v.put("email", f.email == null ? "" : f.email.trim());
+        v.put("observacao", f.observacao == null ? "" : f.observacao.trim());
+        v.put("status", f.status == null || f.status.trim().isEmpty() ? "ATIVO" : f.status.trim());
+        v.put("updated_at", now);
+        if (f.id > 0) {
+            db.update("fornecedores", v, "id=?", new String[]{String.valueOf(f.id)});
+            return f.id;
+        }
+        v.put("created_at", now);
+        f.id = db.insertOrThrow("fornecedores", null, v);
+        return f.id;
+    }
+
+    public List<Fornecedor> listFornecedores(String busca, boolean incluirInativos) {
+        List<Fornecedor> out = new ArrayList<>();
+        String q = busca == null ? "" : busca.trim();
+        String whereStatus = incluirInativos ? "" : " AND status='ATIVO'";
+        Cursor c;
+        if (q.isEmpty()) {
+            c = getReadableDatabase().rawQuery(
+                    "SELECT * FROM fornecedores WHERE 1=1" + whereStatus +
+                            " ORDER BY nome COLLATE NOCASE LIMIT 200", null);
+        } else {
+            String like = "%" + q + "%";
+            c = getReadableDatabase().rawQuery(
+                    "SELECT * FROM fornecedores WHERE (nome LIKE ? OR fantasia LIKE ? OR documento LIKE ? OR contato LIKE ?)" +
+                            whereStatus + " ORDER BY nome COLLATE NOCASE LIMIT 200",
+                    new String[]{like, like, like, like});
+        }
+        try {
+            while (c.moveToNext()) out.add(fornecedorFromCursor(c));
+        } finally { c.close(); }
+        return out;
+    }
+
+    public void setFornecedorAtivo(long id, boolean ativo) {
+        ContentValues v = new ContentValues();
+        v.put("status", ativo ? "ATIVO" : "INATIVO");
+        v.put("updated_at", System.currentTimeMillis());
+        getWritableDatabase().update("fornecedores", v, "id=?", new String[]{String.valueOf(id)});
+    }
+
+    public Fornecedor getFornecedorPorDocumento(String documento) {
+        String d = documento == null ? "" : documento.trim();
+        if (d.isEmpty()) return null;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM fornecedores WHERE documento=? LIMIT 1", new String[]{d});
+        try {
+            return c.moveToFirst() ? fornecedorFromCursor(c) : null;
+        } finally { c.close(); }
+    }
+
+    private Fornecedor fornecedorFromCursor(Cursor c) {
+        Fornecedor f = new Fornecedor();
+        f.id = c.getLong(c.getColumnIndexOrThrow("id"));
+        f.tipo = c.getString(c.getColumnIndexOrThrow("tipo"));
+        f.nome = c.getString(c.getColumnIndexOrThrow("nome"));
+        f.fantasia = c.getString(c.getColumnIndexOrThrow("fantasia"));
+        f.documento = c.getString(c.getColumnIndexOrThrow("documento"));
+        f.ie = c.getString(c.getColumnIndexOrThrow("ie"));
+        f.contato = c.getString(c.getColumnIndexOrThrow("contato"));
+        f.logradouro = c.getString(c.getColumnIndexOrThrow("logradouro"));
+        f.numero = c.getString(c.getColumnIndexOrThrow("numero"));
+        f.complemento = c.getString(c.getColumnIndexOrThrow("complemento"));
+        f.bairro = c.getString(c.getColumnIndexOrThrow("bairro"));
+        f.cep = c.getString(c.getColumnIndexOrThrow("cep"));
+        f.municipio = c.getString(c.getColumnIndexOrThrow("municipio"));
+        f.uf = c.getString(c.getColumnIndexOrThrow("uf"));
+        f.telefone = c.getString(c.getColumnIndexOrThrow("telefone"));
+        f.email = c.getString(c.getColumnIndexOrThrow("email"));
+        f.observacao = c.getString(c.getColumnIndexOrThrow("observacao"));
+        f.status = c.getString(c.getColumnIndexOrThrow("status"));
+        return f;
     }
 
     public ResumoVendas resumoHoje() {
