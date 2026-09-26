@@ -74,12 +74,12 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("Gestão Tech Cell • Alpha 23", 14, false);
+        TextView sub = text("Gestão Tech Cell • Alpha 24", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         TextView safe = text(
-                "ALPHA 23 • BASE LOCAL PRESERVADA\n" +
+                "ALPHA 24 • BASE LOCAL PRESERVADA\n" +
                 "Produtos cadastrados: " + db.count() +
                 "\nAtualizações preservam produtos, vendas, clientes e financeiro.",
                 13, true);
@@ -166,7 +166,8 @@ public class GestaoActivity extends Activity {
         root.addView(fornecedores);
 
         Button rel = action("📊  Relatórios");
-        rel.setOnClickListener(v -> Toast.makeText(this, "Relatórios em construção.", Toast.LENGTH_SHORT).show());
+        rel.setOnClickListener(v ->
+                startActivity(new Intent(this, RelatoriosActivity.class)));
         root.addView(rel);
 
         Button smb = action("🗃️  Importação do SMB");
@@ -174,7 +175,7 @@ public class GestaoActivity extends Activity {
         root.addView(smb);
 
         TextView next = text(
-                "Alpha 23: fornecedores com CNPJ/CEP automático, busca, edição e inativação segura.",
+                "Alpha 24: relatórios de vendas, resultados, produtos, despesas e estoque.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);
