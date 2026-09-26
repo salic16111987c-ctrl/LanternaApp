@@ -83,7 +83,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
         root.addView(titulo);
 
         TextView sub = txt(
-                "Mercadorias vendidas, custo e lucratividade • Alpha 27",
+                "Mercadorias vendidas, custo e lucratividade • Alpha 28",
                 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
@@ -274,36 +274,38 @@ public class RelatorioVendasProdutosActivity extends Activity {
         GestaoDbHelper.ResumoProdutosPeriodo r =
                 db.resumoProdutosPeriodo(inicioAtual, fimAtual);
 
-        secao("RESUMO DE MERCADORIAS");
-        cardResumoClicavel(
-                "Total vendido em mercadorias",
-                moeda.format(r.faturamento),
-                "#07884B");
-        cardResumoClicavel(
-                "Custo das mercadorias vendidas",
-                moeda.format(r.custo),
-                "#475467");
-        cardResumoClicavel(
-                "Lucro bruto das mercadorias",
-                moeda.format(r.lucro),
-                r.lucro >= 0 ? "#176240" : "#B42318");
-        cardResumoClicavel(
-                "Margem bruta",
-                percentual(r.margemPercentual()),
-                r.lucro >= 0 ? "#175CD3" : "#B42318");
-        cardResumoClicavel(
-                "Quantidade de itens vendidos",
-                qtd(r.quantidadeProdutos),
-                "#175CD3");
-        cardResumoClicavel(
-                "Vendas com mercadorias",
-                String.valueOf(r.quantidadeVendas),
-                "#175CD3");
+        LinearLayout hero = TechCellUi.card(this);
+        hero.setLayoutParams(TechCellUi.fullCardParams(this, 12));
+        hero.setBackground(TechCellUi.solid(this,
+                r.lucro >= 0 ? TechCellUi.PALE_GREEN : Color.parseColor("#FFF1F0"), 16));
+
+        TextView h1 = txt("LUCRO BRUTO DAS MERCADORIAS", 11, true);
+        h1.setTextColor(TechCellUi.MUTED);
+        hero.addView(h1);
+
+        TextView h2 = txt(moeda.format(r.lucro), 27, true);
+        h2.setTextColor(r.lucro >= 0 ? TechCellUi.GREEN : TechCellUi.RED);
+        h2.setPadding(0, dp(4), 0, 0);
+        hero.addView(h2);
+
+        TextView h3 = txt("Margem: " + percentual(r.margemPercentual()), 12, true);
+        h3.setTextColor(TechCellUi.NAVY);
+        h3.setPadding(0, dp(5), 0, 0);
+        hero.addView(h3);
+        hero.setOnClickListener(v -> selecionarAba(true));
+        conteudo.addView(hero);
+
+        addKpiRow(
+                cardResumoBox("Total vendido", moeda.format(r.faturamento), TechCellUi.GREEN),
+                cardResumoBox("Custo", moeda.format(r.custo), TechCellUi.TEXT));
+        addKpiRow(
+                cardResumoBox("Itens vendidos", qtd(r.quantidadeProdutos), TechCellUi.BLUE),
+                cardResumoBox("Vendas", String.valueOf(r.quantidadeVendas), TechCellUi.BLUE));
 
         TextView dica = txt(
-                "Toque em qualquer indicador acima para ver exatamente os itens que formaram o valor.",
+                "Toque no lucro acima para abrir o detalhamento dos itens vendidos.",
                 11, false);
-        dica.setTextColor(Color.parseColor("#667085"));
+        dica.setTextColor(TechCellUi.MUTED);
         dica.setPadding(dp(8), dp(8), dp(8), dp(2));
         conteudo.addView(dica);
 
@@ -326,13 +328,14 @@ public class RelatorioVendasProdutosActivity extends Activity {
             String unidade = unidade(p.unidade);
 
             TextView info = txt(
-                    "Quantidade: " + qtd(p.quantidade) + " " + unidade +
-                            "\nCusto: " + moeda.format(p.custo) +
-                            "   •   Vendido: " + moeda.format(p.faturamento) +
-                            "\nLucro: " + moeda.format(p.lucro) +
-                            "   •   Margem: " + percentual(margem),
+                    qtd(p.quantidade) + " " + unidade +
+                            "   •   Vendido " + moeda.format(p.faturamento) +
+                            "\nCusto " + moeda.format(p.custo) +
+                            "   •   Lucro " + moeda.format(p.lucro) +
+                            "   •   " + percentual(margem),
                     12, false);
-            info.setTextColor(Color.parseColor("#667085"));
+            info.setTextColor(TechCellUi.MUTED);
+            info.setPadding(0, dp(4), 0, 0);
             card.addView(info);
 
             conteudo.addView(card);
@@ -414,22 +417,37 @@ public class RelatorioVendasProdutosActivity extends Activity {
         linhaTexto("Vendas com mercadorias", String.valueOf(r.quantidadeVendas));
     }
 
-    private void cardResumoClicavel(String titulo, String valor, String cor) {
-        LinearLayout card = cardBase();
+    private LinearLayout cardResumoBox(String titulo, String valor, int cor) {
+        LinearLayout card = TechCellUi.card(this);
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
 
-        TextView t = txt(titulo, 13, true);
-        t.setTextColor(Color.parseColor(cor));
+        TextView t = txt(titulo, 11, true);
+        t.setTextColor(TechCellUi.MUTED);
         card.addView(t);
 
-        TextView v = txt(valor, 21, true);
-        v.setTextColor(Color.parseColor(cor));
+        TextView v = txt(valor, 17, true);
+        v.setTextColor(cor);
+        v.setPadding(0, dp(3), 0, 0);
         card.addView(v);
+        return card;
+    }
 
-        card.setOnClickListener(x -> {
-            detalhamento = true;
-            carregar();
-        });
-        conteudo.addView(card);
+    private void addKpiRow(LinearLayout a, LinearLayout b) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutParams(TechCellUi.fullCardParams(this, 8));
+
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        ap.setMargins(0,0,dp(4),0);
+        row.addView(a, ap);
+
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        bp.setMargins(dp(4),0,0,0);
+        row.addView(b, bp);
+
+        conteudo.addView(row);
     }
 
     private void secao(String titulo) {

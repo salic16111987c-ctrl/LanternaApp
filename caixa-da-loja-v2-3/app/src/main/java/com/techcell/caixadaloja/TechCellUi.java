@@ -12,7 +12,7 @@ import android.widget.LinearLayout;
 
 public final class TechCellUi {
     public static final int NAVY=Color.parseColor("#0B1F3A"), BLUE=Color.parseColor("#1769C2"),
-            GREEN=Color.parseColor("#07884B"), RED=Color.parseColor("#B42318"),
+            GREEN=Color.parseColor("#07884B"), RED=Color.parseColor("#B42318"), ORANGE=Color.parseColor("#B54708"),
             TEXT=Color.parseColor("#172033"), MUTED=Color.parseColor("#667085"),
             BORDER=Color.parseColor("#DCE2EA"), BG=Color.parseColor("#F5F7FB"),
             PALE_BLUE=Color.parseColor("#EFF6FF"), PALE_GREEN=Color.parseColor("#ECFDF3");
