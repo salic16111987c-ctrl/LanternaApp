@@ -2,11 +2,15 @@ package com.techcell.caixadaloja;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
@@ -16,6 +20,12 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -23,9 +33,14 @@ import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
+import javax.xml.parsers.DocumentBuilderFactory;
+
 public class FinanceiroActivity extends Activity {
+    private static final int REQ_XML_NFE = 4210;
+
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
     private final SimpleDateFormat data = new SimpleDateFormat("dd/MM/yyyy HH:mm", new Locale("pt","BR"));
+
     private GestaoDbHelper db;
     private LinearLayout resumoBox;
     private LinearLayout lista;
@@ -33,6 +48,25 @@ public class FinanceiroActivity extends Activity {
     private boolean periodoMes = false;
     private long inicioAtual;
     private long fimAtual;
+
+    private AlertDialog despesaDialog;
+    private EditText descricaoForm;
+    private EditText favorecidoForm;
+    private EditText favorecidoDocForm;
+    private EditText valorForm;
+    private EditText docNumeroForm;
+    private EditText docSerieForm;
+    private EditText docChaveForm;
+    private EditText docEmitenteForm;
+    private EditText docEmitenteCnpjForm;
+    private Spinner docTipoForm;
+    private LinearLayout docDetalhesBox;
+    private Button importarXmlBtn;
+
+    private String xmlPendente = "";
+    private String xmlUriPendente = "";
+    private long xmlEmissaoPendente;
+    private double xmlValorPendente;
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
 
@@ -90,7 +124,7 @@ public class FinanceiroActivity extends Activity {
         titulo.setPadding(0, dp(16), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas, custos, despesas e resultado • Alpha 20", 14, false);
+        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 21", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
@@ -136,15 +170,12 @@ public class FinanceiroActivity extends Activity {
 
     private void definirPeriodo() {
         Calendar c = Calendar.getInstance();
-        if (periodoMes) {
-            c.set(Calendar.DAY_OF_MONTH, 1);
-        }
+        if (periodoMes) c.set(Calendar.DAY_OF_MONTH, 1);
         c.set(Calendar.HOUR_OF_DAY,0);
         c.set(Calendar.MINUTE,0);
         c.set(Calendar.SECOND,0);
         c.set(Calendar.MILLISECOND,0);
         inicioAtual = c.getTimeInMillis();
-
         if (periodoMes) c.add(Calendar.MONTH,1);
         else c.add(Calendar.DAY_OF_MONTH,1);
         fimAtual = c.getTimeInMillis();
@@ -234,11 +265,20 @@ public class FinanceiroActivity extends Activity {
                     : "OUTRA_SAIDA".equalsIgnoreCase(d.tipo)
                     ? "Outra saída"
                     : "Despesa operacional";
+
+            String doc = rotuloDocumento(d.documentoTipo);
             TextView meta = txt(data.format(new Date(d.dataMillis)) + " • " + tipo +
-                    (d.categoria == null || d.categoria.isEmpty() ? "" : " • " + d.categoria),
+                    (d.categoria == null || d.categoria.isEmpty() ? "" : " • " + d.categoria) +
+                    (doc.isEmpty() ? "" : "\nDocumento: " + doc),
                     12, false);
             meta.setTextColor(Color.parseColor("#667085"));
             card.addView(meta);
+
+            if (d.favorecidoNome != null && !d.favorecidoNome.trim().isEmpty()) {
+                TextView fav = txt("Favorecido: " + d.favorecidoNome.trim(), 12, false);
+                fav.setTextColor(Color.parseColor("#475467"));
+                card.addView(fav);
+            }
 
             if ("CANCELADA".equalsIgnoreCase(d.status)) {
                 TextView st = txt("CANCELADA" +
@@ -266,6 +306,11 @@ public class FinanceiroActivity extends Activity {
     }
 
     private void novaDespesa() {
+        xmlPendente = "";
+        xmlUriPendente = "";
+        xmlEmissaoPendente = 0;
+        xmlValorPendente = 0;
+
         ScrollView sv = new ScrollView(this);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -273,15 +318,15 @@ public class FinanceiroActivity extends Activity {
         sv.addView(box);
 
         TextView aviso = txt(
-                "Escolha corretamente o tipo. Compra para estoque não é descontada novamente " +
-                "do lucro líquido, evitando contar o custo da mercadoria duas vezes.",
+                "Compra para estoque não é descontada novamente do lucro líquido. " +
+                "O documento pode ser um recibo ou uma nota recebida.",
                 12, true);
         aviso.setTextColor(Color.parseColor("#B54708"));
         aviso.setPadding(0,0,0,dp(8));
         box.addView(aviso);
 
-        EditText descricao = campo("Descrição *", InputType.TYPE_CLASS_TEXT);
-        box.addView(descricao);
+        descricaoForm = campo("Descrição *", InputType.TYPE_CLASS_TEXT);
+        box.addView(descricaoForm);
 
         EditText categoria = campo("Categoria (ex.: aluguel, energia, frete)", InputType.TYPE_CLASS_TEXT);
         box.addView(categoria);
@@ -300,61 +345,370 @@ public class FinanceiroActivity extends Activity {
         forma.setAdapter(fa);
         box.addView(forma);
 
-        EditText valor = campo("Valor R$ *",
+        valorForm = campo("Valor R$ *",
                 InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        box.addView(valor);
+        box.addView(valorForm);
+
+        favorecidoForm = campo("Favorecido / fornecedor", InputType.TYPE_CLASS_TEXT);
+        box.addView(favorecidoForm);
+
+        favorecidoDocForm = campo("CPF/CNPJ do favorecido", InputType.TYPE_CLASS_NUMBER);
+        CadastroBrasilUtils.aplicarMascaraDocumento(
+                favorecidoDocForm,
+                () -> CadastroBrasilUtils.apenasDigitos(
+                        favorecidoDocForm.getText().toString()).length() > 11);
+        box.addView(favorecidoDocForm);
+
+        TextView docTitulo = txt("DOCUMENTO DA DESPESA", 13, true);
+        docTitulo.setTextColor(Color.parseColor("#475467"));
+        docTitulo.setPadding(0, dp(14), 0, dp(4));
+        box.addView(docTitulo);
+
+        docTipoForm = new Spinner(this);
+        String[] docs = {
+                "Recibo",
+                "NF-e recebida",
+                "NFC-e / Cupom",
+                "Boleto",
+                "Outro",
+                "Sem documento"
+        };
+        ArrayAdapter<String> da = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, docs);
+        da.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        docTipoForm.setAdapter(da);
+        box.addView(docTipoForm);
+
+        docDetalhesBox = new LinearLayout(this);
+        docDetalhesBox.setOrientation(LinearLayout.VERTICAL);
+        box.addView(docDetalhesBox);
+
+        importarXmlBtn = action("Importar XML da NF-e");
+        importarXmlBtn.setVisibility(View.GONE);
+        importarXmlBtn.setOnClickListener(v -> escolherXmlNfe());
+        docDetalhesBox.addView(importarXmlBtn);
+
+        docNumeroForm = campo("Número do documento / NF-e", InputType.TYPE_CLASS_TEXT);
+        docDetalhesBox.addView(docNumeroForm);
+
+        docSerieForm = campo("Série (quando houver)", InputType.TYPE_CLASS_TEXT);
+        docDetalhesBox.addView(docSerieForm);
+
+        docChaveForm = campo("Chave de acesso da NF-e (44 dígitos)", InputType.TYPE_CLASS_NUMBER);
+        docDetalhesBox.addView(docChaveForm);
+
+        docEmitenteForm = campo("Emitente da nota", InputType.TYPE_CLASS_TEXT);
+        docDetalhesBox.addView(docEmitenteForm);
+
+        docEmitenteCnpjForm = campo("CNPJ do emitente", InputType.TYPE_CLASS_NUMBER);
+        CadastroBrasilUtils.aplicarMascaraDocumento(docEmitenteCnpjForm, () -> true);
+        docDetalhesBox.addView(docEmitenteCnpjForm);
 
         EditText obs = campo("Observação", InputType.TYPE_CLASS_TEXT);
         box.addView(obs);
 
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        docTipoForm.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
+                boolean sem = pos == 5;
+                boolean nfe = pos == 1;
+                docDetalhesBox.setVisibility(sem ? View.GONE : View.VISIBLE);
+                importarXmlBtn.setVisibility(nfe ? View.VISIBLE : View.GONE);
+                docChaveForm.setVisibility(nfe ? View.VISIBLE : View.GONE);
+                docSerieForm.setVisibility(nfe ? View.VISIBLE : View.GONE);
+                docEmitenteForm.setVisibility(nfe ? View.VISIBLE : View.GONE);
+                docEmitenteCnpjForm.setVisibility(nfe ? View.VISIBLE : View.GONE);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        despesaDialog = new AlertDialog.Builder(this)
                 .setTitle("Registrar saída")
                 .setView(sv)
                 .setPositiveButton("Salvar", null)
                 .setNegativeButton("Cancelar", null)
                 .create();
 
-        dialog.setOnShowListener(x -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(v -> {
-                    String desc = descricao.getText().toString().trim();
-                    if (desc.isEmpty()) { descricao.setError("Informe a descrição"); return; }
+        despesaDialog.setOnDismissListener(x -> limparFormularioDocumento());
+        despesaDialog.setOnShowListener(x ->
+                despesaDialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                        .setOnClickListener(v -> {
+                            String desc = descricaoForm.getText().toString().trim();
+                            if (desc.isEmpty()) {
+                                descricaoForm.setError("Informe a descrição");
+                                return;
+                            }
 
-                    double vl = numero(valor.getText().toString());
-                    if (Double.isNaN(vl) || vl <= 0) {
-                        valor.setError("Informe um valor válido");
-                        return;
-                    }
+                            double vl = numero(valorForm.getText().toString());
+                            if (Double.isNaN(vl) || vl <= 0) {
+                                valorForm.setError("Informe um valor válido");
+                                return;
+                            }
 
-                    GestaoDbHelper.Despesa d = new GestaoDbHelper.Despesa();
-                    d.dataMillis = System.currentTimeMillis();
-                    d.descricao = desc;
-                    d.categoria = categoria.getText().toString().trim();
-                    d.tipo = tipo.getSelectedItemPosition() == 1
-                            ? "COMPRA_ESTOQUE"
-                            : tipo.getSelectedItemPosition() == 2
-                            ? "OUTRA_SAIDA" : "OPERACIONAL";
-                    d.formaPagamento = forma.getSelectedItem().toString();
-                    d.valor = vl;
-                    d.observacao = obs.getText().toString().trim();
-                    db.saveDespesa(d);
-                    dialog.dismiss();
-                    carregar();
-                    Toast.makeText(this, "Saída registrada.", Toast.LENGTH_SHORT).show();
-                }));
-        dialog.show();
+                            String favDoc = CadastroBrasilUtils.apenasDigitos(
+                                    favorecidoDocForm.getText().toString());
+                            if (!favDoc.isEmpty()) {
+                                boolean ok = favDoc.length() == 11
+                                        ? CadastroBrasilUtils.cpfValido(favDoc)
+                                        : favDoc.length() == 14 && CadastroBrasilUtils.cnpjValido(favDoc);
+                                if (!ok) {
+                                    favorecidoDocForm.setError("CPF/CNPJ inválido");
+                                    return;
+                                }
+                            }
+
+                            String docTipo = codigoDocumento(docTipoForm.getSelectedItemPosition());
+                            String chave = CadastroBrasilUtils.apenasDigitos(
+                                    docChaveForm.getText().toString());
+                            if ("NFE_RECEBIDA".equals(docTipo) && !chave.isEmpty() && chave.length() != 44) {
+                                docChaveForm.setError("A chave da NF-e deve ter 44 dígitos");
+                                return;
+                            }
+
+                            String emitCnpj = CadastroBrasilUtils.apenasDigitos(
+                                    docEmitenteCnpjForm.getText().toString());
+                            if ("NFE_RECEBIDA".equals(docTipo) && !emitCnpj.isEmpty()
+                                    && !CadastroBrasilUtils.cnpjValido(emitCnpj)) {
+                                docEmitenteCnpjForm.setError("CNPJ do emitente inválido");
+                                return;
+                            }
+
+                            GestaoDbHelper.Despesa d = new GestaoDbHelper.Despesa();
+                            d.dataMillis = System.currentTimeMillis();
+                            d.descricao = desc;
+                            d.categoria = categoria.getText().toString().trim();
+                            d.tipo = tipo.getSelectedItemPosition() == 1
+                                    ? "COMPRA_ESTOQUE"
+                                    : tipo.getSelectedItemPosition() == 2
+                                    ? "OUTRA_SAIDA" : "OPERACIONAL";
+                            d.formaPagamento = forma.getSelectedItem().toString();
+                            d.valor = vl;
+                            d.observacao = obs.getText().toString().trim();
+                            d.favorecidoNome = favorecidoForm.getText().toString().trim();
+                            d.favorecidoDocumento = favDoc;
+                            d.documentoTipo = docTipo;
+                            d.documentoNumero = docNumeroForm.getText().toString().trim();
+                            d.documentoSerie = docSerieForm.getText().toString().trim();
+                            d.documentoChave = chave;
+                            d.documentoEmissaoMillis = xmlEmissaoPendente;
+                            d.documentoEmitenteNome = docEmitenteForm.getText().toString().trim();
+                            d.documentoEmitenteCnpj = emitCnpj;
+                            d.documentoValor = xmlValorPendente > 0 ? xmlValorPendente : vl;
+                            d.documentoXml = xmlPendente;
+                            d.documentoUri = xmlUriPendente;
+
+                            db.saveDespesa(d);
+                            despesaDialog.dismiss();
+                            carregar();
+                            Toast.makeText(this, "Saída registrada.", Toast.LENGTH_SHORT).show();
+                        }));
+        despesaDialog.show();
+    }
+
+    private void escolherXmlNfe() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/xml", "text/xml", "text/plain"});
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        startActivityForResult(i, REQ_XML_NFE);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        super.onActivityResult(requestCode, resultCode, intent);
+        if (requestCode != REQ_XML_NFE || resultCode != RESULT_OK || intent == null) return;
+        Uri uri = intent.getData();
+        if (uri == null) return;
+
+        try {
+            try {
+                getContentResolver().takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) {}
+
+            byte[] bytes = lerTudo(uri);
+            DocumentoNfe x = lerNfe(bytes);
+
+            if (x.chave.isEmpty() && x.numero.isEmpty() && x.emitenteCnpj.isEmpty()) {
+                throw new IllegalArgumentException("O arquivo não parece ser um XML de NF-e.");
+            }
+
+            xmlPendente = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            xmlUriPendente = uri.toString();
+            xmlEmissaoPendente = x.emissaoMillis;
+            xmlValorPendente = x.valor;
+
+            docTipoForm.setSelection(1);
+            docNumeroForm.setText(x.numero);
+            docSerieForm.setText(x.serie);
+            docChaveForm.setText(x.chave);
+            docEmitenteForm.setText(x.emitenteNome);
+            docEmitenteCnpjForm.setText(x.emitenteCnpj);
+
+            if (favorecidoForm.getText().toString().trim().isEmpty()) {
+                favorecidoForm.setText(x.emitenteNome);
+            }
+            if (CadastroBrasilUtils.apenasDigitos(
+                    favorecidoDocForm.getText().toString()).isEmpty()) {
+                favorecidoDocForm.setText(x.emitenteCnpj);
+            }
+            if (x.valor > 0) {
+                valorForm.setText(String.format(Locale.US, "%.2f", x.valor).replace(".", ","));
+            }
+            if (descricaoForm.getText().toString().trim().isEmpty()) {
+                descricaoForm.setText("NF-e " + (x.numero.isEmpty() ? "recebida" : "nº " + x.numero));
+            }
+
+            Toast.makeText(this,
+                    "XML importado. Confira os dados antes de salvar.",
+                    Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this,
+                    "Não foi possível importar o XML: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private byte[] lerTudo(Uri uri) throws Exception {
+        try (InputStream in = getContentResolver().openInputStream(uri);
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            if (in == null) throw new IllegalStateException("Arquivo indisponível.");
+            byte[] buffer = new byte[8192];
+            int n;
+            while ((n = in.read(buffer)) >= 0) out.write(buffer, 0, n);
+            return out.toByteArray();
+        }
+    }
+
+    private DocumentoNfe lerNfe(byte[] bytes) throws Exception {
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+        f.setNamespaceAware(true);
+        try { f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true); } catch (Exception ignored) {}
+        try { f.setFeature("http://xml.org/sax/features/external-general-entities", false); } catch (Exception ignored) {}
+        try { f.setFeature("http://xml.org/sax/features/external-parameter-entities", false); } catch (Exception ignored) {}
+
+        Document doc = f.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(bytes));
+        doc.getDocumentElement().normalize();
+
+        DocumentoNfe x = new DocumentoNfe();
+        Element inf = primeiro(doc, "infNFe");
+        if (inf != null) {
+            String id = inf.getAttribute("Id");
+            if (id != null) x.chave = CadastroBrasilUtils.apenasDigitos(id);
+        }
+
+        Element ide = primeiro(doc, "ide");
+        if (ide != null) {
+            x.numero = texto(ide, "nNF");
+            x.serie = texto(ide, "serie");
+            String dh = texto(ide, "dhEmi");
+            if (dh.isEmpty()) dh = texto(ide, "dEmi");
+            x.emissaoMillis = parseDataXml(dh);
+        }
+
+        Element emit = primeiro(doc, "emit");
+        if (emit != null) {
+            x.emitenteCnpj = CadastroBrasilUtils.apenasDigitos(texto(emit, "CNPJ"));
+            x.emitenteNome = texto(emit, "xNome");
+            if (x.emitenteNome.isEmpty()) x.emitenteNome = texto(emit, "xFant");
+        }
+
+        Element total = primeiro(doc, "ICMSTot");
+        if (total != null) {
+            try { x.valor = Double.parseDouble(texto(total, "vNF").replace(",", ".")); }
+            catch (Exception ignored) {}
+        }
+
+        return x;
+    }
+
+    private Element primeiro(Document doc, String localName) {
+        NodeList n = doc.getElementsByTagNameNS("*", localName);
+        if (n.getLength() == 0) n = doc.getElementsByTagName(localName);
+        return n.getLength() > 0 && n.item(0) instanceof Element ? (Element) n.item(0) : null;
+    }
+
+    private String texto(Element parent, String localName) {
+        NodeList n = parent.getElementsByTagNameNS("*", localName);
+        if (n.getLength() == 0) n = parent.getElementsByTagName(localName);
+        if (n.getLength() == 0 || n.item(0) == null) return "";
+        String s = n.item(0).getTextContent();
+        return s == null ? "" : s.trim();
+    }
+
+    private long parseDataXml(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return 0;
+        String s = raw.trim();
+        try {
+            if (s.length() >= 19) {
+                return new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
+                        .parse(s.substring(0, 19)).getTime();
+            }
+            if (s.length() >= 10) {
+                return new SimpleDateFormat("yyyy-MM-dd", Locale.US)
+                        .parse(s.substring(0, 10)).getTime();
+            }
+        } catch (Exception ignored) {}
+        return 0;
+    }
+
+    private static class DocumentoNfe {
+        String numero = "";
+        String serie = "";
+        String chave = "";
+        String emitenteNome = "";
+        String emitenteCnpj = "";
+        long emissaoMillis;
+        double valor;
     }
 
     private void abrirDespesa(GestaoDbHelper.Despesa d) {
-        String msg = data.format(new Date(d.dataMillis)) +
-                "\nCategoria: " + (d.categoria == null || d.categoria.isEmpty() ? "—" : d.categoria) +
-                "\nPagamento: " + d.formaPagamento +
-                "\nValor: " + moeda.format(d.valor) +
-                (d.observacao == null || d.observacao.isEmpty() ? "" : "\nObservação: " + d.observacao);
+        StringBuilder msg = new StringBuilder();
+        msg.append(data.format(new Date(d.dataMillis)));
+        msg.append("\nCategoria: ")
+                .append(d.categoria == null || d.categoria.isEmpty() ? "—" : d.categoria);
+        msg.append("\nPagamento: ").append(d.formaPagamento);
+        msg.append("\nValor: ").append(moeda.format(d.valor));
+
+        if (d.favorecidoNome != null && !d.favorecidoNome.trim().isEmpty()) {
+            msg.append("\nFavorecido: ").append(d.favorecidoNome.trim());
+        }
+        String favDoc = CadastroBrasilUtils.apenasDigitos(d.favorecidoDocumento);
+        if (!favDoc.isEmpty()) {
+            msg.append("\nCPF/CNPJ: ")
+                    .append(CadastroBrasilUtils.formatarDocumento(favDoc, favDoc.length() > 11));
+        }
+
+        String rotulo = rotuloDocumento(d.documentoTipo);
+        if (!rotulo.isEmpty()) msg.append("\nDocumento: ").append(rotulo);
+        if (d.documentoNumero != null && !d.documentoNumero.trim().isEmpty()) {
+            msg.append("\nNúmero: ").append(d.documentoNumero.trim());
+        }
+        if (d.documentoSerie != null && !d.documentoSerie.trim().isEmpty()) {
+            msg.append("  Série: ").append(d.documentoSerie.trim());
+        }
+        if (d.documentoChave != null && !d.documentoChave.trim().isEmpty()) {
+            msg.append("\nChave NF-e: ").append(d.documentoChave.trim());
+        }
+        if (d.documentoEmissaoMillis > 0) {
+            msg.append("\nEmissão do documento: ")
+                    .append(new SimpleDateFormat("dd/MM/yyyy HH:mm", new Locale("pt","BR"))
+                            .format(new Date(d.documentoEmissaoMillis)));
+        }
+        if (d.documentoXml != null && !d.documentoXml.isEmpty()) {
+            msg.append("\nXML da NF-e: armazenado no lançamento");
+        }
+        if (d.observacao != null && !d.observacao.isEmpty()) {
+            msg.append("\nObservação: ").append(d.observacao);
+        }
 
         new AlertDialog.Builder(this)
                 .setTitle(d.descricao)
-                .setMessage(msg)
-                .setPositiveButton("Fechar", null)
+                .setMessage(msg.toString())
+                .setPositiveButton("Recibo / comprovante", (x,w) -> {
+                    Intent i = new Intent(this, ComprovanteDespesaActivity.class);
+                    i.putExtra("despesa_id", d.id);
+                    startActivity(i);
+                })
+                .setNeutralButton("Fechar", null)
                 .setNegativeButton("Cancelar lançamento", (x,w) -> cancelarDespesa(d))
                 .show();
     }
@@ -379,6 +733,42 @@ public class FinanceiroActivity extends Activity {
                     Toast.makeText(this, "Lançamento cancelado.", Toast.LENGTH_SHORT).show();
                 }));
         dialog.show();
+    }
+
+    private String codigoDocumento(int pos) {
+        switch (pos) {
+            case 0: return "RECIBO";
+            case 1: return "NFE_RECEBIDA";
+            case 2: return "NFCE_CUPOM";
+            case 3: return "BOLETO";
+            case 4: return "OUTRO";
+            default: return "SEM_DOCUMENTO";
+        }
+    }
+
+    private String rotuloDocumento(String tipo) {
+        if (tipo == null || tipo.trim().isEmpty() || "SEM_DOCUMENTO".equalsIgnoreCase(tipo)) return "";
+        if ("RECIBO".equalsIgnoreCase(tipo)) return "Recibo";
+        if ("NFE_RECEBIDA".equalsIgnoreCase(tipo)) return "NF-e recebida";
+        if ("NFCE_CUPOM".equalsIgnoreCase(tipo)) return "NFC-e / Cupom";
+        if ("BOLETO".equalsIgnoreCase(tipo)) return "Boleto";
+        return "Outro";
+    }
+
+    private void limparFormularioDocumento() {
+        despesaDialog = null;
+        descricaoForm = null;
+        favorecidoForm = null;
+        favorecidoDocForm = null;
+        valorForm = null;
+        docNumeroForm = null;
+        docSerieForm = null;
+        docChaveForm = null;
+        docEmitenteForm = null;
+        docEmitenteCnpjForm = null;
+        docTipoForm = null;
+        docDetalhesBox = null;
+        importarXmlBtn = null;
     }
 
     private double numero(String raw) {
