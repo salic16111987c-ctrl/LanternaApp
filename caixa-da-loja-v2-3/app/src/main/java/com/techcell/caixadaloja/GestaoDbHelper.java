@@ -140,6 +140,35 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double lucro;
     }
 
+
+    public static class ResumoProdutosPeriodo {
+        public int quantidadeVendas;
+        public double quantidadeProdutos;
+        public double faturamento;
+        public double custo;
+        public double lucro;
+
+        public double margemPercentual() {
+            return faturamento > 0 ? (lucro / faturamento) * 100.0 : 0.0;
+        }
+    }
+
+    public static class RelatorioItemVendido {
+        public long vendaId;
+        public long dataMillis;
+        public String codigo = "";
+        public String nome = "";
+        public String unidade = "";
+        public double quantidade;
+        public double precoUnitario;
+        public double custoUnitario;
+        public double total;
+        public double descontoRateio;
+        public double totalLiquido;
+        public double custoTotal;
+        public double lucro;
+    }
+
     public static class RelatorioGrupoValor {
         public String rotulo = "";
         public double valor;
@@ -1474,6 +1503,92 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 x.faturamento = c.getDouble(3);
                 x.custo = c.getDouble(4);
                 x.lucro = c.getDouble(5);
+                out.add(x);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
+
+    public ResumoProdutosPeriodo resumoProdutosPeriodo(long inicio, long fim) {
+        ResumoProdutosPeriodo r = new ResumoProdutosPeriodo();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(DISTINCT v.id),COALESCE(SUM(vi.quantidade),0)," +
+                        "COALESCE(SUM(vi.total_liquido),0),COALESCE(SUM(vi.custo_total),0)," +
+                        "COALESCE(SUM(vi.lucro_liquido),0) " +
+                        "FROM venda_itens vi INNER JOIN vendas v ON v.id=vi.venda_id " +
+                        "WHERE v.data_millis>=? AND v.data_millis<? " +
+                        "AND v.status_venda<>'ESTORNADA' " +
+                        "AND UPPER(TRIM(COALESCE(vi.unidade,'')))<>'SERVIÇO'",
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            if (c.moveToFirst()) {
+                r.quantidadeVendas = c.getInt(0);
+                r.quantidadeProdutos = c.getDouble(1);
+                r.faturamento = c.getDouble(2);
+                r.custo = c.getDouble(3);
+                r.lucro = c.getDouble(4);
+            }
+        } finally { c.close(); }
+        return r;
+    }
+
+    public List<RelatorioProduto> produtosVendidosPeriodo(long inicio, long fim) {
+        List<RelatorioProduto> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT vi.nome,COALESCE(vi.unidade,''),COALESCE(SUM(vi.quantidade),0)," +
+                        "COALESCE(SUM(vi.total_liquido),0),COALESCE(SUM(vi.custo_total),0)," +
+                        "COALESCE(SUM(vi.lucro_liquido),0) " +
+                        "FROM venda_itens vi INNER JOIN vendas v ON v.id=vi.venda_id " +
+                        "WHERE v.data_millis>=? AND v.data_millis<? " +
+                        "AND v.status_venda<>'ESTORNADA' " +
+                        "AND UPPER(TRIM(COALESCE(vi.unidade,'')))<>'SERVIÇO' " +
+                        "GROUP BY vi.produto_id,vi.nome,vi.unidade " +
+                        "ORDER BY SUM(vi.total_liquido) DESC,SUM(vi.quantidade) DESC,vi.nome COLLATE NOCASE",
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            while (c.moveToNext()) {
+                RelatorioProduto x = new RelatorioProduto();
+                x.nome = c.getString(0);
+                x.unidade = c.getString(1);
+                x.quantidade = c.getDouble(2);
+                x.faturamento = c.getDouble(3);
+                x.custo = c.getDouble(4);
+                x.lucro = c.getDouble(5);
+                out.add(x);
+            }
+        } finally { c.close(); }
+        return out;
+    }
+
+    public List<RelatorioItemVendido> itensProdutosVendidosPeriodo(long inicio, long fim) {
+        List<RelatorioItemVendido> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT v.id,v.data_millis,COALESCE(vi.codigo,''),vi.nome,COALESCE(vi.unidade,'')," +
+                        "vi.quantidade,vi.preco_unitario,vi.custo_unitario,vi.total,vi.desconto_rateio," +
+                        "vi.total_liquido,vi.custo_total,vi.lucro_liquido " +
+                        "FROM venda_itens vi INNER JOIN vendas v ON v.id=vi.venda_id " +
+                        "WHERE v.data_millis>=? AND v.data_millis<? " +
+                        "AND v.status_venda<>'ESTORNADA' " +
+                        "AND UPPER(TRIM(COALESCE(vi.unidade,'')))<>'SERVIÇO' " +
+                        "ORDER BY v.data_millis DESC,v.id DESC,vi.id DESC",
+                new String[]{String.valueOf(inicio), String.valueOf(fim)});
+        try {
+            while (c.moveToNext()) {
+                RelatorioItemVendido x = new RelatorioItemVendido();
+                x.vendaId = c.getLong(0);
+                x.dataMillis = c.getLong(1);
+                x.codigo = c.getString(2);
+                x.nome = c.getString(3);
+                x.unidade = c.getString(4);
+                x.quantidade = c.getDouble(5);
+                x.precoUnitario = c.getDouble(6);
+                x.custoUnitario = c.getDouble(7);
+                x.total = c.getDouble(8);
+                x.descontoRateio = c.getDouble(9);
+                x.totalLiquido = c.getDouble(10);
+                x.custoTotal = c.getDouble(11);
+                x.lucro = c.getDouble(12);
                 out.add(x);
             }
         } finally { c.close(); }

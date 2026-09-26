@@ -2,6 +2,7 @@ package com.techcell.caixadaloja;
 
 import android.app.Activity;
 import android.app.DatePickerDialog;
+import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -73,9 +74,18 @@ public class RelatoriosActivity extends Activity {
         titulo.setPadding(0, dp(16), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas, resultados, produtos e estoque • Alpha 24", 14, false);
+        TextView sub = txt("Vendas, resultados, produtos e estoque • Alpha 25", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
+
+        Button vendasProdutos = action("Vendas de Produtos  →");
+        vendasProdutos.setTextSize(16);
+        vendasProdutos.setOnClickListener(v ->
+                startActivity(new Intent(this, RelatorioVendasProdutosActivity.class)));
+        LinearLayout.LayoutParams vendasProdutosLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
+        vendasProdutosLp.setMargins(0, dp(14), 0, dp(4));
+        root.addView(vendasProdutos, vendasProdutosLp);
 
         periodoTexto = txt("", 14, true);
         periodoTexto.setTextColor(Color.parseColor("#344054"));

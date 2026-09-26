@@ -34,5 +34,6 @@
         <activity android:name="com.techcell.caixadaloja.PreparacaoFiscalActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.FinanceiroActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.ComprovanteDespesaActivity" android:exported="false" android:screenOrientation="portrait" />\n        <activity android:name="com.techcell.caixadaloja.FornecedoresActivity" android:exported="false" android:screenOrientation="portrait" />\n        <activity android:name="com.techcell.caixadaloja.RelatoriosActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.RelatorioVendasProdutosActivity" android:exported="false" android:screenOrientation="portrait" />
     </application>
 </manifest>
