@@ -12,7 +12,7 @@ import java.util.List;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 9;
+    private static final int DB_VERSION = 10;
 
     public static class Produto {
         public long id;
@@ -105,6 +105,18 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public String formaPagamento = "";
         public double valor;
         public String observacao = "";
+        public String favorecidoNome = "";
+        public String favorecidoDocumento = "";
+        public String documentoTipo = "RECIBO";
+        public String documentoNumero = "";
+        public String documentoSerie = "";
+        public String documentoChave = "";
+        public long documentoEmissaoMillis;
+        public String documentoEmitenteNome = "";
+        public String documentoEmitenteCnpj = "";
+        public double documentoValor;
+        public String documentoXml = "";
+        public String documentoUri = "";
         public String status = "ATIVA";
         public long canceladaEm;
         public String cancelamentoMotivo = "";
@@ -298,6 +310,21 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         if (oldVersion < 9) {
             criarDespesas(db);
         }
+
+        if (oldVersion < 10) {
+            db.execSQL("ALTER TABLE despesas ADD COLUMN favorecido_nome TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN favorecido_documento TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_tipo TEXT NOT NULL DEFAULT 'RECIBO'");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_numero TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_serie TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_chave TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_emissao_millis INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_emitente_nome TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_emitente_cnpj TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_valor REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_xml TEXT NOT NULL DEFAULT ''");
+            db.execSQL("ALTER TABLE despesas ADD COLUMN documento_uri TEXT NOT NULL DEFAULT ''");
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -455,6 +482,18 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "forma_pagamento TEXT NOT NULL DEFAULT ''," +
                 "valor REAL NOT NULL DEFAULT 0," +
                 "observacao TEXT NOT NULL DEFAULT ''," +
+                "favorecido_nome TEXT NOT NULL DEFAULT ''," +
+                "favorecido_documento TEXT NOT NULL DEFAULT ''," +
+                "documento_tipo TEXT NOT NULL DEFAULT 'RECIBO'," +
+                "documento_numero TEXT NOT NULL DEFAULT ''," +
+                "documento_serie TEXT NOT NULL DEFAULT ''," +
+                "documento_chave TEXT NOT NULL DEFAULT ''," +
+                "documento_emissao_millis INTEGER NOT NULL DEFAULT 0," +
+                "documento_emitente_nome TEXT NOT NULL DEFAULT ''," +
+                "documento_emitente_cnpj TEXT NOT NULL DEFAULT ''," +
+                "documento_valor REAL NOT NULL DEFAULT 0," +
+                "documento_xml TEXT NOT NULL DEFAULT ''," +
+                "documento_uri TEXT NOT NULL DEFAULT ''," +
                 "status TEXT NOT NULL DEFAULT 'ATIVA'," +
                 "cancelada_em INTEGER NOT NULL DEFAULT 0," +
                 "cancelamento_motivo TEXT NOT NULL DEFAULT ''," +
@@ -1097,6 +1136,18 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("forma_pagamento", d.formaPagamento == null ? "" : d.formaPagamento.trim());
         v.put("valor", d.valor);
         v.put("observacao", d.observacao == null ? "" : d.observacao.trim());
+        v.put("favorecido_nome", d.favorecidoNome == null ? "" : d.favorecidoNome.trim());
+        v.put("favorecido_documento", d.favorecidoDocumento == null ? "" : d.favorecidoDocumento.trim());
+        v.put("documento_tipo", d.documentoTipo == null ? "RECIBO" : d.documentoTipo.trim());
+        v.put("documento_numero", d.documentoNumero == null ? "" : d.documentoNumero.trim());
+        v.put("documento_serie", d.documentoSerie == null ? "" : d.documentoSerie.trim());
+        v.put("documento_chave", d.documentoChave == null ? "" : d.documentoChave.trim());
+        v.put("documento_emissao_millis", d.documentoEmissaoMillis);
+        v.put("documento_emitente_nome", d.documentoEmitenteNome == null ? "" : d.documentoEmitenteNome.trim());
+        v.put("documento_emitente_cnpj", d.documentoEmitenteCnpj == null ? "" : d.documentoEmitenteCnpj.trim());
+        v.put("documento_valor", d.documentoValor);
+        v.put("documento_xml", d.documentoXml == null ? "" : d.documentoXml);
+        v.put("documento_uri", d.documentoUri == null ? "" : d.documentoUri);
         v.put("status", d.status == null ? "ATIVA" : d.status.trim());
         v.put("cancelada_em", d.canceladaEm);
         v.put("cancelamento_motivo", d.cancelamentoMotivo == null ? "" : d.cancelamentoMotivo.trim());
@@ -1118,7 +1169,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         int max = Math.max(1, Math.min(limite, 500));
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT id,data_millis,descricao,categoria,tipo,forma_pagamento,valor,observacao," +
-                        "status,cancelada_em,cancelamento_motivo FROM despesas " +
+                        "favorecido_nome,favorecido_documento,documento_tipo,documento_numero,documento_serie," +
+                        "documento_chave,documento_emissao_millis,documento_emitente_nome,documento_emitente_cnpj," +
+                        "documento_valor,documento_xml,documento_uri,status,cancelada_em,cancelamento_motivo FROM despesas " +
                         "WHERE data_millis>=? AND data_millis<? ORDER BY data_millis DESC,id DESC LIMIT " + max,
                 new String[]{String.valueOf(inicio), String.valueOf(fim)});
         try {
@@ -1132,13 +1185,63 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 d.formaPagamento = c.getString(5);
                 d.valor = c.getDouble(6);
                 d.observacao = c.getString(7);
-                d.status = c.getString(8);
-                d.canceladaEm = c.getLong(9);
-                d.cancelamentoMotivo = c.getString(10);
+                d.favorecidoNome = c.getString(8);
+                d.favorecidoDocumento = c.getString(9);
+                d.documentoTipo = c.getString(10);
+                d.documentoNumero = c.getString(11);
+                d.documentoSerie = c.getString(12);
+                d.documentoChave = c.getString(13);
+                d.documentoEmissaoMillis = c.getLong(14);
+                d.documentoEmitenteNome = c.getString(15);
+                d.documentoEmitenteCnpj = c.getString(16);
+                d.documentoValor = c.getDouble(17);
+                d.documentoXml = c.getString(18);
+                d.documentoUri = c.getString(19);
+                d.status = c.getString(20);
+                d.canceladaEm = c.getLong(21);
+                d.cancelamentoMotivo = c.getString(22);
                 out.add(d);
             }
         } finally { c.close(); }
         return out;
+    }
+
+    public Despesa getDespesa(long id) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id,data_millis,descricao,categoria,tipo,forma_pagamento,valor,observacao," +
+                        "favorecido_nome,favorecido_documento,documento_tipo,documento_numero,documento_serie," +
+                        "documento_chave,documento_emissao_millis,documento_emitente_nome,documento_emitente_cnpj," +
+                        "documento_valor,documento_xml,documento_uri,status,cancelada_em,cancelamento_motivo " +
+                        "FROM despesas WHERE id=?",
+                new String[]{String.valueOf(id)});
+        try {
+            if (!c.moveToFirst()) return null;
+            Despesa d = new Despesa();
+            d.id = c.getLong(0);
+            d.dataMillis = c.getLong(1);
+            d.descricao = c.getString(2);
+            d.categoria = c.getString(3);
+            d.tipo = c.getString(4);
+            d.formaPagamento = c.getString(5);
+            d.valor = c.getDouble(6);
+            d.observacao = c.getString(7);
+            d.favorecidoNome = c.getString(8);
+            d.favorecidoDocumento = c.getString(9);
+            d.documentoTipo = c.getString(10);
+            d.documentoNumero = c.getString(11);
+            d.documentoSerie = c.getString(12);
+            d.documentoChave = c.getString(13);
+            d.documentoEmissaoMillis = c.getLong(14);
+            d.documentoEmitenteNome = c.getString(15);
+            d.documentoEmitenteCnpj = c.getString(16);
+            d.documentoValor = c.getDouble(17);
+            d.documentoXml = c.getString(18);
+            d.documentoUri = c.getString(19);
+            d.status = c.getString(20);
+            d.canceladaEm = c.getLong(21);
+            d.cancelamentoMotivo = c.getString(22);
+            return d;
+        } finally { c.close(); }
     }
 
     public void cancelarDespesa(long id, String motivo) {
