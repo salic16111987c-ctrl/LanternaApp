@@ -74,12 +74,12 @@ public class GestaoActivity extends Activity {
         title.setPadding(0, dp(18), 0, 0);
         root.addView(title);
 
-        TextView sub = text("Gestão Tech Cell • Alpha 20", 14, false);
+        TextView sub = text("Gestão Tech Cell • Alpha 21", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         TextView safe = text(
-                "ALPHA 20 • BASE LOCAL PRESERVADA\n" +
+                "ALPHA 21 • BASE LOCAL PRESERVADA\n" +
                 "Produtos cadastrados: " + db.count() +
                 "\nAtualizações preservam produtos, vendas, clientes e financeiro.",
                 13, true);
@@ -173,7 +173,7 @@ public class GestaoActivity extends Activity {
         root.addView(smb);
 
         TextView next = text(
-                "Alpha 20: financeiro operacional com despesas, compras de estoque e lucro líquido sem duplicar o custo da mercadoria.",
+                "Alpha 21: financeiro operacional com despesas, compras de estoque e lucro líquido sem duplicar o custo da mercadoria.",
                 13, false);
         next.setTextColor(Color.parseColor("#667085"));
         next.setGravity(Gravity.CENTER);
