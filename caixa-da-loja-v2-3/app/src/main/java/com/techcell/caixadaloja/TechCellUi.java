@@ -9,6 +9,7 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 public final class TechCellUi {
     public static final int NAVY=Color.parseColor("#0B1F3A"), BLUE=Color.parseColor("#1769C2"),
@@ -45,6 +46,12 @@ public final class TechCellUi {
     public static LinearLayout card(Context c){
         LinearLayout card=new LinearLayout(c);card.setOrientation(LinearLayout.VERTICAL);card.setBackground(cardBackground(c));
         card.setPadding(dp(c,14),dp(c,12),dp(c,14),dp(c,12));card.setElevation(dp(c,1));return card;
+    }
+    public static TextView chip(Context c,String text,int textColor,int bgColor){
+        TextView t=new TextView(c);
+        t.setText(text);t.setTextSize(11);t.setTextColor(textColor);t.setTypeface(null,Typeface.BOLD);
+        t.setBackground(solid(c,bgColor,9));t.setPadding(dp(c,8),dp(c,5),dp(c,8),dp(c,5));
+        return t;
     }
     public static LinearLayout.LayoutParams fullCardParams(Context c,int top){
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT);

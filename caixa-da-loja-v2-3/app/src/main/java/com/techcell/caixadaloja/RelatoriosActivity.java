@@ -83,7 +83,7 @@ public class RelatoriosActivity extends Activity {
         titulo.setPadding(0, dp(14), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Visão rápida de resultados • Alpha 28", 13, false);
+        TextView sub = txt("Visão rápida de resultados • Alpha 29", 13, false);
         sub.setTextColor(TechCellUi.MUTED);
         root.addView(sub);
 

@@ -23,6 +23,8 @@ import android.widget.Toast;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -36,6 +38,8 @@ public class ProdutosActivity extends Activity {
     private LinearLayout lista;
     private TextView contador;
     private EditText busca;
+    private Button ordenar;
+    private int ordem = 0;
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -78,46 +82,65 @@ public class ProdutosActivity extends Activity {
         TechCellUi.applyWindowChrome(this);
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.parseColor("#F3F5F9"));
+        scroll.setBackgroundColor(TechCellUi.BG);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(20), dp(16), dp(30));
+        root.setPadding(dp(14), dp(14), dp(14), dp(28));
         scroll.addView(root);
 
         Button voltar = new Button(this);
-        voltar.setText("← Voltar");
-        voltar.setAllCaps(false);
+        voltar.setText("←  Voltar");
+        voltar.setTextSize(14);
         TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
-        root.addView(voltar);
+        root.addView(voltar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
 
-        TextView title = txt("Produtos", 28, true);
-        title.setPadding(0, dp(16), 0, dp(4));
+        TextView title = txt("Produtos", 27, true);
+        title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView info = txt("Cadastro separado da Gestão Tech Cell. O SMB ainda não foi importado.", 13, false);
-        info.setTextColor(Color.parseColor("#667085"));
+        TextView info = txt("Cadastro e controle de mercadorias • Alpha 29", 12, false);
+        info.setTextColor(TechCellUi.MUTED);
         root.addView(info);
 
         Button novo = new Button(this);
-        novo.setText("+ Novo produto");
-        novo.setAllCaps(false);
+        novo.setText("+  Novo produto");
+        novo.setTextSize(16);
         TechCellUi.stylePrimary(this, novo);
-        novo.setTextSize(17);
-        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        np.setMargins(0, dp(16), 0, dp(10));
-        novo.setLayoutParams(np);
         novo.setOnClickListener(v -> abrirFormulario(null));
-        root.addView(novo);
+        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
+        np.setMargins(0, dp(14), 0, dp(10));
+        root.addView(novo, np);
 
-        busca = field("Buscar por nome, código ou código de barras", InputType.TYPE_CLASS_TEXT);
-        root.addView(busca);
+        busca = field("🔎  Buscar por nome, código ou código de barras", InputType.TYPE_CLASS_TEXT);
+        TechCellUi.styleSearch(this, busca);
+        root.addView(busca, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+
+        LinearLayout barraLista = new LinearLayout(this);
+        barraLista.setOrientation(LinearLayout.HORIZONTAL);
+        barraLista.setGravity(Gravity.CENTER_VERTICAL);
+        barraLista.setPadding(0, dp(10), 0, dp(4));
 
         contador = txt("", 13, true);
-        contador.setTextColor(Color.parseColor("#475467"));
-        contador.setPadding(0, dp(8), 0, dp(8));
-        root.addView(contador);
+        contador.setTextColor(TechCellUi.NAVY);
+        barraLista.addView(contador, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        ordenar = new Button(this);
+        ordenar.setText("Ordenar: Nome");
+        ordenar.setTextSize(12);
+        TechCellUi.styleSecondary(this, ordenar);
+        ordenar.setOnClickListener(v -> {
+            ordem = (ordem + 1) % 3;
+            atualizarRotuloOrdenacao();
+            carregar();
+        });
+        barraLista.addView(ordenar, new LinearLayout.LayoutParams(dp(140), dp(40)));
+        root.addView(barraLista);
 
         lista = new LinearLayout(this);
         lista.setOrientation(LinearLayout.VERTICAL);
@@ -130,63 +153,123 @@ public class ProdutosActivity extends Activity {
         });
 
         setContentView(scroll);
+        atualizarRotuloOrdenacao();
         carregar();
     }
 
+    private void atualizarRotuloOrdenacao() {
+        if (ordenar == null) return;
+        ordenar.setText(ordem == 0 ? "Ordenar: Nome"
+                : ordem == 1 ? "Ordenar: Estoque"
+                : "Ordenar: Preço");
+    }
+
     private void carregar() {
-        List<GestaoDbHelper.Produto> produtos = db.list(busca == null ? "" : busca.getText().toString());
+        List<GestaoDbHelper.Produto> produtos =
+                db.list(busca == null ? "" : busca.getText().toString());
+
+        if (ordem == 0) {
+            Collections.sort(produtos, Comparator.comparing(
+                    p -> p.nome == null ? "" : p.nome.toLowerCase(new Locale("pt","BR"))));
+        } else if (ordem == 1) {
+            Collections.sort(produtos, Comparator.comparingDouble(p -> p.estoque));
+        } else {
+            Collections.sort(produtos, (a,b) -> Double.compare(b.precoVenda, a.precoVenda));
+        }
+
         lista.removeAllViews();
         contador.setText(produtos.size() + (produtos.size()==1 ? " produto" : " produtos"));
 
         if (produtos.isEmpty()) {
-            TextView vazio = txt("Nenhum produto cadastrado.", 15, false);
-            vazio.setTextColor(Color.parseColor("#667085"));
+            TextView vazio = txt("Nenhum produto encontrado.", 14, false);
+            vazio.setTextColor(TechCellUi.MUTED);
             vazio.setGravity(Gravity.CENTER);
-            vazio.setPadding(dp(8), dp(30), dp(8), dp(30));
+            vazio.setPadding(dp(8), dp(28), dp(8), dp(28));
             lista.addView(vazio);
             return;
         }
 
         for (GestaoDbHelper.Produto p : produtos) {
-            LinearLayout card = new LinearLayout(this);
-            card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackground(TechCellUi.cardBackground(this));
-            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            LinearLayout card = TechCellUi.card(this);
+            card.setPadding(dp(12), dp(11), dp(10), dp(11));
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             cp.setMargins(0, dp(5), 0, dp(5));
             card.setLayoutParams(cp);
 
+            LinearLayout topo = new LinearLayout(this);
+            topo.setOrientation(LinearLayout.HORIZONTAL);
+            topo.setGravity(Gravity.CENTER_VERTICAL);
+
+            String inicial = p.nome == null || p.nome.trim().isEmpty()
+                    ? "P" : p.nome.trim().substring(0,1).toUpperCase(new Locale("pt","BR"));
+            TextView avatar = txt(inicial, 18, true);
+            avatar.setTextColor(TechCellUi.BLUE);
+            avatar.setGravity(Gravity.CENTER);
+            avatar.setBackground(TechCellUi.solid(this, TechCellUi.PALE_BLUE, 12));
+            topo.addView(avatar, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+            LinearLayout dados = new LinearLayout(this);
+            dados.setOrientation(LinearLayout.VERTICAL);
+            dados.setPadding(dp(10),0,dp(6),0);
+
             String cab = (p.codigo == null || p.codigo.isEmpty() ? "" : p.codigo + " • ") + p.nome;
-            card.addView(txt(cab, 17, true));
+            TextView nome = txt(cab, 15, true);
+            dados.addView(nome);
 
             String un = unidadeExibicao(p.unidade);
-            TextView linha = txt(
-                    "Custo: " + moeda.format(p.custo) +
-                    "   Venda: " + moeda.format(p.precoVenda) +
-                    "\nLucro/un.: " + moeda.format(p.lucroUnitario()) +
-                    "   Lucro %: " + fmtPct(p.lucroPercentualSobreCusto()) +
-                    "\nEstoque: " + fmtQtd(p.estoque) + " " + un,
-                    14, false);
-            linha.setTextColor(Color.parseColor("#344054"));
-            linha.setPadding(0, dp(5), 0, 0);
-            card.addView(linha);
+            TextView linha1 = txt(
+                    "Custo " + moeda.format(p.custo) +
+                            "   •   Venda " + moeda.format(p.precoVenda),
+                    12, false);
+            linha1.setTextColor(TechCellUi.MUTED);
+            linha1.setPadding(0,dp(3),0,0);
+            dados.addView(linha1);
 
-            TextView fiscalStatus = txt(
-                    p.fiscalMinimoPreenchido() ? "Fiscal: dados mínimos preenchidos" : "Fiscal: cadastro pendente",
-                    12, true);
-            fiscalStatus.setTextColor(Color.parseColor(
-                    p.fiscalMinimoPreenchido() ? "#176240" : "#B54708"));
-            fiscalStatus.setPadding(0, dp(5), 0, 0);
-            card.addView(fiscalStatus);
+            TextView linha2 = txt(
+                    "Lucro/un. " + moeda.format(p.lucroUnitario()) +
+                            " (" + fmtPct(p.lucroPercentualSobreCusto()) + ")" +
+                            "   •   Estoque " + fmtQtd(p.estoque) + " " + un,
+                    12, false);
+            linha2.setTextColor(Color.parseColor("#475467"));
+            linha2.setPadding(0,dp(2),0,0);
+            dados.addView(linha2);
+
+            topo.addView(dados, new LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+            TextView seta = txt("›", 26, true);
+            seta.setTextColor(TechCellUi.NAVY);
+            topo.addView(seta);
+
+            card.addView(topo);
+
+            LinearLayout chips = new LinearLayout(this);
+            chips.setOrientation(LinearLayout.HORIZONTAL);
+            chips.setPadding(dp(54), dp(7), 0, 0);
+
+            TextView fiscal = TechCellUi.chip(
+                    this,
+                    p.fiscalMinimoPreenchido() ? "✓ Fiscal OK" : "▧ Fiscal pendente",
+                    p.fiscalMinimoPreenchido() ? TechCellUi.GREEN : TechCellUi.ORANGE,
+                    p.fiscalMinimoPreenchido()
+                            ? Color.parseColor("#EAF8F0")
+                            : Color.parseColor("#FFF4E5"));
+            chips.addView(fiscal);
 
             if (p.estoque <= p.estoqueMinimo && p.estoqueMinimo > 0) {
-                TextView baixo = txt("⚠ Estoque baixo — mínimo: " + fmtQtd(p.estoqueMinimo) + " " + un, 13, true);
-                baixo.setTextColor(Color.parseColor("#B42318"));
-                baixo.setPadding(0, dp(5), 0, 0);
-                card.addView(baixo);
+                TextView baixo = TechCellUi.chip(
+                        this,
+                        "⚠ Estoque baixo",
+                        TechCellUi.RED,
+                        Color.parseColor("#FFF1F0"));
+                LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                blp.setMargins(dp(6),0,0,0);
+                chips.addView(baixo, blp);
             }
 
+            card.addView(chips);
             card.setOnClickListener(v -> abrirFormulario(p));
             lista.addView(card);
         }

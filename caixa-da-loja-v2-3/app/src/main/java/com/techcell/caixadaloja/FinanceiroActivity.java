@@ -49,6 +49,13 @@ public class FinanceiroActivity extends Activity {
     private TextView periodoTexto;
     private Button abaResumoBtn;
     private Button abaSaidasBtn;
+    private Button hojeBtn;
+    private Button mesBtn;
+    private Button mesAnteriorBtn;
+    private Button anoAtualBtn;
+    private Button anoAnteriorBtn;
+    private Button personalizadoBtn;
+    private int periodoAtivo = 1;
     private Button novaDespesaBtn;
     private TextView saidasTitulo;
     private boolean mostrarSaidas;
@@ -116,101 +123,99 @@ public class FinanceiroActivity extends Activity {
 
     private void montar() {
         TechCellUi.applyWindowChrome(this);
+
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.parseColor("#F4F6FA"));
+        scroll.setBackgroundColor(TechCellUi.BG);
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(30));
+        root.setPadding(dp(14), dp(14), dp(14), dp(36));
         scroll.addView(root);
 
-        Button voltar = action("← Voltar");
+        Button voltar = action("←  Voltar");
+        voltar.setTextSize(14);
         TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
-        root.addView(voltar);
+        root.addView(voltar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
 
-        TextView titulo = txt("Financeiro", 28, true);
-        titulo.setPadding(0, dp(16), 0, 0);
+        TextView titulo = txt("Financeiro", 27, true);
+        titulo.setPadding(0, dp(14), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 28", 14, false);
-        sub.setTextColor(Color.parseColor("#667085"));
+        TextView sub = txt("Vendas, custos, despesas e documentos • Alpha 29", 12, false);
+        sub.setTextColor(TechCellUi.MUTED);
         root.addView(sub);
 
         LinearLayout filtros1 = new LinearLayout(this);
         filtros1.setOrientation(LinearLayout.HORIZONTAL);
-        filtros1.setPadding(0, dp(14), 0, 0);
+        filtros1.setPadding(0, dp(12), 0, 0);
 
-        Button hojeBtn = action("Hoje");
-        TechCellUi.styleFilter(this, hojeBtn);
+        hojeBtn = action("Hoje");
         hojeBtn.setOnClickListener(v -> periodoHoje());
-        filtros1.addView(hojeBtn, new LinearLayout.LayoutParams(0, dp(50), 1));
+        filtros1.addView(hojeBtn, new LinearLayout.LayoutParams(0, dp(46), 1));
 
-        Button mesBtn = action("Este mês");
-        TechCellUi.styleFilter(this, mesBtn);
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0, dp(50), 1);
-        mp.setMargins(dp(8),0,0,0);
+        mesBtn = action("Este mês");
         mesBtn.setOnClickListener(v -> periodoMesAtual());
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0, dp(46), 1);
+        mp.setMargins(dp(6),0,0,0);
         filtros1.addView(mesBtn, mp);
         root.addView(filtros1);
 
         LinearLayout filtros2 = new LinearLayout(this);
         filtros2.setOrientation(LinearLayout.HORIZONTAL);
-        filtros2.setPadding(0, dp(8), 0, 0);
+        filtros2.setPadding(0, dp(6), 0, 0);
 
-        Button mesAnterior = action("Mês anterior");
-        TechCellUi.styleFilter(this, mesAnterior);
-        mesAnterior.setOnClickListener(v -> periodoMesAnterior());
-        filtros2.addView(mesAnterior, new LinearLayout.LayoutParams(0, dp(50), 1));
+        mesAnteriorBtn = action("Mês anterior");
+        mesAnteriorBtn.setOnClickListener(v -> periodoMesAnterior());
+        filtros2.addView(mesAnteriorBtn, new LinearLayout.LayoutParams(0, dp(46), 1));
 
-        Button anoAtual = action("Este ano");
-        TechCellUi.styleFilter(this, anoAtual);
-        LinearLayout.LayoutParams aa = new LinearLayout.LayoutParams(0, dp(50), 1);
-        aa.setMargins(dp(8),0,0,0);
-        anoAtual.setOnClickListener(v -> periodoAnoAtual());
-        filtros2.addView(anoAtual, aa);
+        anoAtualBtn = action("Este ano");
+        anoAtualBtn.setOnClickListener(v -> periodoAnoAtual());
+        LinearLayout.LayoutParams aa = new LinearLayout.LayoutParams(0, dp(46), 1);
+        aa.setMargins(dp(6),0,0,0);
+        filtros2.addView(anoAtualBtn, aa);
         root.addView(filtros2);
 
         LinearLayout filtros3 = new LinearLayout(this);
         filtros3.setOrientation(LinearLayout.HORIZONTAL);
-        filtros3.setPadding(0, dp(8), 0, 0);
+        filtros3.setPadding(0, dp(6), 0, 0);
 
-        Button anoAnterior = action("Ano anterior");
-        TechCellUi.styleFilter(this, anoAnterior);
-        anoAnterior.setOnClickListener(v -> periodoAnoAnterior());
-        filtros3.addView(anoAnterior, new LinearLayout.LayoutParams(0, dp(50), 1));
+        anoAnteriorBtn = action("Ano anterior");
+        anoAnteriorBtn.setOnClickListener(v -> periodoAnoAnterior());
+        filtros3.addView(anoAnteriorBtn, new LinearLayout.LayoutParams(0, dp(46), 1));
 
-        Button personalizado = action("Período...");
-        TechCellUi.styleFilter(this, personalizado);
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, dp(50), 1);
-        pp.setMargins(dp(8),0,0,0);
-        personalizado.setOnClickListener(v -> escolherPeriodo());
-        filtros3.addView(personalizado, pp);
+        personalizadoBtn = action("Período...");
+        personalizadoBtn.setOnClickListener(v -> escolherPeriodo());
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, dp(46), 1);
+        pp.setMargins(dp(6),0,0,0);
+        filtros3.addView(personalizadoBtn, pp);
         root.addView(filtros3);
 
-        periodoTexto = txt("", 14, true);
+        periodoTexto = txt("", 13, true);
         periodoTexto.setTextColor(TechCellUi.NAVY);
         periodoTexto.setBackground(TechCellUi.pillBackground(this));
-        periodoTexto.setPadding(dp(12), dp(10), dp(12), dp(10));
-        root.addView(periodoTexto);
+        periodoTexto.setPadding(dp(12), dp(9), dp(12), dp(9));
+        root.addView(periodoTexto, TechCellUi.fullCardParams(this, 6));
 
         LinearLayout abas = new LinearLayout(this);
         abas.setOrientation(LinearLayout.HORIZONTAL);
-        abas.setPadding(0, dp(10), 0, 0);
+        abas.setPadding(0, dp(8), 0, 0);
 
         abaResumoBtn = action("Resumo");
         abaResumoBtn.setOnClickListener(v -> {
             mostrarSaidas = false;
             carregar();
         });
-        abas.addView(abaResumoBtn, new LinearLayout.LayoutParams(0, dp(48), 1));
+        abas.addView(abaResumoBtn, new LinearLayout.LayoutParams(0, dp(46), 1));
 
         abaSaidasBtn = action("Saídas / despesas");
         abaSaidasBtn.setOnClickListener(v -> {
             mostrarSaidas = true;
             carregar();
         });
-        LinearLayout.LayoutParams asp = new LinearLayout.LayoutParams(0, dp(48), 1);
-        asp.setMargins(dp(8),0,0,0);
+        LinearLayout.LayoutParams asp = new LinearLayout.LayoutParams(0, dp(46), 1);
+        asp.setMargins(dp(6),0,0,0);
         abas.addView(abaSaidasBtn, asp);
         root.addView(abas);
 
@@ -220,15 +225,14 @@ public class FinanceiroActivity extends Activity {
 
         novaDespesaBtn = action("+ Registrar saída / despesa");
         TechCellUi.stylePrimary(this, novaDespesaBtn);
-        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(56));
-        np.setMargins(0, dp(14), 0, dp(8));
-        novaDespesaBtn.setLayoutParams(np);
         novaDespesaBtn.setOnClickListener(v -> novaDespesa());
-        root.addView(novaDespesaBtn);
+        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+        np.setMargins(0, dp(12), 0, dp(6));
+        root.addView(novaDespesaBtn, np);
 
-        saidasTitulo = txt("Saídas registradas", 19, true);
-        saidasTitulo.setPadding(0, dp(12), 0, dp(4));
+        saidasTitulo = txt("Saídas registradas", 17, true);
+        saidasTitulo.setPadding(0, dp(10), 0, dp(4));
         root.addView(saidasTitulo);
 
         lista = new LinearLayout(this);
@@ -247,6 +251,7 @@ public class FinanceiroActivity extends Activity {
     }
 
     private void periodoHoje() {
+        periodoAtivo = 0;
         Calendar c = Calendar.getInstance();
         zerarHora(c);
         inicioAtual = c.getTimeInMillis();
@@ -256,6 +261,7 @@ public class FinanceiroActivity extends Activity {
     }
 
     private void periodoMesAtual() {
+        periodoAtivo = 1;
         Calendar c = Calendar.getInstance();
         c.set(Calendar.DAY_OF_MONTH, 1);
         zerarHora(c);
@@ -266,6 +272,7 @@ public class FinanceiroActivity extends Activity {
     }
 
     private void periodoMesAnterior() {
+        periodoAtivo = 2;
         Calendar fim = Calendar.getInstance();
         fim.set(Calendar.DAY_OF_MONTH, 1);
         zerarHora(fim);
@@ -278,6 +285,7 @@ public class FinanceiroActivity extends Activity {
     }
 
     private void periodoAnoAtual() {
+        periodoAtivo = 3;
         Calendar c = Calendar.getInstance();
         c.set(Calendar.MONTH, Calendar.JANUARY);
         c.set(Calendar.DAY_OF_MONTH, 1);
@@ -289,6 +297,7 @@ public class FinanceiroActivity extends Activity {
     }
 
     private void periodoAnoAnterior() {
+        periodoAtivo = 4;
         Calendar fim = Calendar.getInstance();
         fim.set(Calendar.MONTH, Calendar.JANUARY);
         fim.set(Calendar.DAY_OF_MONTH, 1);
@@ -327,6 +336,7 @@ public class FinanceiroActivity extends Activity {
                     escolhidoFim.add(Calendar.DAY_OF_MONTH, 1);
                 }
 
+                periodoAtivo = 5;
                 inicioAtual = escolhidoIni.getTimeInMillis();
                 fimAtual = escolhidoFim.getTimeInMillis();
                 carregar();
@@ -345,6 +355,7 @@ public class FinanceiroActivity extends Activity {
                 dataCurta.format(new Date(inicioAtual)) + " a " +
                 dataCurta.format(new Date(fimInclusivo)));
 
+        atualizarFiltrosPeriodo();
         GestaoDbHelper.ResumoFinanceiro r = db.resumoFinanceiro(inicioAtual, fimAtual);
 
         resumoBox.removeAllViews();
@@ -400,15 +411,20 @@ public class FinanceiroActivity extends Activity {
 
         LinearLayout recebimentos = TechCellUi.card(this);
         recebimentos.setLayoutParams(TechCellUi.fullCardParams(this, 8));
+
         TextView recebTitulo = txt("RECEBIMENTOS", 11, true);
         recebTitulo.setTextColor(TechCellUi.MUTED);
         recebimentos.addView(recebTitulo);
-        TextView formas = txt(
-                "Dinheiro " + moeda.format(r.vendas.dinheiro) +
-                "   •   PIX " + moeda.format(r.vendas.pix) +
-                "   •   Cartão " + moeda.format(r.vendas.cartao),
-                13, true);
-        formas.setPadding(0, dp(5), 0, 0);
+
+        LinearLayout formas = new LinearLayout(this);
+        formas.setOrientation(LinearLayout.HORIZONTAL);
+        formas.setPadding(0, dp(7), 0, 0);
+        formas.addView(recebimentoItem("Dinheiro", moeda.format(r.vendas.dinheiro), TechCellUi.GREEN),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        formas.addView(recebimentoItem("PIX", moeda.format(r.vendas.pix), TechCellUi.BLUE),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        formas.addView(recebimentoItem("Cartão", moeda.format(r.vendas.cartao), TechCellUi.NAVY),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         recebimentos.addView(formas);
         resumoBox.addView(recebimentos);
 
@@ -481,6 +497,34 @@ public class FinanceiroActivity extends Activity {
             }
             lista.addView(card);
         }
+    }
+
+    private void atualizarFiltrosPeriodo() {
+        Button[] botoes = {
+                hojeBtn, mesBtn, mesAnteriorBtn,
+                anoAtualBtn, anoAnteriorBtn, personalizadoBtn
+        };
+        for (int i=0; i<botoes.length; i++) {
+            if (botoes[i] == null) continue;
+            if (i == periodoAtivo) TechCellUi.stylePrimary(this, botoes[i]);
+            else TechCellUi.styleFilter(this, botoes[i]);
+        }
+    }
+
+    private LinearLayout recebimentoItem(String titulo, String valor, int cor) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(4), dp(2), dp(4), dp(2));
+
+        TextView t = txt(titulo, 10, false);
+        t.setTextColor(TechCellUi.MUTED);
+        box.addView(t);
+
+        TextView v = txt(valor, 12, true);
+        v.setTextColor(cor);
+        v.setPadding(0, dp(2), 0, 0);
+        box.addView(v);
+        return box;
     }
 
     private void atualizarAbasFinanceiro() {
