@@ -61,6 +61,7 @@ public class EstoqueActivity extends Activity {
         Button voltar = new Button(this);
         voltar.setText("← Voltar");
         voltar.setAllCaps(false);
+        TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
         root.addView(voltar);
 
@@ -103,7 +104,7 @@ public class EstoqueActivity extends Activity {
         for (GestaoDbHelper.Produto p : ps) {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackgroundColor(Color.WHITE);
+            card.setBackground(TechCellUi.cardBackground(this));
             card.setPadding(dp(14), dp(10), dp(14), dp(10));
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);

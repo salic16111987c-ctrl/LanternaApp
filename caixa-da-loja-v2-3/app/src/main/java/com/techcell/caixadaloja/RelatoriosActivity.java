@@ -58,6 +58,7 @@ public class RelatoriosActivity extends Activity {
     }
 
     private void montar() {
+        TechCellUi.applyWindowChrome(this);
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#F4F6FA"));
 
@@ -67,6 +68,7 @@ public class RelatoriosActivity extends Activity {
         scroll.addView(root);
 
         Button voltar = action("← Voltar");
+        TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
         root.addView(voltar);
 
@@ -74,11 +76,12 @@ public class RelatoriosActivity extends Activity {
         titulo.setPadding(0, dp(16), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas, resultados, produtos e estoque • Alpha 26", 14, false);
+        TextView sub = txt("Vendas, resultados, produtos e estoque • Alpha 27", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         Button vendasProdutos = action("Vendas de Produtos  →");
+        TechCellUi.stylePrimary(this, vendasProdutos);
         vendasProdutos.setTextSize(16);
         vendasProdutos.setOnClickListener(v ->
                 startActivity(new Intent(this, RelatorioVendasProdutosActivity.class)));
@@ -88,18 +91,21 @@ public class RelatoriosActivity extends Activity {
         root.addView(vendasProdutos, vendasProdutosLp);
 
         periodoTexto = txt("", 14, true);
-        periodoTexto.setTextColor(Color.parseColor("#344054"));
-        periodoTexto.setPadding(0, dp(12), 0, dp(6));
+        periodoTexto.setTextColor(TechCellUi.NAVY);
+        periodoTexto.setBackground(TechCellUi.pillBackground(this));
+        periodoTexto.setPadding(dp(12), dp(10), dp(12), dp(10));
         root.addView(periodoTexto);
 
         LinearLayout filtros1 = new LinearLayout(this);
         filtros1.setOrientation(LinearLayout.HORIZONTAL);
 
         Button hoje = action("Hoje");
+        TechCellUi.styleFilter(this, hoje);
         hoje.setOnClickListener(v -> periodoHoje());
         filtros1.addView(hoje, new LinearLayout.LayoutParams(0, dp(50), 1));
 
         Button mes = action("Este mês");
+        TechCellUi.styleFilter(this, mes);
         LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0, dp(50), 1);
         mp.setMargins(dp(8), 0, 0, 0);
         mes.setLayoutParams(mp);
@@ -116,10 +122,12 @@ public class RelatoriosActivity extends Activity {
         filtros2.setLayoutParams(f2p);
 
         Button ultimos30 = action("Últimos 30 dias");
+        TechCellUi.styleFilter(this, ultimos30);
         ultimos30.setOnClickListener(v -> periodoUltimos30());
         filtros2.addView(ultimos30, new LinearLayout.LayoutParams(0, dp(50), 1));
 
         Button personalizado = action("Período...");
+        TechCellUi.styleFilter(this, personalizado);
         LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, dp(50), 1);
         pp.setMargins(dp(8),0,0,0);
         personalizado.setLayoutParams(pp);
@@ -326,7 +334,7 @@ public class RelatoriosActivity extends Activity {
     private void cardResumo(String titulo, String valor, String cor) {
         TextView t = txt(titulo + "\n" + valor, 15, true);
         t.setTextColor(Color.parseColor(cor));
-        t.setBackgroundColor(Color.WHITE);
+        t.setBackground(TechCellUi.cardBackground(this));
         t.setPadding(dp(14), dp(11), dp(14), dp(11));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -354,7 +362,7 @@ public class RelatoriosActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(11), dp(14), dp(11));
-        card.setBackgroundColor(Color.WHITE);
+        card.setBackground(TechCellUi.cardBackground(this));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         p.setMargins(0, dp(4), 0, dp(4));

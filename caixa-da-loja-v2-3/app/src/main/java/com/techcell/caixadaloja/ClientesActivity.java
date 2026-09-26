@@ -50,6 +50,7 @@ public class ClientesActivity extends Activity {
     }
 
     private void montar() {
+        TechCellUi.applyWindowChrome(this);
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#F4F6FA"));
 
@@ -61,6 +62,7 @@ public class ClientesActivity extends Activity {
         Button voltar = new Button(this);
         voltar.setText("←  Voltar");
         voltar.setAllCaps(false);
+        TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
         root.addView(voltar);
 
@@ -68,15 +70,14 @@ public class ClientesActivity extends Activity {
         title.setPadding(0, dp(18), 0, dp(2));
         root.addView(title);
 
-        TextView sub = txt("Pessoa Física e Pessoa Jurídica • Alpha 14", 14, false);
+        TextView sub = txt("Pessoa Física e Pessoa Jurídica • Alpha 27", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
 
         Button novo = new Button(this);
         novo.setText("+  NOVO CLIENTE");
         novo.setAllCaps(false);
-        novo.setTextColor(Color.WHITE);
-        novo.setBackgroundColor(Color.parseColor("#175CD3"));
+        TechCellUi.stylePrimary(this, novo);
         LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
         np.setMargins(0, dp(16), 0, dp(10));
@@ -87,6 +88,7 @@ public class ClientesActivity extends Activity {
         busca = new EditText(this);
         busca.setHint("Buscar por nome, CPF ou CNPJ");
         busca.setSingleLine(true);
+        TechCellUi.styleSearch(this, busca);
         busca.setTextSize(16);
         root.addView(busca, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
@@ -126,7 +128,7 @@ public class ClientesActivity extends Activity {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(14), dp(12), dp(14), dp(12));
-            card.setBackgroundColor(Color.WHITE);
+            card.setBackground(TechCellUi.cardBackground(this));
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             cp.setMargins(0, dp(8), 0, 0);
@@ -150,12 +152,14 @@ public class ClientesActivity extends Activity {
             Button editar = new Button(this);
             editar.setText("Editar");
             editar.setAllCaps(false);
+            TechCellUi.styleSecondary(this, editar);
             editar.setOnClickListener(v -> editar(c));
             botoes.addView(editar, new LinearLayout.LayoutParams(0, dp(46), 1));
 
             Button excluir = new Button(this);
             excluir.setText("Excluir");
             excluir.setAllCaps(false);
+            TechCellUi.styleDanger(this, excluir);
             excluir.setTextColor(Color.parseColor("#B42318"));
             excluir.setOnClickListener(v -> confirmarExcluir(c));
             botoes.addView(excluir, new LinearLayout.LayoutParams(0, dp(46), 1));

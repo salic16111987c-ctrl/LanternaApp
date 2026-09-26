@@ -75,6 +75,7 @@ public class ProdutosActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         db = new GestaoDbHelper(this);
+        TechCellUi.applyWindowChrome(this);
 
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#F3F5F9"));
@@ -86,6 +87,7 @@ public class ProdutosActivity extends Activity {
         Button voltar = new Button(this);
         voltar.setText("← Voltar");
         voltar.setAllCaps(false);
+        TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
         root.addView(voltar);
 
@@ -100,6 +102,7 @@ public class ProdutosActivity extends Activity {
         Button novo = new Button(this);
         novo.setText("+ Novo produto");
         novo.setAllCaps(false);
+        TechCellUi.stylePrimary(this, novo);
         novo.setTextSize(17);
         LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -147,7 +150,7 @@ public class ProdutosActivity extends Activity {
         for (GestaoDbHelper.Produto p : produtos) {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackgroundColor(Color.WHITE);
+            card.setBackground(TechCellUi.cardBackground(this));
             card.setPadding(dp(14), dp(12), dp(14), dp(12));
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);

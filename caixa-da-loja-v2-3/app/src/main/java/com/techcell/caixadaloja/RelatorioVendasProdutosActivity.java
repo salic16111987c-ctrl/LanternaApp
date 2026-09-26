@@ -64,6 +64,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
     }
 
     private void montar() {
+        TechCellUi.applyWindowChrome(this);
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#F4F6FA"));
 
@@ -73,6 +74,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
         scroll.addView(root);
 
         Button voltar = action("← Relatórios");
+        TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
         root.addView(voltar);
 
@@ -81,7 +83,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
         root.addView(titulo);
 
         TextView sub = txt(
-                "Mercadorias vendidas, custo e lucratividade • Alpha 26",
+                "Mercadorias vendidas, custo e lucratividade • Alpha 27",
                 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);
@@ -94,17 +96,20 @@ public class RelatorioVendasProdutosActivity extends Activity {
         root.addView(aviso);
 
         periodoTexto = txt("", 14, true);
-        periodoTexto.setTextColor(Color.parseColor("#344054"));
-        periodoTexto.setPadding(0, dp(4), 0, dp(6));
+        periodoTexto.setTextColor(TechCellUi.NAVY);
+        periodoTexto.setBackground(TechCellUi.pillBackground(this));
+        periodoTexto.setPadding(dp(12), dp(10), dp(12), dp(10));
         root.addView(periodoTexto);
 
         LinearLayout f1 = new LinearLayout(this);
         f1.setOrientation(LinearLayout.HORIZONTAL);
         Button hoje = action("Hoje");
+        TechCellUi.styleFilter(this, hoje);
         hoje.setOnClickListener(v -> periodoHoje());
         f1.addView(hoje, new LinearLayout.LayoutParams(0, dp(50), 1));
 
         Button mes = action("Este mês");
+        TechCellUi.styleFilter(this, mes);
         LinearLayout.LayoutParams mesLp = new LinearLayout.LayoutParams(0, dp(50), 1);
         mesLp.setMargins(dp(8), 0, 0, 0);
         mes.setOnClickListener(v -> periodoMesAtual());
@@ -119,10 +124,12 @@ public class RelatorioVendasProdutosActivity extends Activity {
         f2.setLayoutParams(f2Lp);
 
         Button mesAnterior = action("Mês anterior");
+        TechCellUi.styleFilter(this, mesAnterior);
         mesAnterior.setOnClickListener(v -> periodoMesAnterior());
         f2.addView(mesAnterior, new LinearLayout.LayoutParams(0, dp(50), 1));
 
         Button ano = action("Este ano");
+        TechCellUi.styleFilter(this, ano);
         LinearLayout.LayoutParams anoLp = new LinearLayout.LayoutParams(0, dp(50), 1);
         anoLp.setMargins(dp(8), 0, 0, 0);
         ano.setOnClickListener(v -> periodoAnoAtual());
@@ -130,6 +137,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
         root.addView(f2);
 
         Button personalizado = action("Escolher período...");
+        TechCellUi.styleFilter(this, personalizado);
         personalizado.setOnClickListener(v -> escolherPeriodo());
         LinearLayout.LayoutParams perLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
@@ -140,10 +148,12 @@ public class RelatorioVendasProdutosActivity extends Activity {
         abas.setOrientation(LinearLayout.HORIZONTAL);
 
         abaResumo = action("Resumo");
+        TechCellUi.styleSecondary(this, abaResumo);
         abaResumo.setOnClickListener(v -> selecionarAba(false));
         abas.addView(abaResumo, new LinearLayout.LayoutParams(0, dp(50), 1));
 
         abaDetalhamento = action("Detalhamento");
+        TechCellUi.styleSecondary(this, abaDetalhamento);
         LinearLayout.LayoutParams detLp = new LinearLayout.LayoutParams(0, dp(50), 1);
         detLp.setMargins(dp(8), 0, 0, 0);
         abaDetalhamento.setOnClickListener(v -> selecionarAba(true));
@@ -453,7 +463,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(11), dp(14), dp(11));
-        card.setBackgroundColor(Color.WHITE);
+        card.setBackground(TechCellUi.cardBackground(this));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);

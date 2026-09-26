@@ -3,7 +3,6 @@ package com.techcell.caixadaloja;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -12,176 +11,51 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import java.text.NumberFormat;
 import java.util.Locale;
 
 public class GestaoActivity extends Activity {
-    private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
-    private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
-
-    private TextView text(String value, int size, boolean bold) {
-        TextView t = new TextView(this);
-        t.setText(value);
-        t.setTextSize(size);
-        t.setTextColor(Color.parseColor("#101828"));
-        if (bold) t.setTypeface(null, android.graphics.Typeface.BOLD);
-        t.setPadding(0, dp(4), 0, dp(4));
-        return t;
+    private final NumberFormat moeda=NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
+    private int dp(int v){return TechCellUi.dp(this,v);}
+    private TextView text(String v,int s,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t;}
+    private Button moduleButton(String label){Button b=new Button(this);b.setText(label);b.setTextSize(14);TechCellUi.styleSecondary(this,b);return b;}
+    private LinearLayout metric(String label,String value,int color){
+        LinearLayout c=TechCellUi.card(this);c.setPadding(dp(12),dp(10),dp(12),dp(10));
+        TextView l=text(label,11,true);l.setTextColor(TechCellUi.MUTED);c.addView(l);TextView v=text(value,18,true);v.setTextColor(color);v.setPadding(0,dp(3),0,0);c.addView(v);return c;
     }
-
-    private Button action(String label) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setTextSize(16);
-        b.setAllCaps(false);
-        b.setMinHeight(dp(54));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, dp(5), 0, dp(5));
-        b.setLayoutParams(lp);
-        return b;
+    private void addMetricRow(LinearLayout root,LinearLayout a,LinearLayout b){
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setLayoutParams(TechCellUi.fullCardParams(this,8));
+        LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1);ap.setMargins(0,0,dp(4),0);row.addView(a,ap);
+        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1);bp.setMargins(dp(4),0,0,0);row.addView(b,bp);root.addView(row);
     }
-
-    @Override protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        render();
+    private void addModuleRow(LinearLayout root,Button a,Button b){
+        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rp.setMargins(0,dp(8),0,0);row.setLayoutParams(rp);
+        LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(0,dp(56),1);ap.setMargins(0,0,dp(4),0);row.addView(a,ap);
+        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,dp(56),1);bp.setMargins(dp(4),0,0,0);row.addView(b,bp);root.addView(row);
     }
-
-    @Override protected void onResume() {
-        super.onResume();
-        render();
-    }
-
-    private void render() {
-        GestaoDbHelper db = new GestaoDbHelper(this);
-        GestaoDbHelper.ResumoVendas hoje = db.resumoHoje();
-
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.parseColor("#F3F5F9"));
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(24), dp(18), dp(32));
-        scroll.addView(root);
-
-        Button back = new Button(this);
-        back.setText("←  Voltar");
-        back.setAllCaps(false);
-        back.setOnClickListener(v -> finish());
-        root.addView(back);
-
-        TextView title = text("Gestão Tech Cell", 28, true);
-        title.setPadding(0, dp(18), 0, 0);
-        root.addView(title);
-
-        TextView sub = text("Gestão Tech Cell • Alpha 24", 14, false);
-        sub.setTextColor(Color.parseColor("#667085"));
-        root.addView(sub);
-
-        TextView safe = text(
-                "ALPHA 24 • BASE LOCAL PRESERVADA\n" +
-                "Produtos cadastrados: " + db.count() +
-                "\nAtualizações preservam produtos, vendas, clientes e financeiro.",
-                13, true);
-        safe.setTextColor(Color.parseColor("#176240"));
-        safe.setBackgroundColor(Color.parseColor("#ECFDF3"));
-        safe.setPadding(dp(14), dp(14), dp(14), dp(14));
-        LinearLayout.LayoutParams safeLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        safeLp.setMargins(0, dp(18), 0, dp(18));
-        safe.setLayoutParams(safeLp);
-        root.addView(safe);
-
-        TextView fin = text("Hoje", 20, true);
-        root.addView(fin);
-        root.addView(text("Vendas realizadas: " + hoje.quantidadeVendas, 15, false));
-        root.addView(text("Total vendido: " + moeda.format(hoje.total), 17, true));
-        if (hoje.desconto > 0.001) {
-            root.addView(text("Descontos concedidos: " + moeda.format(hoje.desconto), 14, false));
-        }
-        root.addView(text("Custo das mercadorias: " + moeda.format(hoje.custo), 15, false));
-        root.addView(text("Lucro bruto: " + moeda.format(hoje.lucro), 16, true));
-        root.addView(text("Dinheiro: " + moeda.format(hoje.dinheiro) +
-                "   PIX: " + moeda.format(hoje.pix), 14, false));
-        root.addView(text("Cartão: " + moeda.format(hoje.cartao), 14, false));
-
-        TextView menu = text("Módulos", 20, true);
-        menu.setPadding(0, dp(22), 0, dp(6));
-        root.addView(menu);
-
-        Button pdv = action("🛒  PDV / Frente de Caixa");
-        pdv.setOnClickListener(v -> {
-            try {
-                startActivity(new Intent(this, PdvActivity.class));
-            } catch (Throwable e) {
-                String detalhe = e.getClass().getSimpleName();
-                if (e.getMessage() != null && !e.getMessage().trim().isEmpty()) {
-                    detalhe += "\n" + e.getMessage();
-                }
-                new AlertDialog.Builder(this)
-                        .setTitle("Não foi possível abrir o PDV")
-                        .setMessage(detalhe)
-                        .setPositiveButton("OK", null)
-                        .show();
-            }
-        });
-        root.addView(pdv);
-
-        Button prod = action("📦  Produtos");
-        prod.setOnClickListener(v -> startActivity(new Intent(this, ProdutosActivity.class)));
-        root.addView(prod);
-
-        Button est = action("🧮  Estoque");
-        est.setOnClickListener(v -> startActivity(new Intent(this, EstoqueActivity.class)));
-        root.addView(est);
-
-        Button fiscal = action("🧾  Configurações fiscais / Dados da empresa");
-        fiscal.setOnClickListener(v ->
-                startActivity(new Intent(this, ConfiguracoesFiscaisActivity.class)));
-        root.addView(fiscal);
-
-        Button prepFiscal = action("✅  Preparação fiscal / Homologação");
-        prepFiscal.setOnClickListener(v ->
-                startActivity(new Intent(this, PreparacaoFiscalActivity.class)));
-        root.addView(prepFiscal);
-
-        Button historico = action("🧾  Histórico de vendas");
-        historico.setOnClickListener(v ->
-                startActivity(new Intent(this, HistoricoVendasActivity.class)));
-        root.addView(historico);
-
-        Button financeiro = action("💰  Financeiro");
-        financeiro.setOnClickListener(v ->
-                startActivity(new Intent(this, FinanceiroActivity.class)));
-        root.addView(financeiro);
-
-        Button clientes = action("👤  Clientes");
-        clientes.setOnClickListener(v ->
-                startActivity(new Intent(this, ClientesActivity.class)));
-        root.addView(clientes);
-
-        Button fornecedores = action("🚚  Fornecedores");
-        fornecedores.setOnClickListener(v ->
-                startActivity(new Intent(this, FornecedoresActivity.class)));
-        root.addView(fornecedores);
-
-        Button rel = action("📊  Relatórios");
-        rel.setOnClickListener(v ->
-                startActivity(new Intent(this, RelatoriosActivity.class)));
-        root.addView(rel);
-
-        Button smb = action("🗃️  Importação do SMB");
-        smb.setOnClickListener(v -> Toast.makeText(this, "Importação bloqueada até conferirmos os registros do SMB.", Toast.LENGTH_LONG).show());
-        root.addView(smb);
-
-        TextView next = text(
-                "Alpha 24: relatórios de vendas, resultados, produtos, despesas e estoque.",
-                13, false);
-        next.setTextColor(Color.parseColor("#667085"));
-        next.setGravity(Gravity.CENTER);
-        next.setPadding(dp(8), dp(22), dp(8), 0);
-        root.addView(next);
-
+    @Override protected void onCreate(Bundle b){super.onCreate(b);render();}
+    @Override protected void onResume(){super.onResume();render();}
+    private void render(){
+        TechCellUi.applyWindowChrome(this);GestaoDbHelper db=new GestaoDbHelper(this);GestaoDbHelper.ResumoVendas hoje=db.resumoHoje();
+        ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(18),dp(16),dp(30));scroll.addView(root);
+        Button back=new Button(this);back.setText("←  Voltar");TechCellUi.styleSecondary(this,back);back.setOnClickListener(v->finish());root.addView(back,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
+        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);TextView sub=text("Painel principal • Alpha 27",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
+        TextView ht=text("Hoje",17,true);ht.setPadding(0,dp(16),0,0);root.addView(ht);
+        addMetricRow(root,metric("TOTAL VENDIDO",moeda.format(hoje.total),TechCellUi.GREEN),metric("LUCRO BRUTO",moeda.format(hoje.lucro),TechCellUi.GREEN));
+        addMetricRow(root,metric("VENDAS",String.valueOf(hoje.quantidadeVendas),TechCellUi.BLUE),metric("CUSTO",moeda.format(hoje.custo),TechCellUi.TEXT));
+        LinearLayout rec=TechCellUi.card(this);rec.setLayoutParams(TechCellUi.fullCardParams(this,8));TextView rt=text("Recebimentos",12,true);rt.setTextColor(TechCellUi.MUTED);rec.addView(rt);
+        TextView rv=text("Dinheiro "+moeda.format(hoje.dinheiro)+"   •   PIX "+moeda.format(hoje.pix)+"   •   Cartão "+moeda.format(hoje.cartao),13,true);rv.setPadding(0,dp(5),0,0);rec.addView(rv);root.addView(rec);
+        TextView menu=text("Acesso rápido",17,true);menu.setPadding(0,dp(18),0,0);root.addView(menu);
+        Button pdv=new Button(this);pdv.setText("🛒  ABRIR PDV / VENDER");pdv.setTextSize(16);TechCellUi.stylePrimary(this,pdv,TechCellUi.GREEN);
+        pdv.setOnClickListener(v->{try{startActivity(new Intent(this,PdvActivity.class));}catch(Throwable e){String d=e.getClass().getSimpleName();if(e.getMessage()!=null&&!e.getMessage().trim().isEmpty())d+="\n"+e.getMessage();new AlertDialog.Builder(this).setTitle("Não foi possível abrir o PDV").setMessage(d).setPositiveButton("OK",null).show();}});
+        LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(60));pp.setMargins(0,dp(8),0,0);root.addView(pdv,pp);
+        Button prod=moduleButton("📦  Produtos");prod.setOnClickListener(v->startActivity(new Intent(this,ProdutosActivity.class)));Button est=moduleButton("🧮  Estoque");est.setOnClickListener(v->startActivity(new Intent(this,EstoqueActivity.class)));addModuleRow(root,prod,est);
+        Button fin=moduleButton("💰  Financeiro");fin.setOnClickListener(v->startActivity(new Intent(this,FinanceiroActivity.class)));Button rel=moduleButton("📊  Relatórios");rel.setOnClickListener(v->startActivity(new Intent(this,RelatoriosActivity.class)));addModuleRow(root,fin,rel);
+        Button cli=moduleButton("👤  Clientes");cli.setOnClickListener(v->startActivity(new Intent(this,ClientesActivity.class)));Button forn=moduleButton("🚚  Fornecedores");forn.setOnClickListener(v->startActivity(new Intent(this,FornecedoresActivity.class)));addModuleRow(root,cli,forn);
+        Button hist=moduleButton("🧾  Vendas");hist.setOnClickListener(v->startActivity(new Intent(this,HistoricoVendasActivity.class)));Button fiscal=moduleButton("⚙  Fiscal");fiscal.setOnClickListener(v->startActivity(new Intent(this,ConfiguracoesFiscaisActivity.class)));addModuleRow(root,hist,fiscal);
+        Button prep=moduleButton("✅  Homologação");prep.setOnClickListener(v->startActivity(new Intent(this,PreparacaoFiscalActivity.class)));Button smb=moduleButton("🗃️  Importação SMB");smb.setOnClickListener(v->Toast.makeText(this,"Importação bloqueada até conferirmos os registros do SMB.",Toast.LENGTH_LONG).show());addModuleRow(root,prep,smb);
+        TextView safe=text("Base local preservada • "+db.count()+" produtos cadastrados",12,true);safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(10),dp(12),dp(10));root.addView(safe,TechCellUi.fullCardParams(this,16));
         setContentView(scroll);
     }
 }

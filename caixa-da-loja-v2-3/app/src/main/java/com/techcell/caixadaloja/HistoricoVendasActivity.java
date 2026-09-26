@@ -50,6 +50,7 @@ public class HistoricoVendasActivity extends Activity {
     }
 
     private void montar() {
+        TechCellUi.applyWindowChrome(this);
         ScrollView scroll = new ScrollView(this);
         scroll.setBackgroundColor(Color.parseColor("#F4F6FA"));
 
@@ -61,6 +62,7 @@ public class HistoricoVendasActivity extends Activity {
         Button voltar = new Button(this);
         voltar.setText("←  Voltar");
         voltar.setAllCaps(false);
+        TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
         root.addView(voltar);
 
@@ -68,7 +70,7 @@ public class HistoricoVendasActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Últimas vendas realizadas • Alpha 24", 14, false);
+        TextView sub = txt("Últimas vendas realizadas • Alpha 27", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
@@ -98,7 +100,7 @@ public class HistoricoVendasActivity extends Activity {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(14), dp(12), dp(14), dp(12));
-            card.setBackgroundColor(Color.WHITE);
+            card.setBackground(TechCellUi.cardBackground(this));
             LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             cp.setMargins(0, dp(8), 0, 0);
