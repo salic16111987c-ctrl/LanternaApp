@@ -68,7 +68,7 @@ public class HistoricoVendasActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Últimas vendas realizadas • Alpha 22", 14, false);
+        TextView sub = txt("Últimas vendas realizadas • Alpha 23", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
