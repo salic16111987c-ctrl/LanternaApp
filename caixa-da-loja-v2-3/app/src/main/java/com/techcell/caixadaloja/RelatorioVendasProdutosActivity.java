@@ -360,7 +360,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
 
             TextView topo = txt(
                     dataHora.format(new Date(x.dataMillis)) +
-                            "   •   Venda #" + x.vendaId,
+                            "   •   Venda #" + db.numeroVendaExibicao(x.vendaId),
                     11, true);
             topo.setTextColor(Color.parseColor("#475467"));
             card.addView(topo);

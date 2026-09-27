@@ -1653,6 +1653,23 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     JSONObject vendaJson = ch.optJSONObject("venda");
                     if (vendaJson == null) continue;
 
+                    // Um estorno local pendente não pode ser apagado por um estado antigo do Master.
+                    if (existente > 0 &&
+                            !"ESTORNADA".equalsIgnoreCase(vendaJson.optString("status_venda", ""))) {
+                        Cursor local = db.rawQuery(
+                                "SELECT status_venda,sync_status FROM vendas WHERE id=?",
+                                new String[]{String.valueOf(existente)});
+                        try {
+                            if (local.moveToFirst() &&
+                                    "ESTORNADA".equalsIgnoreCase(local.getString(0)) &&
+                                    "PENDENTE".equalsIgnoreCase(local.getString(1))) {
+                                continue;
+                            }
+                        } finally {
+                            local.close();
+                        }
+                    }
+
                     long numeroMaster = vendaJson.optLong("master_sale_id", vendaJson.optLong("id", 0));
                     ContentValues venda = jsonParaValues(vendaJson, true);
                     if (numeroMaster > 0) venda.put("master_sale_id", numeroMaster);
@@ -1929,7 +1946,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 double quantidade = itemJson.optDouble("quantidade", 0);
                 if (quantidade <= 0) throw new IllegalStateException("Quantidade inválida na venda recebida.");
                 boolean servico = unidade != null && unidade.trim().equalsIgnoreCase("SERVIÇO");
-                if (!servico && estoque + 0.000001 < quantidade) {
+                if (!recebidaEstornada && !servico && estoque + 0.000001 < quantidade) {
                     throw new IllegalStateException("Estoque insuficiente no Master para " +
                             itemJson.optString("nome", "produto") + ". Disponível: " + estoque);
                 }
@@ -2052,16 +2069,45 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     public void marcarVendaSincronizadaMaster(long vendaId, long masterVendaId) {
         SQLiteDatabase db = getWritableDatabase();
         long now = System.currentTimeMillis();
+
+        String statusVenda = "";
+        Cursor status = db.rawQuery("SELECT status_venda FROM vendas WHERE id=?",
+                new String[]{String.valueOf(vendaId)});
+        try {
+            if (status.moveToFirst()) statusVenda = status.getString(0);
+        } finally {
+            status.close();
+        }
+
         ContentValues v = new ContentValues();
-        v.put("sync_status", "MASTER_SYNCED");
-        v.put("sync_updated_at", now);
         if (masterVendaId > 0) v.put("master_sale_id", masterVendaId);
+        v.put("sync_updated_at", now);
+
+        // Para estorno, o ACK isolado não basta: esperamos o Master devolver ESTORNADA no delta.
+        if (!"ESTORNADA".equalsIgnoreCase(statusVenda)) {
+            v.put("sync_status", "MASTER_SYNCED");
+        }
         db.update("vendas", v, "id=?", new String[]{String.valueOf(vendaId)});
 
-        ContentValues itens = new ContentValues();
-        itens.put("sync_status", "MASTER_SYNCED");
-        itens.put("sync_updated_at", now);
-        db.update("venda_itens", itens, "venda_id=?", new String[]{String.valueOf(vendaId)});
+        if (!"ESTORNADA".equalsIgnoreCase(statusVenda)) {
+            ContentValues itens = new ContentValues();
+            itens.put("sync_status", "MASTER_SYNCED");
+            itens.put("sync_updated_at", now);
+            db.update("venda_itens", itens, "venda_id=?", new String[]{String.valueOf(vendaId)});
+        }
+    }
+
+    public long numeroVendaExibicao(long vendaId) {
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT master_sale_id FROM vendas WHERE id=?",
+                new String[]{String.valueOf(vendaId)});
+        try {
+            if (!c.moveToFirst()) return vendaId;
+            long master = c.getLong(0);
+            return master > 0 ? master : vendaId;
+        } finally {
+            c.close();
+        }
     }
 
     public void registrarResultadoEnvioVendas(int quantidade, String erro) {

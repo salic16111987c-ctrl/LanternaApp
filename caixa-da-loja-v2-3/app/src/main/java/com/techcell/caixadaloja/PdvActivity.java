@@ -1480,7 +1480,12 @@ public class PdvActivity extends Activity {
     }
 
     private void mostrarPosVenda(long vendaId, double total, double troco) {
-        String msg = "Venda #" + vendaId +
+        GestaoDbHelper.VendaDetalhe registro = db.getVendaDetalhe(vendaId);
+        long numeroMaster = registro == null ? 0 : registro.masterSaleId;
+        String cabecalho = numeroMaster > 0
+                ? "Venda #" + numeroMaster
+                : "Venda registrada • número oficial será confirmado pelo Master";
+        String msg = cabecalho +
                 "\nTotal: " + moeda.format(total);
         if (troco > 0.001) {
             msg += "\nTroco: " + moeda.format(troco);
@@ -1811,7 +1816,7 @@ public class PdvActivity extends Activity {
         s.append(ConfiguracoesFiscaisActivity.nomeEmpresa(this)).append("\n");
         s.append("COMPROVANTE DE VENDA - NÃO FISCAL\n");
         s.append("--------------------------------\n");
-        s.append("Venda #").append(venda.id).append("\n");
+        s.append("Venda #").append(venda.numeroExibicao()).append("\n");
         s.append("Data: ").append(
                 df.format(new Date(venda.dataMillis))).append("\n");
         s.append("--------------------------------\n");
