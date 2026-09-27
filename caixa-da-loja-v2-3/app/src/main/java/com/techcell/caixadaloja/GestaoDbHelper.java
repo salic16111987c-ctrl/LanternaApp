@@ -1897,6 +1897,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 db.update("vendas", numero, "id=?", new String[]{String.valueOf(existente)});
 
                 aplicarEstornoRemotoNoMaster(db, existente, vendaJson);
+                aplicarFiscalRemotoNoMaster(db, existente, vendaJson);
 
                 out.vendaIdMaster = existente;
                 out.jaExistia = true;
@@ -1986,6 +1987,59 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         } finally {
             db.endTransaction();
         }
+    }
+
+    private void aplicarFiscalRemotoNoMaster(SQLiteDatabase db, long vendaId,
+                                               JSONObject vendaJson) throws Exception {
+        String statusRecebido = vendaJson.optString("nota_status", "").trim();
+        if (!"PENDENTE_CONFIGURACAO".equalsIgnoreCase(statusRecebido)) return;
+
+        String statusVendaAtual = "";
+        String statusFiscalAtual = "";
+        Cursor atual = db.rawQuery(
+                "SELECT status_venda,nota_status FROM vendas WHERE id=?",
+                new String[]{String.valueOf(vendaId)});
+        try {
+            if (!atual.moveToFirst()) {
+                throw new IllegalStateException("Venda não encontrada no Master.");
+            }
+            statusVendaAtual = atual.getString(0);
+            statusFiscalAtual = atual.getString(1);
+        } finally {
+            atual.close();
+        }
+
+        // O Caixa pode preparar os dados fiscais, mas nunca rebaixar um documento
+        // que já atingiu estado final no Master.
+        if ("ESTORNADA".equalsIgnoreCase(statusVendaAtual)) return;
+        if ("AUTORIZADA".equalsIgnoreCase(statusFiscalAtual) ||
+                "CANCELADA".equalsIgnoreCase(statusFiscalAtual)) return;
+
+        ContentValues values = new ContentValues();
+        values.put("nota_tipo", vendaJson.optString("nota_tipo", ""));
+        values.put("nota_status", "PENDENTE_CONFIGURACAO");
+        values.put("consumidor_documento", vendaJson.optString("consumidor_documento", ""));
+        values.put("dest_nome", vendaJson.optString("dest_nome", ""));
+        values.put("dest_documento", vendaJson.optString("dest_documento", ""));
+        values.put("dest_ie", vendaJson.optString("dest_ie", ""));
+        values.put("dest_logradouro", vendaJson.optString("dest_logradouro", ""));
+        values.put("dest_numero", vendaJson.optString("dest_numero", ""));
+        values.put("dest_complemento", vendaJson.optString("dest_complemento", ""));
+        values.put("dest_bairro", vendaJson.optString("dest_bairro", ""));
+        values.put("dest_cep", vendaJson.optString("dest_cep", ""));
+        values.put("dest_municipio", vendaJson.optString("dest_municipio", ""));
+        values.put("dest_uf", vendaJson.optString("dest_uf", ""));
+        values.put("dest_telefone", vendaJson.optString("dest_telefone", ""));
+        values.put("dest_email", vendaJson.optString("dest_email", ""));
+
+        int alteradas = db.update("vendas", values, "id=?",
+                new String[]{String.valueOf(vendaId)});
+        if (alteradas != 1) {
+            throw new IllegalStateException("Não foi possível atualizar os dados fiscais no Master.");
+        }
+
+        marcarAlteracao(db, "vendas", vendaId);
+        registrarMudancaVenda(db, vendaId, "UPSERT");
     }
 
     private void aplicarEstornoRemotoNoMaster(SQLiteDatabase db, long vendaId,
