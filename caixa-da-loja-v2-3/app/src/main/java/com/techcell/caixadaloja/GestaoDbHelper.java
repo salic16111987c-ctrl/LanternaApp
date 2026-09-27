@@ -1015,6 +1015,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             } finally {
                 vendas.close();
             }
+        } else {
+            // Alpha 38 podia receber ACK de uma venda já existente sem o Master
+            // aplicar o estorno. Reenvia estornos locais uma vez na migração para
+            // que o Master consolide o estado correto de forma idempotente.
+            long agora = System.currentTimeMillis();
+            ContentValues pendente = new ContentValues();
+            pendente.put("sync_status", "PENDENTE");
+            pendente.put("sync_updated_at", agora);
+            db.update("vendas", pendente, "status_venda='ESTORNADA'", null);
         }
     }
 
