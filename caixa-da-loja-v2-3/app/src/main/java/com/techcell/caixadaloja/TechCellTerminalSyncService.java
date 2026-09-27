@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 
 public class TechCellTerminalSyncService extends Service {
     private static final String CHANNEL_ID = "techcell_terminal_sync";
@@ -15,6 +16,7 @@ public class TechCellTerminalSyncService extends Service {
 
     private volatile boolean ativo;
     private Thread worker;
+    private PowerManager.WakeLock wakeLock;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -37,6 +39,7 @@ public class TechCellTerminalSyncService extends Service {
             return;
         }
 
+        manterCpuAtiva();
         ativo = true;
         worker = new Thread(this::loop, "TechCell-Terminal-Background-Sync");
         worker.start();
@@ -104,6 +107,23 @@ public class TechCellTerminalSyncService extends Service {
         stopSelf();
     }
 
+    private void manterCpuAtiva() {
+        try {
+            PowerManager pm = (PowerManager)getSystemService(POWER_SERVICE);
+            if (pm == null) return;
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TechCell:TerminalSync");
+            wakeLock.setReferenceCounted(false);
+            wakeLock.acquire();
+        } catch (Throwable ignored) {}
+    }
+
+    private void liberarCpu() {
+        try {
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        } catch (Throwable ignored) {}
+        wakeLock = null;
+    }
+
     private void criarCanal() {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationManager nm = getSystemService(NotificationManager.class);
@@ -149,6 +169,7 @@ public class TechCellTerminalSyncService extends Service {
     @Override public void onDestroy() {
         ativo = false;
         if (worker != null) worker.interrupt();
+        liberarCpu();
         super.onDestroy();
     }
 

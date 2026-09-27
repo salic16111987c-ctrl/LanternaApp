@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -38,6 +39,7 @@ public class TechCellMasterService extends Service {
     private volatile boolean ativo;
     private DatagramSocket udp;
     private ServerSocket tcp;
+    private PowerManager.WakeLock wakeLock;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -58,6 +60,7 @@ public class TechCellMasterService extends Service {
             stopSelf();
             return;
         }
+        manterCpuAtiva();
         ativo = true;
         int porta = ctx.masterPort > 0 ? ctx.masterPort : 8765;
         atualizarNotificacao("Master ativo na rede local • porta " + porta);
@@ -300,6 +303,23 @@ public class TechCellMasterService extends Service {
         return s == null ? "" : s.replace("|", "").replace("\n", "").replace("\r", "");
     }
 
+    private void manterCpuAtiva() {
+        try {
+            PowerManager pm = (PowerManager)getSystemService(POWER_SERVICE);
+            if (pm == null) return;
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TechCell:MasterLan");
+            wakeLock.setReferenceCounted(false);
+            wakeLock.acquire();
+        } catch (Throwable ignored) {}
+    }
+
+    private void liberarCpu() {
+        try {
+            if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        } catch (Throwable ignored) {}
+        wakeLock = null;
+    }
+
     private void criarCanal() {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationManager nm = getSystemService(NotificationManager.class);
@@ -344,6 +364,7 @@ public class TechCellMasterService extends Service {
         ativo = false;
         if (udp != null) udp.close();
         try { if (tcp != null) tcp.close(); } catch (Throwable ignored) {}
+        liberarCpu();
         super.onDestroy();
     }
 

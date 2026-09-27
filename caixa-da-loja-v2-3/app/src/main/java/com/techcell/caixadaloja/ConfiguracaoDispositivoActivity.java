@@ -45,6 +45,8 @@ public class ConfiguracaoDispositivoActivity extends Activity {
     private TextView resumoVendas;
     private Button atualizarProdutos;
     private TextView resumoProdutos;
+    private TextView bateriaStatus;
+    private Button liberarBateria;
 
     private int dp(int v){ return TechCellUi.dp(this,v); }
     private TextView text(String v,int s,boolean b){
@@ -81,6 +83,15 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         render();
     }
 
+    @Override protected void onResume(){
+        super.onResume();
+        if(db!=null){
+            atual=db.getSyncContext();
+            TechCellBackgroundSync.garantir(this);
+            atualizarProtecaoBateria();
+        }
+    }
+
     private void render(){
         ScrollView scroll=new ScrollView(this);
         scroll.setBackgroundColor(TechCellUi.BG);
@@ -96,7 +107,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView titulo=text("Dispositivo e rede",27,true);
         titulo.setPadding(0,dp(16),0,0);root.addView(titulo);
-        TextView sub=text("Pareamento e sincronização inicial • Alpha 36",13,false);
+        TextView sub=text("Pareamento e sincronização inicial • Alpha 37",13,false);
         sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout identidade=TechCellUi.card(this);
@@ -218,6 +229,33 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         dicaRede.setBackground(TechCellUi.pillBackground(this));
         root.addView(dicaRede,TechCellUi.fullCardParams(this,12));
 
+        LinearLayout bateria=TechCellUi.card(this);
+        bateria.setLayoutParams(TechCellUi.fullCardParams(this,10));
+        bateria.addView(text("Tela bloqueada e bateria",15,true));
+
+        bateriaStatus=text("",13,true);
+        bateriaStatus.setPadding(0,dp(8),0,0);
+        bateria.addView(bateriaStatus);
+
+        TextView bateriaExp=text(
+                "Para Master e Caixa continuarem ativos com a tela apagada, deixe o Tech Cell sem otimização/restrição de bateria.",
+                12,false);
+        bateriaExp.setTextColor(TechCellUi.MUTED);
+        bateriaExp.setPadding(0,dp(6),0,0);
+        bateria.addView(bateriaExp);
+
+        liberarBateria=new Button(this);
+        liberarBateria.setText("Liberar funcionamento com tela bloqueada");
+        liberarBateria.setTextSize(14);
+        TechCellUi.stylePrimary(this,liberarBateria,TechCellUi.BLUE);
+        liberarBateria.setOnClickListener(v->abrirProtecaoBateria());
+        LinearLayout.LayoutParams batp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));
+        batp.setMargins(0,dp(10),0,0);
+        bateria.addView(liberarBateria,batp);
+        root.addView(bateria);
+
+        atualizarProtecaoBateria();
+
         resultadoRede=text("Rede local: aguardando teste.",12,true);
         resultadoRede.setTextColor(TechCellUi.MUTED);
         resultadoRede.setPadding(dp(12),dp(10),dp(12),dp(10));
@@ -239,11 +277,31 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));
         sp.setMargins(0,dp(16),0,0);root.addView(salvar,sp);
 
-        TextView aviso=text("Alpha 36 mantém a sincronização automática em segundo plano. Vendas, produtos, preços e estoque continuam sendo atualizados mesmo com o PDV minimizado; o botão manual fica apenas para teste/contingência.",11,false);
+        TextView aviso=text("Alpha 37 reforça a sincronização com a tela bloqueada: serviço contínuo, CPU disponível para a rede e verificação da otimização de bateria. O botão manual continua apenas para teste/contingência.",11,false);
         aviso.setTextColor(TechCellUi.MUTED);aviso.setGravity(Gravity.CENTER);
         aviso.setPadding(dp(8),dp(12),dp(8),0);root.addView(aviso);
 
         setContentView(scroll);
+    }
+
+    private void atualizarProtecaoBateria(){
+        if(bateriaStatus==null||liberarBateria==null)return;
+        boolean ok=TechCellBatteryGuard.liberado(this);
+        bateriaStatus.setText(TechCellBatteryGuard.status(this));
+        bateriaStatus.setTextColor(ok?TechCellUi.GREEN:TechCellUi.ORANGE);
+        liberarBateria.setText(ok
+                ?"Bateria liberada ✓  •  revisar configuração"
+                :"Liberar funcionamento com tela bloqueada");
+        TechCellBackgroundSync.garantir(this);
+    }
+
+    private void abrirProtecaoBateria(){
+        new AlertDialog.Builder(this)
+                .setTitle("Funcionamento com tela bloqueada")
+                .setMessage("O Android pode reduzir a atividade de rede quando a tela fica apagada. Na próxima tela, autorize o Tech Cell a ignorar a otimização de bateria ou deixe o aplicativo como “Sem restrições/Não otimizar”.")
+                .setNegativeButton("Cancelar",null)
+                .setPositiveButton("Abrir configuração",(d,w)->TechCellBatteryGuard.abrirConfiguracao(this))
+                .show();
     }
 
     private String resumoVendasPendentes(){
