@@ -56,7 +56,7 @@ public final class TechCellSaleSync {
                     db.salvarTokenMaster(token);
                 }
 
-                db.marcarVendaSincronizadaMaster(vendaId);
+                db.marcarVendaSincronizadaMaster(vendaId, ack.masterVendaId);
                 out.enviadas++;
                 if (ack.jaExistia) out.jaExistiam++;
             } catch (Throwable e) {

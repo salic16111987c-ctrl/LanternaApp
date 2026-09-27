@@ -16,7 +16,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 18;
+    private static final int DB_VERSION = 19;
 
     public static class Produto {
         public long id;
@@ -198,6 +198,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
     public static class VendaDetalhe {
         public long id;
+        public long masterSaleId;
+        public long numeroExibicao() { return masterSaleId > 0 ? masterSaleId : id; }
         public long dataMillis;
         public double subtotal;
         public double desconto;
@@ -225,6 +227,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
     public static class VendaResumo {
         public long id;
+        public long masterSaleId;
+        public long numeroExibicao() { return masterSaleId > 0 ? masterSaleId : id; }
         public long dataMillis;
         public double total;
         public double desconto;
@@ -468,6 +472,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         if (oldVersion < 18) {
             migrarParaV18(db);
         }
+
+        if (oldVersion < 19) {
+            migrarParaV19(db);
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -545,6 +553,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "status_venda TEXT NOT NULL DEFAULT 'CONCLUIDA'," +
                 "estorno_em INTEGER NOT NULL DEFAULT 0," +
                 "estorno_motivo TEXT NOT NULL DEFAULT ''," +
+                "master_sale_id INTEGER NOT NULL DEFAULT 0," +
                 syncColumnsSqlSemVirgulaFinal() +
                 ")");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_vendas_data ON vendas(data_millis)");
@@ -980,6 +989,24 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         }
 
         if (vazio) {
+            Cursor vendas = db.rawQuery("SELECT uuid FROM vendas WHERE TRIM(uuid)<>'' ORDER BY data_millis,id", null);
+            try {
+                while (vendas.moveToNext()) {
+                    registrarMudancaVendaUuid(db, vendas.getString(0), "UPSERT");
+                }
+            } finally {
+                vendas.close();
+            }
+        }
+    }
+
+    private void migrarParaV19(SQLiteDatabase db) {
+        adicionarColunaSeAusente(db, "vendas", "master_sale_id", "INTEGER NOT NULL DEFAULT 0");
+        criarSyncBase(db);
+
+        SyncContext ctx = lerSyncContext(db);
+        if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            db.execSQL("UPDATE vendas SET master_sale_id=id WHERE master_sale_id<=0");
             Cursor vendas = db.rawQuery("SELECT uuid FROM vendas WHERE TRIM(uuid)<>'' ORDER BY data_millis,id", null);
             try {
                 while (vendas.moveToNext()) {
@@ -1617,7 +1644,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     JSONObject vendaJson = ch.optJSONObject("venda");
                     if (vendaJson == null) continue;
 
+                    long numeroMaster = vendaJson.optLong("master_sale_id", vendaJson.optLong("id", 0));
                     ContentValues venda = jsonParaValues(vendaJson, true);
+                    if (numeroMaster > 0) venda.put("master_sale_id", numeroMaster);
                     venda.put("empresa_uuid", ctx.empresaUuid);
                     venda.put("filial_uuid", ctx.filialUuid);
                     venda.put("sync_status", "MASTER_SYNCED");
@@ -1837,18 +1866,31 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             RecebimentoVenda out = new RecebimentoVenda();
             out.vendaUuid = vendaUuid;
             if (existente > 0) {
+                ContentValues numero = new ContentValues();
+                numero.put("master_sale_id", existente);
+                db.update("vendas", numero, "id=?", new String[]{String.valueOf(existente)});
+
+                aplicarEstornoRemotoNoMaster(db, existente, vendaJson);
+
                 out.vendaIdMaster = existente;
                 out.jaExistia = true;
                 db.setTransactionSuccessful();
                 return out;
             }
 
+            boolean recebidaEstornada = "ESTORNADA".equalsIgnoreCase(
+                    vendaJson.optString("status_venda", "CONCLUIDA"));
             ContentValues venda = jsonParaValues(vendaJson, true);
+            venda.remove("master_sale_id");
             venda.put("empresa_uuid", ctx.empresaUuid);
             venda.put("filial_uuid", ctx.filialUuid);
             venda.put("sync_status", "PENDENTE");
             venda.put("sync_updated_at", System.currentTimeMillis());
             long masterVendaId = db.insertOrThrow("vendas", null, venda);
+
+            ContentValues numeroMasterNovo = new ContentValues();
+            numeroMasterNovo.put("master_sale_id", masterVendaId);
+            db.update("vendas", numeroMasterNovo, "id=?", new String[]{String.valueOf(masterVendaId)});
 
             JSONArray itens = root.getJSONArray("itens");
             if (itens.length() == 0) throw new IllegalStateException("Venda recebida sem itens.");
@@ -1893,7 +1935,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 item.put("sync_updated_at", System.currentTimeMillis());
                 db.insertOrThrow("venda_itens", null, item);
 
-                if (!servico) {
+                if (!servico && !recebidaEstornada) {
                     long now = System.currentTimeMillis();
                     ContentValues estoqueV = new ContentValues();
                     estoqueV.put("estoque", estoque - quantidade);
@@ -1920,14 +1962,97 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         }
     }
 
-    public void marcarVendaSincronizadaMaster(long vendaId) {
+    private void aplicarEstornoRemotoNoMaster(SQLiteDatabase db, long vendaId,
+                                                JSONObject vendaJson) throws Exception {
+        String statusRecebido = vendaJson.optString("status_venda", "CONCLUIDA");
+        if (!"ESTORNADA".equalsIgnoreCase(statusRecebido)) return;
+
+        String statusAtual;
+        String notaStatus;
+        Cursor venda = db.rawQuery(
+                "SELECT status_venda,nota_status FROM vendas WHERE id=?",
+                new String[]{String.valueOf(vendaId)});
+        try {
+            if (!venda.moveToFirst()) throw new IllegalStateException("Venda não encontrada no Master.");
+            statusAtual = venda.getString(0);
+            notaStatus = venda.getString(1);
+        } finally {
+            venda.close();
+        }
+
+        if ("ESTORNADA".equalsIgnoreCase(statusAtual)) return;
+        if ("AUTORIZADA".equalsIgnoreCase(notaStatus)) {
+            throw new IllegalStateException(
+                    "A venda possui nota fiscal autorizada no Master. Cancele o documento fiscal antes do estorno.");
+        }
+
+        Cursor itens = db.rawQuery(
+                "SELECT produto_id,nome,unidade,quantidade FROM venda_itens WHERE venda_id=?",
+                new String[]{String.valueOf(vendaId)});
+        try {
+            while (itens.moveToNext()) {
+                long produtoId = itens.getLong(0);
+                String nome = itens.getString(1);
+                String unidade = itens.getString(2);
+                double quantidade = itens.getDouble(3);
+
+                if (unidade != null && unidade.trim().equalsIgnoreCase("SERVIÇO")) continue;
+
+                Cursor produto = db.rawQuery(
+                        "SELECT estoque FROM produtos WHERE id=?",
+                        new String[]{String.valueOf(produtoId)});
+                double estoqueAtual;
+                try {
+                    if (!produto.moveToFirst()) {
+                        throw new IllegalStateException(
+                                "O produto \"" + nome + "\" não existe mais no Master. O estorno não foi aplicado.");
+                    }
+                    estoqueAtual = produto.getDouble(0);
+                } finally {
+                    produto.close();
+                }
+
+                ContentValues estoque = new ContentValues();
+                estoque.put("estoque", estoqueAtual + quantidade);
+                estoque.put("updated_at", System.currentTimeMillis());
+                int alterados = db.update("produtos", estoque, "id=?",
+                        new String[]{String.valueOf(produtoId)});
+                if (alterados != 1) {
+                    throw new IllegalStateException(
+                            "Não foi possível devolver ao estoque o produto \"" + nome + "\" no Master.");
+                }
+                marcarAlteracao(db, "produtos", produtoId);
+                registrarMudancaProduto(db, produtoId, "UPSERT");
+            }
+        } finally {
+            itens.close();
+        }
+
+        ContentValues values = new ContentValues();
+        values.put("status_venda", "ESTORNADA");
+        long estornoEm = vendaJson.optLong("estorno_em", 0);
+        values.put("estorno_em", estornoEm > 0 ? estornoEm : System.currentTimeMillis());
+        String motivo = vendaJson.optString("estorno_motivo", "").trim();
+        values.put("estorno_motivo", motivo.isEmpty() ? "Estorno recebido do Caixa" : motivo);
+        values.put("master_sale_id", vendaId);
+        db.update("vendas", values, "id=?", new String[]{String.valueOf(vendaId)});
+        marcarAlteracao(db, "vendas", vendaId);
+        registrarMudancaVenda(db, vendaId, "UPSERT");
+    }
+
+    public void marcarVendaSincronizadaMaster(long vendaId, long masterVendaId) {
         SQLiteDatabase db = getWritableDatabase();
         long now = System.currentTimeMillis();
         ContentValues v = new ContentValues();
         v.put("sync_status", "MASTER_SYNCED");
         v.put("sync_updated_at", now);
+        if (masterVendaId > 0) v.put("master_sale_id", masterVendaId);
         db.update("vendas", v, "id=?", new String[]{String.valueOf(vendaId)});
-        db.update("venda_itens", v, "venda_id=?", new String[]{String.valueOf(vendaId)});
+
+        ContentValues itens = new ContentValues();
+        itens.put("sync_status", "MASTER_SYNCED");
+        itens.put("sync_updated_at", now);
+        db.update("venda_itens", itens, "venda_id=?", new String[]{String.valueOf(vendaId)});
     }
 
     public void registrarResultadoEnvioVendas(int quantidade, String erro) {
@@ -2299,6 +2424,12 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 }
             }
 
+            if ("MASTER".equalsIgnoreCase(lerSyncContext(db).papelDispositivo)) {
+                ContentValues numeroMaster = new ContentValues();
+                numeroMaster.put("master_sale_id", vendaId);
+                db.update("vendas", numeroMaster, "id=?", new String[]{String.valueOf(vendaId)});
+            }
+
             registrarMudancaVenda(db, vendaId, "UPSERT");
             db.setTransactionSuccessful();
             return vendaId;
@@ -2311,7 +2442,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         List<VendaResumo> out = new ArrayList<>();
         int max = Math.max(1, Math.min(limite, 500));
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,data_millis,total,desconto,forma_pagamento,nota_tipo,nota_status,dest_nome,dest_documento," +
+                "SELECT id,master_sale_id,data_millis,total,desconto,forma_pagamento,nota_tipo,nota_status,dest_nome,dest_documento," +
                         "status_venda,estorno_em,estorno_motivo " +
                         "FROM vendas ORDER BY data_millis DESC,id DESC LIMIT " + max,
                 null);
@@ -2319,17 +2450,18 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             while (c.moveToNext()) {
                 VendaResumo v = new VendaResumo();
                 v.id = c.getLong(0);
-                v.dataMillis = c.getLong(1);
-                v.total = c.getDouble(2);
-                v.desconto = c.getDouble(3);
-                v.formaPagamento = c.getString(4);
-                v.notaTipo = c.getString(5);
-                v.notaStatus = c.getString(6);
-                v.destNome = c.getString(7);
-                v.destDocumento = c.getString(8);
-                v.statusVenda = c.getString(9);
-                v.estornoEm = c.getLong(10);
-                v.estornoMotivo = c.getString(11);
+                v.masterSaleId = c.getLong(1);
+                v.dataMillis = c.getLong(2);
+                v.total = c.getDouble(3);
+                v.desconto = c.getDouble(4);
+                v.formaPagamento = c.getString(5);
+                v.notaTipo = c.getString(6);
+                v.notaStatus = c.getString(7);
+                v.destNome = c.getString(8);
+                v.destDocumento = c.getString(9);
+                v.statusVenda = c.getString(10);
+                v.estornoEm = c.getLong(11);
+                v.estornoMotivo = c.getString(12);
                 out.add(v);
             }
         } finally { c.close(); }
@@ -2339,7 +2471,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     public VendaDetalhe getVendaDetalhe(long vendaId) {
         VendaDetalhe v = null;
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT id,data_millis,subtotal,desconto,total,forma_pagamento,dinheiro,pix,cartao," +
+                "SELECT id,master_sale_id,data_millis,subtotal,desconto,total,forma_pagamento,dinheiro,pix,cartao," +
                         "recebido,troco,consumidor_documento,nota_status,nota_numero,nota_chave,nota_protocolo,nota_xml," +
                         "nota_tipo,dest_nome,dest_documento,status_venda,estorno_em,estorno_motivo FROM vendas WHERE id=?",
                 new String[]{String.valueOf(vendaId)});
@@ -2347,28 +2479,29 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             if (c.moveToFirst()) {
                 v = new VendaDetalhe();
                 v.id = c.getLong(0);
-                v.dataMillis = c.getLong(1);
-                v.subtotal = c.getDouble(2);
-                v.desconto = c.getDouble(3);
-                v.total = c.getDouble(4);
-                v.formaPagamento = c.getString(5);
-                v.dinheiro = c.getDouble(6);
-                v.pix = c.getDouble(7);
-                v.cartao = c.getDouble(8);
-                v.recebido = c.getDouble(9);
-                v.troco = c.getDouble(10);
-                v.consumidorDocumento = c.getString(11);
-                v.notaStatus = c.getString(12);
-                v.notaNumero = c.getString(13);
-                v.notaChave = c.getString(14);
-                v.notaProtocolo = c.getString(15);
-                v.notaXml = c.getString(16);
-                v.notaTipo = c.getString(17);
-                v.destNome = c.getString(18);
-                v.destDocumento = c.getString(19);
-                v.statusVenda = c.getString(20);
-                v.estornoEm = c.getLong(21);
-                v.estornoMotivo = c.getString(22);
+                v.masterSaleId = c.getLong(1);
+                v.dataMillis = c.getLong(2);
+                v.subtotal = c.getDouble(3);
+                v.desconto = c.getDouble(4);
+                v.total = c.getDouble(5);
+                v.formaPagamento = c.getString(6);
+                v.dinheiro = c.getDouble(7);
+                v.pix = c.getDouble(8);
+                v.cartao = c.getDouble(9);
+                v.recebido = c.getDouble(10);
+                v.troco = c.getDouble(11);
+                v.consumidorDocumento = c.getString(12);
+                v.notaStatus = c.getString(13);
+                v.notaNumero = c.getString(14);
+                v.notaChave = c.getString(15);
+                v.notaProtocolo = c.getString(16);
+                v.notaXml = c.getString(17);
+                v.notaTipo = c.getString(18);
+                v.destNome = c.getString(19);
+                v.destDocumento = c.getString(20);
+                v.statusVenda = c.getString(21);
+                v.estornoEm = c.getLong(22);
+                v.estornoMotivo = c.getString(23);
             }
         } finally { c.close(); }
 

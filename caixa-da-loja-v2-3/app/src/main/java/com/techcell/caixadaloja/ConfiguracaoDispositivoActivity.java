@@ -107,7 +107,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView titulo=text("Dispositivo e rede",27,true);
         titulo.setPadding(0,dp(16),0,0);root.addView(titulo);
-        TextView sub=text("Pareamento e sincronização inicial • Alpha 38",13,false);
+        TextView sub=text("Pareamento e sincronização inicial • Alpha 39",13,false);
         sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout identidade=TechCellUi.card(this);
@@ -277,7 +277,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));
         sp.setMargins(0,dp(16),0,0);root.addView(salvar,sp);
 
-        TextView aviso=text("Alpha 38 sincroniza vendas nos dois sentidos, além de produtos, preços e estoque. O Master consolida o histórico e os Caixas recebem as vendas automaticamente; o botão manual continua apenas para teste/contingência.",11,false);
+        TextView aviso=text("Alpha 39 sincroniza vendas e estornos nos dois sentidos, mantém o número oficial do Master em todos os aparelhos e continua sincronizando produtos, preços e estoque automaticamente.",11,false);
         aviso.setTextColor(TechCellUi.MUTED);aviso.setGravity(Gravity.CENTER);
         aviso.setPadding(dp(8),dp(12),dp(8),0);root.addView(aviso);
 

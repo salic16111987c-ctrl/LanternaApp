@@ -86,7 +86,7 @@ public class HistoricoVendasActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas consolidadas do Master e Caixas • Alpha 38", 14, false);
+        TextView sub = txt("Vendas consolidadas do Master e Caixas • Alpha 39", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
@@ -126,7 +126,7 @@ public class HistoricoVendasActivity extends Activity {
             top.setOrientation(LinearLayout.HORIZONTAL);
             top.setGravity(Gravity.CENTER_VERTICAL);
 
-            TextView id = txt("Venda #" + v.id, 16, true);
+            TextView id = txt("Venda #" + v.numeroExibicao(), 16, true);
             top.addView(id, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
             boolean estornada = "ESTORNADA".equalsIgnoreCase(v.statusVenda);
@@ -246,7 +246,7 @@ public class HistoricoVendasActivity extends Activity {
             detalhes.append("\nChave: ").append(v.notaChave);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Venda #" + vendaId)
+                .setTitle("Venda #" + v.numeroExibicao())
                 .setMessage(detalhes.toString())
                 .setPositiveButton("Comprovante", null)
                 .setNeutralButton("Ações", null)
@@ -280,7 +280,7 @@ public class HistoricoVendasActivity extends Activity {
 
         String[] opcoes = {"Nota fiscal", "Estornar venda"};
         new AlertDialog.Builder(this)
-                .setTitle("Ações da venda #" + vendaId)
+                .setTitle("Ações da venda #" + v.numeroExibicao())
                 .setItems(opcoes, (d, which) -> {
                     if (which == 0) {
                         Intent i = new Intent(this, PdvActivity.class);
@@ -295,6 +295,9 @@ public class HistoricoVendasActivity extends Activity {
     }
 
     private void confirmarEstorno(long vendaId) {
+        GestaoDbHelper.VendaDetalhe vendaAtual = db.getVendaDetalhe(vendaId);
+        long numeroVenda = vendaAtual == null ? vendaId : vendaAtual.numeroExibicao();
+
         EditText motivo = new EditText(this);
         motivo.setHint("Motivo do estorno");
         motivo.setSingleLine(false);
@@ -308,7 +311,7 @@ public class HistoricoVendasActivity extends Activity {
         box.addView(motivo);
 
         AlertDialog confirm = new AlertDialog.Builder(this)
-                .setTitle("Estornar venda #" + vendaId)
+                .setTitle("Estornar venda #" + numeroVenda)
                 .setMessage("A venda continuará no histórico. O estoque será devolvido automaticamente e a venda deixará de compor os totais financeiros.")
                 .setView(box)
                 .setPositiveButton("Confirmar estorno", null)
@@ -350,7 +353,7 @@ public class HistoricoVendasActivity extends Activity {
         s.append(ConfiguracoesFiscaisActivity.nomeEmpresa(this)).append("\n");
         s.append("COMPROVANTE DE VENDA - NÃO FISCAL\n");
         s.append("--------------------------------\n");
-        s.append("Venda #").append(v.id).append("\n");
+        s.append("Venda #").append(v.numeroExibicao()).append("\n");
         s.append("Data: ").append(data.format(new Date(v.dataMillis))).append("\n");
         if ("ESTORNADA".equalsIgnoreCase(v.statusVenda)) {
             s.append("*** VENDA ESTORNADA ***\n");

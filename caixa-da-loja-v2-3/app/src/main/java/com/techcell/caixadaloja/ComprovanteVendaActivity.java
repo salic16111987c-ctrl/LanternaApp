@@ -53,6 +53,10 @@ public class ComprovanteVendaActivity extends Activity {
         return t;
     }
 
+    private long numeroVenda() {
+        return venda == null ? 0 : venda.numeroExibicao();
+    }
+
     private View divider() {
         View v = new View(this);
         v.setBackgroundColor(BORDER);
@@ -161,7 +165,7 @@ public class ComprovanteVendaActivity extends Activity {
 
         LinearLayout vendaTop = new LinearLayout(this);
         vendaTop.setOrientation(LinearLayout.HORIZONTAL);
-        TextView numero = txt("Venda #" + venda.id, 16, true);
+        TextView numero = txt("Venda #" + numeroVenda(), 16, true);
         vendaTop.addView(numero, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView dt = txt(data.format(new Date(venda.dataMillis)), 13, false);
@@ -386,7 +390,7 @@ public class ComprovanteVendaActivity extends Activity {
         if (!enderecoEmpresa().isEmpty()) s.append(enderecoEmpresa()).append("\n");
         s.append("\nCOMPROVANTE DE VENDA - NÃO FISCAL\n");
         s.append("--------------------------------\n");
-        s.append("Venda #").append(venda.id).append("\n");
+        s.append("Venda #").append(numeroVenda()).append("\n");
         s.append("Data: ").append(data.format(new Date(venda.dataMillis))).append("\n");
 
         if ("ESTORNADA".equalsIgnoreCase(venda.statusVenda)) {
@@ -444,7 +448,7 @@ public class ComprovanteVendaActivity extends Activity {
     private void compartilharTexto() {
         Intent share = new Intent(Intent.ACTION_SEND);
         share.setType("text/plain");
-        share.putExtra(Intent.EXTRA_SUBJECT, "Comprovante Tech Cell - Venda #" + venda.id);
+        share.putExtra(Intent.EXTRA_SUBJECT, "Comprovante Tech Cell - Venda #" + numeroVenda());
         share.putExtra(Intent.EXTRA_TEXT, montarTexto());
         startActivity(Intent.createChooser(share, "Compartilhar comprovante"));
     }
@@ -461,8 +465,8 @@ public class ComprovanteVendaActivity extends Activity {
                     return;
                 }
                 PrintDocumentAdapter adapter = view.createPrintDocumentAdapter(
-                        "Comprovante-venda-" + venda.id);
-                pm.print("Comprovante Tech Cell - Venda #" + venda.id,
+                        "Comprovante-venda-" + numeroVenda());
+                pm.print("Comprovante Tech Cell - Venda #" + numeroVenda(),
                         adapter, new PrintAttributes.Builder().build());
             }
         });
