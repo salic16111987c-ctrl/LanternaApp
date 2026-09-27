@@ -77,7 +77,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         TechCellUi.applyWindowChrome(this);
         db=new GestaoDbHelper(this);
         atual=db.getSyncContext();
-        if(atual.configurado && "MASTER".equalsIgnoreCase(atual.papelDispositivo)) iniciarMaster();
+        TechCellBackgroundSync.garantir(this);
         render();
     }
 
@@ -96,7 +96,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView titulo=text("Dispositivo e rede",27,true);
         titulo.setPadding(0,dp(16),0,0);root.addView(titulo);
-        TextView sub=text("Pareamento e sincronização inicial • Alpha 35",13,false);
+        TextView sub=text("Pareamento e sincronização inicial • Alpha 36",13,false);
         sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout identidade=TechCellUi.card(this);
@@ -239,7 +239,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));
         sp.setMargins(0,dp(16),0,0);root.addView(salvar,sp);
 
-        TextView aviso=text("Alpha 35 mantém produtos, preços e estoque atualizados entre Master e terminais. As vendas do Caixa continuam sendo enviadas ao Master automaticamente; se a rede cair, ficam pendentes e são reenviadas depois.",11,false);
+        TextView aviso=text("Alpha 36 mantém a sincronização automática em segundo plano. Vendas, produtos, preços e estoque continuam sendo atualizados mesmo com o PDV minimizado; o botão manual fica apenas para teste/contingência.",11,false);
         aviso.setTextColor(TechCellUi.MUTED);aviso.setGravity(Gravity.CENTER);
         aviso.setPadding(dp(8),dp(12),dp(8),0);root.addView(aviso);
 
@@ -263,10 +263,10 @@ public class ConfiguracaoDispositivoActivity extends Activity {
             return "Última atualização incremental falhou: "+atual.lastProductPullError;
         }
         if(atual.lastProductPullAt<=0){
-            return "Atualização incremental: pronta para o primeiro ciclo.";
+            return "Sincronização em segundo plano: pronta para o primeiro ciclo.";
         }
         String hora=new SimpleDateFormat("dd/MM/yyyy HH:mm:ss",new Locale("pt","BR")).format(new Date(atual.lastProductPullAt));
-        return "Produtos/estoque atualizados: "+hora+" • cursor "+atual.lastProductPullSeq+
+        return "Segundo plano ativo • produtos/estoque: "+hora+" • cursor "+atual.lastProductPullSeq+
                 " • alterações recebidas: "+atual.lastProductPullCount;
     }
 
@@ -319,12 +319,13 @@ public class ConfiguracaoDispositivoActivity extends Activity {
             String host="MASTER".equals(papel)?"":masterHost.getText().toString().trim();
             db.salvarConfiguracaoDispositivo(nome.getText().toString(),papel,host,porta);
             atual=db.getSyncContext();
+            TechCellBackgroundSync.garantir(this);
             if("MASTER".equals(papel)){
-                reiniciarMaster();
                 resultadoRede.setText("Master local iniciado. Os terminais podem conectar usando o código de pareamento.");
                 resultadoRede.setTextColor(TechCellUi.GREEN);
-            }else{
-                pararMaster();
+            }else if(atual.masterAuthToken!=null&&!atual.masterAuthToken.trim().isEmpty()){
+                resultadoRede.setText("Sincronização automática em segundo plano ativa ✓");
+                resultadoRede.setTextColor(TechCellUi.GREEN);
             }
             atualizarTipo();
             Toast.makeText(this,"Configuração do dispositivo salva.",Toast.LENGTH_SHORT).show();
@@ -500,6 +501,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
                     db.salvarTokenMaster(download.authToken);
                 }
                 db.registrarMasterOnline(info.host);
+                TechCellBackgroundSync.garantir(this);
                 runOnUiThread(()->{
                     atual=db.getSyncContext();
                     sincronizarAgora.setEnabled(true);buscarMaster.setEnabled(true);testarConexao.setEnabled(true);

@@ -25,6 +25,7 @@ public class TechCellHomeActivity extends Activity {
     }
     @Override protected void onCreate(Bundle savedInstanceState){
         super.onCreate(savedInstanceState);TechCellUi.applyWindowChrome(this);
+        TechCellBackgroundSync.garantir(this);
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(28),dp(18),dp(30));scroll.addView(root);
         TextView brand=text("TECH CELL ACS",29,true);brand.setGravity(Gravity.CENTER);root.addView(brand);
@@ -36,5 +37,10 @@ public class TechCellHomeActivity extends Activity {
         TextView safe=text("Ambiente de teste da Gestão • o Caixa da Loja continua separado e preservado.",12,true);
         safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(11),dp(12),dp(11));
         root.addView(safe,TechCellUi.fullCardParams(this,16));setContentView(scroll);
+    }
+
+    @Override protected void onResume(){
+        super.onResume();
+        TechCellBackgroundSync.garantir(this);
     }
 }

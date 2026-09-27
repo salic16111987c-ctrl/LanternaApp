@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 
@@ -41,7 +42,7 @@ public class TechCellMasterService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         criarCanal();
-        startForeground(NOTIFICATION_ID, notificacao("Servidor local iniciando…"));
+        iniciarForeground("Servidor local iniciando…");
         iniciar();
     }
 
@@ -308,6 +309,18 @@ public class TechCellMasterService extends Service {
                 c.setDescription("Mantém o Master disponível para os caixas na rede local.");
                 nm.createNotificationChannel(c);
             }
+        }
+    }
+
+    private void iniciarForeground(String texto) {
+        Notification n = notificacao(texto);
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(
+                    NOTIFICATION_ID,
+                    n,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+        } else {
+            startForeground(NOTIFICATION_ID, n);
         }
     }
 
