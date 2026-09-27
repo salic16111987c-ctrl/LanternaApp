@@ -313,10 +313,10 @@ public class RelatoriosActivity extends Activity {
         rec.addView(valores);
         conteudo.addView(rec);
 
-        Button mercadorias = action("Ver vendas de produtos  →");
+        Button mercadorias = action("Abrir Financeiro • Produtos  →");
         TechCellUi.stylePrimary(this, mercadorias);
         mercadorias.setOnClickListener(v ->
-                startActivity(new Intent(this, RelatorioVendasProdutosActivity.class)));
+                abrirFinanceiroProdutos());
         LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
         mp.setMargins(0, dp(10), 0, 0);
@@ -324,10 +324,10 @@ public class RelatoriosActivity extends Activity {
     }
 
     private void carregarProdutos() {
-        Button detalhado = action("Abrir relatório completo de produtos  →");
+        Button detalhado = action("Abrir Financeiro • Produtos  →");
         TechCellUi.stylePrimary(this, detalhado);
         detalhado.setOnClickListener(v ->
-                startActivity(new Intent(this, RelatorioVendasProdutosActivity.class)));
+                abrirFinanceiroProdutos());
         conteudo.addView(detalhado, TechCellUi.fullCardParams(this, 12));
 
         secao("MAIS VENDIDOS");
@@ -354,6 +354,12 @@ public class RelatoriosActivity extends Activity {
             conteudo.addView(card);
             pos++;
         }
+    }
+
+    private void abrirFinanceiroProdutos() {
+        Intent i = new Intent(this, FinanceiroActivity.class);
+        i.putExtra("aba_financeiro", "produtos");
+        startActivity(i);
     }
 
     private void carregarDespesas() {

@@ -48,6 +48,7 @@ public class FinanceiroActivity extends Activity {
     private LinearLayout lista;
     private TextView periodoTexto;
     private Button abaResumoBtn;
+    private Button abaProdutosBtn;
     private Button abaSaidasBtn;
     private Button hojeBtn;
     private Button mesBtn;
@@ -56,6 +57,8 @@ public class FinanceiroActivity extends Activity {
     private Button anoAnteriorBtn;
     private Button personalizadoBtn;
     private int periodoAtivo = 1;
+    private int abaAtual = 0; // 0 resumo, 1 produtos, 2 saídas
+    private boolean produtosDetalhamento;
     private Button novaDespesaBtn;
     private TextView saidasTitulo;
     private boolean mostrarSaidas;
@@ -113,6 +116,9 @@ public class FinanceiroActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         db = new GestaoDbHelper(this);
+        String abaInicial = getIntent().getStringExtra("aba_financeiro");
+        if ("produtos".equalsIgnoreCase(abaInicial)) abaAtual = 1;
+        else if ("saidas".equalsIgnoreCase(abaInicial)) abaAtual = 2;
         montar();
     }
 
@@ -207,21 +213,31 @@ public class FinanceiroActivity extends Activity {
         abas.setPadding(0, dp(8), 0, 0);
 
         abaResumoBtn = action("Resumo");
-        abaResumoBtn.setTextSize(14);
+        abaResumoBtn.setTextSize(13);
         abaResumoBtn.setOnClickListener(v -> {
-            mostrarSaidas = false;
+            abaAtual = 0;
             carregar();
         });
         abas.addView(abaResumoBtn, new LinearLayout.LayoutParams(0, dp(42), 1));
 
-        abaSaidasBtn = action("Saídas / despesas");
-        abaSaidasBtn.setTextSize(14);
+        abaProdutosBtn = action("Produtos");
+        abaProdutosBtn.setTextSize(13);
+        abaProdutosBtn.setOnClickListener(v -> {
+            abaAtual = 1;
+            carregar();
+        });
+        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(0, dp(42), 1);
+        ap.setMargins(dp(5),0,0,0);
+        abas.addView(abaProdutosBtn, ap);
+
+        abaSaidasBtn = action("Saídas");
+        abaSaidasBtn.setTextSize(13);
         abaSaidasBtn.setOnClickListener(v -> {
-            mostrarSaidas = true;
+            abaAtual = 2;
             carregar();
         });
         LinearLayout.LayoutParams asp = new LinearLayout.LayoutParams(0, dp(42), 1);
-        asp.setMargins(dp(6),0,0,0);
+        asp.setMargins(dp(5),0,0,0);
         abas.addView(abaSaidasBtn, asp);
         root.addView(abas);
 
@@ -359,12 +375,21 @@ public class FinanceiroActivity extends Activity {
         long fimInclusivo = fimAtual - 1;
         periodoTexto.setText("📅  Período: " +
                 dataCurta.format(new Date(inicioAtual)) + " a " +
-                dataCurta.format(new Date(fimInclusivo)));
+                dataCurta.format(new Date(fimInclusivo)) + "   ›");
 
         atualizarFiltrosPeriodo();
-        GestaoDbHelper.ResumoFinanceiro r = db.resumoFinanceiro(inicioAtual, fimAtual);
-
         resumoBox.removeAllViews();
+        lista.removeAllViews();
+
+        if (abaAtual == 0) carregarResumoFinanceiro();
+        else if (abaAtual == 1) carregarProdutosFinanceiro();
+        else carregarSaidasFinanceiro();
+
+        atualizarAbasFinanceiro();
+    }
+
+    private void carregarResumoFinanceiro() {
+        GestaoDbHelper.ResumoFinanceiro r = db.resumoFinanceiro(inicioAtual, fimAtual);
 
         double margemLiquida = r.vendas.total > 0
                 ? (r.lucroLiquido / r.vendas.total) * 100.0 : 0.0;
@@ -374,7 +399,7 @@ public class FinanceiroActivity extends Activity {
                 r.lucroLiquido >= 0
                         ? TechCellUi.PALE_GREEN
                         : Color.parseColor("#FFF1F0"), 16));
-        hero.setLayoutParams(TechCellUi.fullCardParams(this, 12));
+        hero.setLayoutParams(TechCellUi.fullCardParams(this, 10));
 
         TextView heroTitulo = txt("LUCRO LÍQUIDO", 12, true);
         heroTitulo.setTextColor(TechCellUi.MUTED);
@@ -406,13 +431,11 @@ public class FinanceiroActivity extends Activity {
                 cardResumo("Descontos", moeda.format(r.vendas.desconto), "#B54708"));
 
         if (r.outrasSaidas > 0.001 || r.comprasEstoque > 0.001) {
-            LinearLayout a = cardResumo(
-                    "Outras saídas", moeda.format(r.outrasSaidas),
-                    r.outrasSaidas > 0.001 ? "#B42318" : "#667085");
-            LinearLayout b = cardResumo(
-                    "Compras p/ estoque", moeda.format(r.comprasEstoque),
-                    r.comprasEstoque > 0.001 ? "#B54708" : "#667085");
-            adicionarLinhaResumo(a, b);
+            adicionarLinhaResumo(
+                    cardResumo("Outras saídas", moeda.format(r.outrasSaidas),
+                            r.outrasSaidas > 0.001 ? "#B42318" : "#667085"),
+                    cardResumo("Compras p/ estoque", moeda.format(r.comprasEstoque),
+                            r.comprasEstoque > 0.001 ? "#B54708" : "#667085"));
         }
 
         LinearLayout recebimentos = TechCellUi.card(this);
@@ -433,19 +456,190 @@ public class FinanceiroActivity extends Activity {
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         recebimentos.addView(formas);
         resumoBox.addView(recebimentos);
+    }
 
-        atualizarAbasFinanceiro();
+    private void carregarProdutosFinanceiro() {
+        LinearLayout subAbas = new LinearLayout(this);
+        subAbas.setOrientation(LinearLayout.HORIZONTAL);
+        subAbas.setPadding(0, dp(8), 0, 0);
 
-        if (!mostrarSaidas) {
-            lista.removeAllViews();
+        Button resumoProdutos = action("Resumo de produtos");
+        resumoProdutos.setTextSize(12);
+        resumoProdutos.setOnClickListener(v -> {
+            produtosDetalhamento = false;
+            carregar();
+        });
+
+        Button detalhesProdutos = action("Detalhamento");
+        detalhesProdutos.setTextSize(12);
+        detalhesProdutos.setOnClickListener(v -> {
+            produtosDetalhamento = true;
+            carregar();
+        });
+
+        if (produtosDetalhamento) {
+            TechCellUi.styleSecondary(this, resumoProdutos);
+            TechCellUi.stylePrimary(this, detalhesProdutos, TechCellUi.NAVY);
+        } else {
+            TechCellUi.stylePrimary(this, resumoProdutos, TechCellUi.NAVY);
+            TechCellUi.styleSecondary(this, detalhesProdutos);
+        }
+
+        subAbas.addView(resumoProdutos, new LinearLayout.LayoutParams(0, dp(40), 1));
+        LinearLayout.LayoutParams dpv = new LinearLayout.LayoutParams(0, dp(40), 1);
+        dpv.setMargins(dp(5),0,0,0);
+        subAbas.addView(detalhesProdutos, dpv);
+        resumoBox.addView(subAbas);
+
+        if (produtosDetalhamento) carregarProdutosDetalhamento();
+        else carregarProdutosResumo();
+    }
+
+    private void carregarProdutosResumo() {
+        GestaoDbHelper.ResumoProdutosPeriodo r =
+                db.resumoProdutosPeriodo(inicioAtual, fimAtual);
+
+        LinearLayout hero = TechCellUi.card(this);
+        hero.setLayoutParams(TechCellUi.fullCardParams(this, 8));
+        hero.setBackground(TechCellUi.solid(this,
+                r.lucro >= 0 ? TechCellUi.PALE_GREEN : Color.parseColor("#FFF1F0"), 16));
+
+        TextView h1 = txt("LUCRO BRUTO DAS MERCADORIAS", 11, true);
+        h1.setTextColor(TechCellUi.MUTED);
+        hero.addView(h1);
+
+        TextView h2 = txt(moeda.format(r.lucro), 27, true);
+        h2.setTextColor(r.lucro >= 0 ? TechCellUi.GREEN : TechCellUi.RED);
+        h2.setPadding(0, dp(4), 0, 0);
+        hero.addView(h2);
+
+        TextView h3 = txt("Margem: " + produtoPercentual(r.margemPercentual()), 12, true);
+        h3.setTextColor(TechCellUi.NAVY);
+        h3.setPadding(0, dp(5), 0, 0);
+        hero.addView(h3);
+        hero.setOnClickListener(v -> {
+            produtosDetalhamento = true;
+            carregar();
+        });
+        resumoBox.addView(hero);
+
+        adicionarLinhaResumo(
+                cardResumo("Total vendido", moeda.format(r.faturamento), "#07884B"),
+                cardResumo("Custo", moeda.format(r.custo), "#475467"));
+        adicionarLinhaResumo(
+                cardResumo("Itens vendidos", produtoQtd(r.quantidadeProdutos), "#175CD3"),
+                cardResumo("Vendas", String.valueOf(r.quantidadeVendas), "#175CD3"));
+
+        TextView secao = txt("RESUMO POR PRODUTO", 12, true);
+        secao.setTextColor(TechCellUi.MUTED);
+        secao.setPadding(0, dp(14), 0, dp(4));
+        resumoBox.addView(secao);
+
+        List<GestaoDbHelper.RelatorioProduto> produtos =
+                db.produtosVendidosPeriodo(inicioAtual, fimAtual);
+        if (produtos.isEmpty()) {
+            produtoVazio("Nenhuma mercadoria vendida neste período.");
             return;
         }
 
-        lista.removeAllViews();
+        for (GestaoDbHelper.RelatorioProduto p : produtos) {
+            LinearLayout card = produtoCardBase();
+            TextView nome = txt(p.nome, 15, true);
+            card.addView(nome);
+
+            double margem = p.faturamento > 0 ? (p.lucro / p.faturamento) * 100.0 : 0.0;
+            TextView info = txt(
+                    produtoQtd(p.quantidade) + " " + produtoUnidade(p.unidade) +
+                            "   •   Vendido " + moeda.format(p.faturamento) +
+                            "\nCusto " + moeda.format(p.custo) +
+                            "   •   Lucro " + moeda.format(p.lucro) +
+                            "   •   " + produtoPercentual(margem),
+                    12, false);
+            info.setTextColor(TechCellUi.MUTED);
+            info.setPadding(0, dp(4), 0, 0);
+            card.addView(info);
+            resumoBox.addView(card);
+        }
+    }
+
+    private void carregarProdutosDetalhamento() {
+        GestaoDbHelper.ResumoProdutosPeriodo r =
+                db.resumoProdutosPeriodo(inicioAtual, fimAtual);
+        List<GestaoDbHelper.RelatorioItemVendido> itens =
+                db.itensProdutosVendidosPeriodo(inicioAtual, fimAtual);
+
+        TextView secao = txt("ITENS VENDIDOS", 12, true);
+        secao.setTextColor(TechCellUi.MUTED);
+        secao.setPadding(0, dp(14), 0, dp(4));
+        resumoBox.addView(secao);
+
+        if (itens.isEmpty()) {
+            produtoVazio("Nenhuma mercadoria vendida neste período.");
+            return;
+        }
+
+        for (GestaoDbHelper.RelatorioItemVendido x : itens) {
+            LinearLayout card = produtoCardBase();
+
+            TextView topo = txt(
+                    data.format(new Date(x.dataMillis)) +
+                            "   •   Venda #" + db.numeroVendaExibicao(x.vendaId),
+                    11, true);
+            topo.setTextColor(Color.parseColor("#475467"));
+            card.addView(topo);
+
+            TextView nome = txt(x.nome, 15, true);
+            nome.setPadding(0, dp(3), 0, dp(2));
+            card.addView(nome);
+
+            StringBuilder detalhes = new StringBuilder();
+            detalhes.append("Quantidade: ")
+                    .append(produtoQtd(x.quantidade)).append(" ").append(produtoUnidade(x.unidade))
+                    .append("\nVenda unit.: ").append(moeda.format(x.precoUnitario))
+                    .append("   •   Custo unit.: ").append(moeda.format(x.custoUnitario))
+                    .append("\nTotal vendido: ").append(moeda.format(x.totalLiquido))
+                    .append("   •   Custo: ").append(moeda.format(x.custoTotal))
+                    .append("\nLucro: ").append(moeda.format(x.lucro));
+
+            if (x.descontoRateio > 0.001) {
+                detalhes.append("   •   Desconto: ").append(moeda.format(x.descontoRateio));
+            }
+
+            TextView info = txt(detalhes.toString(), 12, false);
+            info.setTextColor(TechCellUi.MUTED);
+            card.addView(info);
+
+            TextView abrir = txt("Toque para abrir o comprovante desta venda", 11, true);
+            abrir.setTextColor(Color.parseColor("#175CD3"));
+            abrir.setPadding(0, dp(5), 0, 0);
+            card.addView(abrir);
+
+            card.setOnClickListener(v -> {
+                Intent i = new Intent(this, ComprovanteVendaActivity.class);
+                i.putExtra("venda_id", x.vendaId);
+                startActivity(i);
+            });
+
+            resumoBox.addView(card);
+        }
+
+        TextView total = txt("TOTAL DO PERÍODO", 12, true);
+        total.setTextColor(TechCellUi.MUTED);
+        total.setPadding(0, dp(14), 0, dp(4));
+        resumoBox.addView(total);
+        produtoLinhaTexto("Mercadorias vendidas", moeda.format(r.faturamento));
+        produtoLinhaTexto("Custo das mercadorias", moeda.format(r.custo));
+        produtoLinhaTexto("Lucro bruto", moeda.format(r.lucro));
+        produtoLinhaTexto("Margem bruta", produtoPercentual(r.margemPercentual()));
+        produtoLinhaTexto("Quantidade de itens", produtoQtd(r.quantidadeProdutos));
+        produtoLinhaTexto("Vendas com mercadorias", String.valueOf(r.quantidadeVendas));
+    }
+
+    private void carregarSaidasFinanceiro() {
         List<GestaoDbHelper.Despesa> despesas = db.listDespesas(inicioAtual, fimAtual, 500);
         if (despesas.isEmpty()) {
             TextView vazio = txt("Nenhuma saída registrada neste período.", 14, false);
-            vazio.setTextColor(Color.parseColor("#667085"));
+            vazio.setTextColor(TechCellUi.MUTED);
             vazio.setGravity(Gravity.CENTER);
             vazio.setPadding(0, dp(22), 0, dp(22));
             lista.addView(vazio);
@@ -468,7 +662,7 @@ public class FinanceiroActivity extends Activity {
             top.addView(nome, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
             TextView valor = txt(moeda.format(d.valor), 16, true);
             valor.setTextColor("CANCELADA".equalsIgnoreCase(d.status)
-                    ? Color.parseColor("#667085") : Color.parseColor("#B42318"));
+                    ? TechCellUi.MUTED : TechCellUi.RED);
             top.addView(valor);
             card.addView(top);
 
@@ -483,7 +677,7 @@ public class FinanceiroActivity extends Activity {
                     (d.categoria == null || d.categoria.isEmpty() ? "" : " • " + d.categoria) +
                     (doc.isEmpty() ? "" : "\nDocumento: " + doc),
                     12, false);
-            meta.setTextColor(Color.parseColor("#667085"));
+            meta.setTextColor(TechCellUi.MUTED);
             card.addView(meta);
 
             if (d.favorecidoNome != null && !d.favorecidoNome.trim().isEmpty()) {
@@ -496,13 +690,62 @@ public class FinanceiroActivity extends Activity {
                 TextView st = txt("CANCELADA" +
                         (d.cancelamentoMotivo == null || d.cancelamentoMotivo.isEmpty()
                                 ? "" : " • " + d.cancelamentoMotivo), 12, true);
-                st.setTextColor(Color.parseColor("#B42318"));
+                st.setTextColor(TechCellUi.RED);
                 card.addView(st);
             } else {
                 card.setOnClickListener(v -> abrirDespesa(d));
             }
             lista.addView(card);
         }
+    }
+
+    private LinearLayout produtoCardBase() {
+        LinearLayout card = TechCellUi.card(this);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.setMargins(0, dp(4), 0, dp(4));
+        card.setLayoutParams(p);
+        return card;
+    }
+
+    private void produtoVazio(String texto) {
+        TextView t = txt(texto, 13, false);
+        t.setTextColor(TechCellUi.MUTED);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(8), dp(18), dp(8), dp(18));
+        resumoBox.addView(t);
+    }
+
+    private void produtoLinhaTexto(String rotulo, String valor) {
+        LinearLayout card = produtoCardBase();
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView l = txt(rotulo, 14, false);
+        card.addView(l, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView v = txt(valor, 14, true);
+        v.setGravity(Gravity.END);
+        card.addView(v);
+        resumoBox.addView(card);
+    }
+
+    private String produtoQtd(double v) {
+        if (Math.abs(v - Math.rint(v)) < 0.000001) return String.valueOf((long)Math.rint(v));
+        return String.format(Locale.US, "%.3f", v)
+                .replaceAll("0+$", "")
+                .replaceAll("\\.$", "")
+                .replace(".", ",");
+    }
+
+    private String produtoUnidade(String unidade) {
+        if (unidade == null || unidade.trim().isEmpty()) return "UN";
+        return unidade.trim().toUpperCase(new Locale("pt","BR"));
+    }
+
+    private String produtoPercentual(double v) {
+        return String.format(new Locale("pt","BR"), "%.2f%%", v);
     }
 
     private void atualizarFiltrosPeriodo() {
@@ -534,18 +777,18 @@ public class FinanceiroActivity extends Activity {
     }
 
     private void atualizarAbasFinanceiro() {
-        if (mostrarSaidas) {
-            TechCellUi.styleSecondary(this, abaResumoBtn);
-            TechCellUi.stylePrimary(this, abaSaidasBtn, TechCellUi.NAVY);
-        } else {
-            TechCellUi.stylePrimary(this, abaResumoBtn, TechCellUi.NAVY);
-            TechCellUi.styleSecondary(this, abaSaidasBtn);
+        Button[] abas = {abaResumoBtn, abaProdutosBtn, abaSaidasBtn};
+        for (int i = 0; i < abas.length; i++) {
+            if (abas[i] == null) continue;
+            if (i == abaAtual) TechCellUi.stylePrimary(this, abas[i], TechCellUi.NAVY);
+            else TechCellUi.styleSecondary(this, abas[i]);
         }
 
-        resumoBox.setVisibility(mostrarSaidas ? View.GONE : View.VISIBLE);
-        novaDespesaBtn.setVisibility(mostrarSaidas ? View.VISIBLE : View.GONE);
-        saidasTitulo.setVisibility(mostrarSaidas ? View.VISIBLE : View.GONE);
-        lista.setVisibility(mostrarSaidas ? View.VISIBLE : View.GONE);
+        boolean saidas = abaAtual == 2;
+        resumoBox.setVisibility(saidas ? View.GONE : View.VISIBLE);
+        novaDespesaBtn.setVisibility(saidas ? View.VISIBLE : View.GONE);
+        saidasTitulo.setVisibility(saidas ? View.VISIBLE : View.GONE);
+        lista.setVisibility(saidas ? View.VISIBLE : View.GONE);
     }
 
     private LinearLayout cardResumo(String titulo, String valor, String cor) {
