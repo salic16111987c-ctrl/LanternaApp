@@ -57,48 +57,35 @@ public class TechCellTerminalSyncService extends Service {
         while (ativo) {
             long pausa = 8000;
             try {
-                GestaoDbHelper db = new GestaoDbHelper(this);
-                GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+                GestaoDbHelper.SyncContext ctx = new GestaoDbHelper(this).getSyncContext();
                 if (!podeSincronizar(ctx)) {
                     ativo = false;
                     break;
                 }
 
-                TechCellSaleSync.Resultado envio = null;
-                if (db.countVendasPendentesMaster() > 0) {
-                    envio = TechCellSaleSync.enviarPendentes(getApplicationContext(), "");
-                }
+                TechCellSyncCoordinator.Resultado r =
+                        TechCellSyncCoordinator.sincronizar(getApplicationContext());
 
-                if (envio != null && envio.erro != null && !envio.erro.trim().isEmpty()) {
-                    atualizarNotificacao("Venda pendente • tentando novamente automaticamente");
+                if (r.ocupado) {
+                    // Outra tela/ciclo já está fazendo a mesma sincronização.
+                    atualizarNotificacao("Sincronização em andamento…");
+                    pausa = 4000;
+                } else if (r.conflitoEstoque) {
+                    atualizarNotificacao("Venda pendente • estoque mudou no Master");
+                    pausa = 20000;
+                } else if (r.erro != null && !r.erro.trim().isEmpty()) {
+                    atualizarNotificacao("Master indisponível • nova tentativa automática");
                     pausa = 20000;
                 } else {
-                    TechCellProductSync.Resultado produtos =
-                            TechCellProductSync.puxarAlteracoes(getApplicationContext());
-                    TechCellSalePullSync.Resultado vendasMaster =
-                            TechCellSalePullSync.puxarAlteracoes(getApplicationContext());
-
-                    String erroProdutos = produtos.erro == null ? "" : produtos.erro.trim();
-                    String erroVendas = vendasMaster.erro == null ? "" : vendasMaster.erro.trim();
-
-                    if (!erroProdutos.isEmpty() || !erroVendas.isEmpty()) {
-                        atualizarNotificacao("Master indisponível • nova tentativa automática");
-                        pausa = 20000;
+                    if (r.vendasEnviadas > 0 || r.vendasRecebidas > 0 || r.produtosAlterados > 0) {
+                        atualizarNotificacao(
+                                "Sincronizado ✓ • enviadas " + r.vendasEnviadas +
+                                        " • recebidas " + r.vendasRecebidas +
+                                        " • produtos " + r.produtosAlterados);
                     } else {
-                        int vendasEnviadas = envio == null ? 0 : envio.enviadas;
-                        int produtosAlterados = produtos.total();
-                        int vendasRecebidas = vendasMaster.total();
-
-                        if (vendasEnviadas > 0 || produtosAlterados > 0 || vendasRecebidas > 0) {
-                            atualizarNotificacao(
-                                    "Sincronizado ✓ • enviadas " + vendasEnviadas +
-                                            " • recebidas " + vendasRecebidas +
-                                            " • produtos " + produtosAlterados);
-                        } else {
-                            atualizarNotificacao("Sincronizado com o Master ✓");
-                        }
-                        pausa = 8000;
+                        atualizarNotificacao("Sincronizado com o Master ✓");
                     }
+                    pausa = 8000;
                 }
             } catch (Throwable e) {
                 atualizarNotificacao("Rede local indisponível • tentando novamente");
@@ -140,7 +127,7 @@ public class TechCellTerminalSyncService extends Service {
                         CHANNEL_ID,
                         "Sincronização Tech Cell",
                         NotificationManager.IMPORTANCE_LOW);
-                c.setDescription("Mantém vendas, produtos, preços e estoque sincronizados pela rede local.");
+                c.setDescription("Mantém vendas, estornos, produtos, preços e estoque sincronizados pela rede local.");
                 nm.createNotificationChannel(c);
             }
         }

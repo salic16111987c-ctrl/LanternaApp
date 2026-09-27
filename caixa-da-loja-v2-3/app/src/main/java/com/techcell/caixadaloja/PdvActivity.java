@@ -348,7 +348,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 40", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 41", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
@@ -1432,39 +1432,57 @@ public class PdvActivity extends Activity {
 
         syncIncrementalRodando = true;
         new Thread(() -> {
-            TechCellSaleSync.Resultado vendas = null;
-            if (db.countVendasPendentesMaster() > 0) {
-                vendas = TechCellSaleSync.enviarPendentes(getApplicationContext(), "");
-            }
+            TechCellSyncCoordinator.Resultado r =
+                    TechCellSyncCoordinator.sincronizar(getApplicationContext());
 
-            TechCellProductSync.Resultado produtos = TechCellProductSync.puxarAlteracoes(getApplicationContext());
-            TechCellSaleSync.Resultado vendasFinal = vendas;
             runOnUiThread(() -> {
                 syncIncrementalRodando = false;
 
-                if (vendasFinal != null && vendasFinal.erro != null && !vendasFinal.erro.trim().isEmpty()) {
-                    if (syncRedeStatus != null) syncRedeStatus.setText("Rede: venda pendente • " + vendasFinal.erro);
+                if (r.ocupado) {
+                    if (syncRedeStatus != null) {
+                        syncRedeStatus.setText("Rede: sincronização automática em andamento…");
+                    }
                     return;
                 }
 
-                if (produtos.erro != null && !produtos.erro.trim().isEmpty()) {
-                    if (syncRedeStatus != null) syncRedeStatus.setText("Rede: Master temporariamente indisponível");
+                if (r.conflitoEstoque) {
+                    if (syncRedeStatus != null) {
+                        syncRedeStatus.setText("Rede: venda pendente • estoque mudou no Master");
+                    }
+                    if (mostrarToast) {
+                        Toast.makeText(this,
+                                "A venda ficou pendente porque o estoque no Master mudou. Revise o item antes de tentar novamente.",
+                                Toast.LENGTH_LONG).show();
+                    }
                     return;
                 }
 
-                int total = produtos.total();
-                if (total > 0) {
+                if (r.erro != null && !r.erro.trim().isEmpty()) {
+                    if (syncRedeStatus != null) {
+                        syncRedeStatus.setText("Rede: Master temporariamente indisponível");
+                    }
+                    return;
+                }
+
+                if (r.produtosAlterados > 0) {
                     recarregarProdutosDoCarrinho();
-                    if (syncRedeStatus != null) syncRedeStatus.setText(
-                            "Rede: Master atualizado ✓ • " + total + " alteração(ões)");
-                } else if (syncRedeStatus != null) {
-                    syncRedeStatus.setText("Rede: sincronizado com o Master ✓");
                 }
 
-                if (mostrarToast && vendasFinal != null && vendasFinal.enviadas > 0) {
+                if (syncRedeStatus != null) {
+                    if (r.vendasEnviadas > 0 || r.vendasRecebidas > 0 || r.produtosAlterados > 0) {
+                        syncRedeStatus.setText(
+                                "Rede: sincronizado ✓ • env. " + r.vendasEnviadas +
+                                        " • rec. " + r.vendasRecebidas +
+                                        " • prod. " + r.produtosAlterados);
+                    } else {
+                        syncRedeStatus.setText("Rede: sincronizado com o Master ✓");
+                    }
+                }
+
+                if (mostrarToast && r.vendasEnviadas > 0) {
                     Toast.makeText(this,
-                            vendasFinal.enviadas == 1 ? "Venda sincronizada com o Master ✓" :
-                                    vendasFinal.enviadas + " vendas sincronizadas com o Master ✓",
+                            r.vendasEnviadas == 1 ? "Venda sincronizada com o Master ✓" :
+                                    r.vendasEnviadas + " vendas sincronizadas com o Master ✓",
                             Toast.LENGTH_SHORT).show();
                 }
             });

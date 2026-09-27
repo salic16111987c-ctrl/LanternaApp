@@ -102,7 +102,7 @@ public class ProdutosActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView info = txt("Cadastro e controle de mercadorias • Alpha 40", 12, false);
+        TextView info = txt("Cadastro e controle de mercadorias • Alpha 41", 12, false);
         info.setTextColor(TechCellUi.MUTED);
         root.addView(info);
 
@@ -165,17 +165,20 @@ public class ProdutosActivity extends Activity {
     }
 
     private void sincronizarProdutosMaster() {
-        if (syncProdutosRodando || db == null) return;
-        GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+        if (syncProdutosRodando) return;
+        GestaoDbHelper dbLocal = db;
+        if (dbLocal == null) return;
+        GestaoDbHelper.SyncContext ctx = dbLocal.getSyncContext();
         if (!ctx.configurado || "MASTER".equalsIgnoreCase(ctx.papelDispositivo) ||
                 ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) return;
 
         syncProdutosRodando = true;
         new Thread(() -> {
-            TechCellProductSync.Resultado r = TechCellProductSync.puxarAlteracoes(getApplicationContext());
+            TechCellSyncCoordinator.Resultado r =
+                    TechCellSyncCoordinator.sincronizar(getApplicationContext());
             runOnUiThread(() -> {
                 syncProdutosRodando = false;
-                if (r.total() > 0) carregar();
+                if (!r.ocupado && r.produtosAlterados > 0) carregar();
             });
         }, "TechCell-Produtos-Sync").start();
     }

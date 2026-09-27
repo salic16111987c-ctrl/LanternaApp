@@ -47,17 +47,19 @@ public class EstoqueActivity extends Activity {
 
     private void sincronizarProdutosMaster() {
         if (syncProdutosRodando) return;
-        GestaoDbHelper db = new GestaoDbHelper(this);
-        GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+        GestaoDbHelper dbLocal = new GestaoDbHelper(this);
+        if (dbLocal == null) return;
+        GestaoDbHelper.SyncContext ctx = dbLocal.getSyncContext();
         if (!ctx.configurado || "MASTER".equalsIgnoreCase(ctx.papelDispositivo) ||
                 ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) return;
 
         syncProdutosRodando = true;
         new Thread(() -> {
-            TechCellProductSync.Resultado r = TechCellProductSync.puxarAlteracoes(getApplicationContext());
+            TechCellSyncCoordinator.Resultado r =
+                    TechCellSyncCoordinator.sincronizar(getApplicationContext());
             runOnUiThread(() -> {
                 syncProdutosRodando = false;
-                if (r.total() > 0) render();
+                if (!r.ocupado && r.produtosAlterados > 0) render();
             });
         }, "TechCell-Estoque-Sync").start();
     }
@@ -130,7 +132,7 @@ public class EstoqueActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView sub = txt("Visão geral do seu estoque • Alpha 40", 12, false);
+        TextView sub = txt("Visão geral do seu estoque • Alpha 41", 12, false);
         sub.setTextColor(TechCellUi.MUTED);
         root.addView(sub);
 

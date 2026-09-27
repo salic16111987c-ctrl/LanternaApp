@@ -263,7 +263,18 @@ public class TechCellMasterService extends Service {
 
         String json = TechCellLanClient.descompactar(p[3]);
 
-        GestaoDbHelper.RecebimentoVenda recebida = db.receberVendaDoTerminal(json);
+        GestaoDbHelper.RecebimentoVenda recebida;
+        try {
+            recebida = db.receberVendaDoTerminal(json);
+        } catch (Throwable e) {
+            String msg = e.getMessage();
+            if (msg == null || msg.trim().isEmpty()) msg = e.getClass().getSimpleName();
+            w.write(ERROR + "|" + seguro(msg));
+            w.newLine();
+            w.flush();
+            return;
+        }
+
         w.write(SALE_OK + "|" + seguro(recebida.vendaUuid) + "|" + recebida.vendaIdMaster + "|" +
                 (recebida.jaExistia ? "EXISTE" : "NOVA") + "|" + seguro(token));
         w.newLine();
