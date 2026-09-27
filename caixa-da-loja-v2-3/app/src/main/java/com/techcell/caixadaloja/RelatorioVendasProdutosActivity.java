@@ -29,6 +29,11 @@ public class RelatorioVendasProdutosActivity extends Activity {
     private TextView periodoTexto;
     private Button abaResumo;
     private Button abaDetalhamento;
+    private Button hojeBtn;
+    private Button mesBtn;
+    private Button mesAnteriorBtn;
+    private Button anoBtn;
+    private int periodoAtivo = 1;
 
     private long inicioAtual;
     private long fimAtual;
@@ -95,67 +100,64 @@ public class RelatorioVendasProdutosActivity extends Activity {
         aviso.setPadding(0, dp(8), 0, dp(8));
         root.addView(aviso);
 
-        periodoTexto = txt("", 14, true);
+        periodoTexto = txt("", 13, true);
         periodoTexto.setTextColor(TechCellUi.NAVY);
         periodoTexto.setBackground(TechCellUi.pillBackground(this));
-        periodoTexto.setPadding(dp(12), dp(10), dp(12), dp(10));
+        periodoTexto.setPadding(dp(12), dp(9), dp(12), dp(9));
+        periodoTexto.setOnClickListener(v -> escolherPeriodo());
         root.addView(periodoTexto);
 
         LinearLayout f1 = new LinearLayout(this);
         f1.setOrientation(LinearLayout.HORIZONTAL);
-        Button hoje = action("Hoje");
-        TechCellUi.styleFilter(this, hoje);
-        hoje.setOnClickListener(v -> periodoHoje());
-        f1.addView(hoje, new LinearLayout.LayoutParams(0, dp(50), 1));
+        f1.setPadding(0, dp(7), 0, 0);
 
-        Button mes = action("Este mês");
-        TechCellUi.styleFilter(this, mes);
-        LinearLayout.LayoutParams mesLp = new LinearLayout.LayoutParams(0, dp(50), 1);
-        mesLp.setMargins(dp(8), 0, 0, 0);
-        mes.setOnClickListener(v -> periodoMesAtual());
-        f1.addView(mes, mesLp);
+        hojeBtn = action("Hoje");
+        hojeBtn.setTextSize(12);
+        hojeBtn.setOnClickListener(v -> periodoHoje());
+        f1.addView(hojeBtn, new LinearLayout.LayoutParams(0, dp(40), 1));
+
+        mesBtn = action("Este mês");
+        mesBtn.setTextSize(12);
+        LinearLayout.LayoutParams mesLp = new LinearLayout.LayoutParams(0, dp(40), 1);
+        mesLp.setMargins(dp(6), 0, 0, 0);
+        mesBtn.setOnClickListener(v -> periodoMesAtual());
+        f1.addView(mesBtn, mesLp);
         root.addView(f1);
 
         LinearLayout f2 = new LinearLayout(this);
         f2.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams f2Lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
-        f2Lp.setMargins(0, dp(8), 0, 0);
-        f2.setLayoutParams(f2Lp);
+        f2.setPadding(0, dp(5), 0, 0);
 
-        Button mesAnterior = action("Mês anterior");
-        TechCellUi.styleFilter(this, mesAnterior);
-        mesAnterior.setOnClickListener(v -> periodoMesAnterior());
-        f2.addView(mesAnterior, new LinearLayout.LayoutParams(0, dp(50), 1));
+        mesAnteriorBtn = action("Mês anterior");
+        mesAnteriorBtn.setTextSize(12);
+        mesAnteriorBtn.setOnClickListener(v -> periodoMesAnterior());
+        f2.addView(mesAnteriorBtn, new LinearLayout.LayoutParams(0, dp(40), 1));
 
-        Button ano = action("Este ano");
-        TechCellUi.styleFilter(this, ano);
-        LinearLayout.LayoutParams anoLp = new LinearLayout.LayoutParams(0, dp(50), 1);
-        anoLp.setMargins(dp(8), 0, 0, 0);
-        ano.setOnClickListener(v -> periodoAnoAtual());
-        f2.addView(ano, anoLp);
+        anoBtn = action("Este ano");
+        anoBtn.setTextSize(12);
+        LinearLayout.LayoutParams anoLp = new LinearLayout.LayoutParams(0, dp(40), 1);
+        anoLp.setMargins(dp(6), 0, 0, 0);
+        anoBtn.setOnClickListener(v -> periodoAnoAtual());
+        f2.addView(anoBtn, anoLp);
         root.addView(f2);
 
-        Button personalizado = action("Escolher período...");
-        TechCellUi.styleFilter(this, personalizado);
-        personalizado.setOnClickListener(v -> escolherPeriodo());
-        LinearLayout.LayoutParams perLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
-        perLp.setMargins(0, dp(8), 0, dp(12));
-        root.addView(personalizado, perLp);
+        TextView dicaPeriodo = txt("Toque no período acima para escolher outras datas.", 11, false);
+        dicaPeriodo.setTextColor(TechCellUi.MUTED);
+        dicaPeriodo.setPadding(dp(2), dp(5), 0, dp(8));
+        root.addView(dicaPeriodo);
 
         LinearLayout abas = new LinearLayout(this);
         abas.setOrientation(LinearLayout.HORIZONTAL);
 
         abaResumo = action("Resumo");
-        TechCellUi.styleSecondary(this, abaResumo);
+        abaResumo.setTextSize(14);
         abaResumo.setOnClickListener(v -> selecionarAba(false));
-        abas.addView(abaResumo, new LinearLayout.LayoutParams(0, dp(50), 1));
+        abas.addView(abaResumo, new LinearLayout.LayoutParams(0, dp(42), 1));
 
         abaDetalhamento = action("Detalhamento");
-        TechCellUi.styleSecondary(this, abaDetalhamento);
-        LinearLayout.LayoutParams detLp = new LinearLayout.LayoutParams(0, dp(50), 1);
-        detLp.setMargins(dp(8), 0, 0, 0);
+        abaDetalhamento.setTextSize(14);
+        LinearLayout.LayoutParams detLp = new LinearLayout.LayoutParams(0, dp(42), 1);
+        detLp.setMargins(dp(6), 0, 0, 0);
         abaDetalhamento.setOnClickListener(v -> selecionarAba(true));
         abas.addView(abaDetalhamento, detLp);
         root.addView(abas);
@@ -173,6 +175,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
     }
 
     private void periodoHoje() {
+        periodoAtivo = 0;
         Calendar c = Calendar.getInstance();
         zerarHora(c);
         inicioAtual = c.getTimeInMillis();
@@ -182,6 +185,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
     }
 
     private void periodoMesAtual() {
+        periodoAtivo = 1;
         Calendar c = Calendar.getInstance();
         c.set(Calendar.DAY_OF_MONTH, 1);
         zerarHora(c);
@@ -192,6 +196,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
     }
 
     private void periodoMesAnterior() {
+        periodoAtivo = 2;
         Calendar fim = Calendar.getInstance();
         fim.set(Calendar.DAY_OF_MONTH, 1);
         zerarHora(fim);
@@ -204,6 +209,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
     }
 
     private void periodoAnoAtual() {
+        periodoAtivo = 3;
         Calendar c = Calendar.getInstance();
         c.set(Calendar.MONTH, Calendar.JANUARY);
         c.set(Calendar.DAY_OF_MONTH, 1);
@@ -238,6 +244,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
                     escolhidoFim.add(Calendar.DAY_OF_MONTH, 1);
                 }
 
+                periodoAtivo = 4;
                 inicioAtual = escolhidoIni.getTimeInMillis();
                 fimAtual = escolhidoFim.getTimeInMillis();
                 carregar();
@@ -258,16 +265,35 @@ public class RelatorioVendasProdutosActivity extends Activity {
         if (conteudo == null || inicioAtual <= 0 || fimAtual <= inicioAtual) return;
 
         long fimInclusivo = fimAtual - 1;
-        periodoTexto.setText("Período: " +
+        periodoTexto.setText("📅  Período: " +
                 dataCurta.format(new Date(inicioAtual)) + " a " +
-                dataCurta.format(new Date(fimInclusivo)));
+                dataCurta.format(new Date(fimInclusivo)) + "   ›");
 
-        abaResumo.setEnabled(detalhamento);
-        abaDetalhamento.setEnabled(!detalhamento);
+        atualizarFiltrosPeriodo();
+        atualizarAbas();
 
         conteudo.removeAllViews();
         if (detalhamento) carregarDetalhamento();
         else carregarResumo();
+    }
+
+    private void atualizarFiltrosPeriodo() {
+        Button[] botoes = {hojeBtn, mesBtn, mesAnteriorBtn, anoBtn};
+        for (int i = 0; i < botoes.length; i++) {
+            if (botoes[i] == null) continue;
+            if (i == periodoAtivo) TechCellUi.stylePrimary(this, botoes[i]);
+            else TechCellUi.styleFilter(this, botoes[i]);
+        }
+    }
+
+    private void atualizarAbas() {
+        if (detalhamento) {
+            TechCellUi.styleSecondary(this, abaResumo);
+            TechCellUi.stylePrimary(this, abaDetalhamento, TechCellUi.NAVY);
+        } else {
+            TechCellUi.stylePrimary(this, abaResumo, TechCellUi.NAVY);
+            TechCellUi.styleSecondary(this, abaDetalhamento);
+        }
     }
 
     private void carregarResumo() {

@@ -147,74 +147,80 @@ public class FinanceiroActivity extends Activity {
         sub.setTextColor(TechCellUi.MUTED);
         root.addView(sub);
 
-        LinearLayout filtros1 = new LinearLayout(this);
-        filtros1.setOrientation(LinearLayout.HORIZONTAL);
-        filtros1.setPadding(0, dp(12), 0, 0);
-
-        hojeBtn = action("Hoje");
-        hojeBtn.setOnClickListener(v -> periodoHoje());
-        filtros1.addView(hojeBtn, new LinearLayout.LayoutParams(0, dp(46), 1));
-
-        mesBtn = action("Este mês");
-        mesBtn.setOnClickListener(v -> periodoMesAtual());
-        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0, dp(46), 1);
-        mp.setMargins(dp(6),0,0,0);
-        filtros1.addView(mesBtn, mp);
-        root.addView(filtros1);
-
-        LinearLayout filtros2 = new LinearLayout(this);
-        filtros2.setOrientation(LinearLayout.HORIZONTAL);
-        filtros2.setPadding(0, dp(6), 0, 0);
-
-        mesAnteriorBtn = action("Mês anterior");
-        mesAnteriorBtn.setOnClickListener(v -> periodoMesAnterior());
-        filtros2.addView(mesAnteriorBtn, new LinearLayout.LayoutParams(0, dp(46), 1));
-
-        anoAtualBtn = action("Este ano");
-        anoAtualBtn.setOnClickListener(v -> periodoAnoAtual());
-        LinearLayout.LayoutParams aa = new LinearLayout.LayoutParams(0, dp(46), 1);
-        aa.setMargins(dp(6),0,0,0);
-        filtros2.addView(anoAtualBtn, aa);
-        root.addView(filtros2);
-
-        LinearLayout filtros3 = new LinearLayout(this);
-        filtros3.setOrientation(LinearLayout.HORIZONTAL);
-        filtros3.setPadding(0, dp(6), 0, 0);
-
-        anoAnteriorBtn = action("Ano anterior");
-        anoAnteriorBtn.setOnClickListener(v -> periodoAnoAnterior());
-        filtros3.addView(anoAnteriorBtn, new LinearLayout.LayoutParams(0, dp(46), 1));
-
-        personalizadoBtn = action("Período...");
-        personalizadoBtn.setOnClickListener(v -> escolherPeriodo());
-        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, dp(46), 1);
-        pp.setMargins(dp(6),0,0,0);
-        filtros3.addView(personalizadoBtn, pp);
-        root.addView(filtros3);
-
         periodoTexto = txt("", 13, true);
         periodoTexto.setTextColor(TechCellUi.NAVY);
         periodoTexto.setBackground(TechCellUi.pillBackground(this));
         periodoTexto.setPadding(dp(12), dp(9), dp(12), dp(9));
-        root.addView(periodoTexto, TechCellUi.fullCardParams(this, 6));
+        periodoTexto.setOnClickListener(v -> escolherPeriodo());
+        root.addView(periodoTexto, TechCellUi.fullCardParams(this, 10));
+
+        LinearLayout filtros1 = new LinearLayout(this);
+        filtros1.setOrientation(LinearLayout.HORIZONTAL);
+        filtros1.setPadding(0, dp(7), 0, 0);
+
+        hojeBtn = action("Hoje");
+        hojeBtn.setTextSize(12);
+        hojeBtn.setOnClickListener(v -> periodoHoje());
+        filtros1.addView(hojeBtn, new LinearLayout.LayoutParams(0, dp(40), 1));
+
+        mesBtn = action("Este mês");
+        mesBtn.setTextSize(12);
+        mesBtn.setOnClickListener(v -> periodoMesAtual());
+        LinearLayout.LayoutParams mp = new LinearLayout.LayoutParams(0, dp(40), 1);
+        mp.setMargins(dp(5),0,0,0);
+        filtros1.addView(mesBtn, mp);
+
+        mesAnteriorBtn = action("Mês anterior");
+        mesAnteriorBtn.setTextSize(12);
+        mesAnteriorBtn.setOnClickListener(v -> periodoMesAnterior());
+        LinearLayout.LayoutParams map = new LinearLayout.LayoutParams(0, dp(40), 1);
+        map.setMargins(dp(5),0,0,0);
+        filtros1.addView(mesAnteriorBtn, map);
+        root.addView(filtros1);
+
+        LinearLayout filtros2 = new LinearLayout(this);
+        filtros2.setOrientation(LinearLayout.HORIZONTAL);
+        filtros2.setPadding(0, dp(5), 0, 0);
+
+        anoAtualBtn = action("Este ano");
+        anoAtualBtn.setTextSize(12);
+        anoAtualBtn.setOnClickListener(v -> periodoAnoAtual());
+        filtros2.addView(anoAtualBtn, new LinearLayout.LayoutParams(0, dp(40), 1));
+
+        anoAnteriorBtn = action("Ano anterior");
+        anoAnteriorBtn.setTextSize(12);
+        anoAnteriorBtn.setOnClickListener(v -> periodoAnoAnterior());
+        LinearLayout.LayoutParams aap = new LinearLayout.LayoutParams(0, dp(40), 1);
+        aap.setMargins(dp(5),0,0,0);
+        filtros2.addView(anoAnteriorBtn, aap);
+
+        personalizadoBtn = action("📅 Outro");
+        personalizadoBtn.setTextSize(12);
+        personalizadoBtn.setOnClickListener(v -> escolherPeriodo());
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(0, dp(40), 1);
+        pp.setMargins(dp(5),0,0,0);
+        filtros2.addView(personalizadoBtn, pp);
+        root.addView(filtros2);
 
         LinearLayout abas = new LinearLayout(this);
         abas.setOrientation(LinearLayout.HORIZONTAL);
         abas.setPadding(0, dp(8), 0, 0);
 
         abaResumoBtn = action("Resumo");
+        abaResumoBtn.setTextSize(14);
         abaResumoBtn.setOnClickListener(v -> {
             mostrarSaidas = false;
             carregar();
         });
-        abas.addView(abaResumoBtn, new LinearLayout.LayoutParams(0, dp(46), 1));
+        abas.addView(abaResumoBtn, new LinearLayout.LayoutParams(0, dp(42), 1));
 
         abaSaidasBtn = action("Saídas / despesas");
+        abaSaidasBtn.setTextSize(14);
         abaSaidasBtn.setOnClickListener(v -> {
             mostrarSaidas = true;
             carregar();
         });
-        LinearLayout.LayoutParams asp = new LinearLayout.LayoutParams(0, dp(46), 1);
+        LinearLayout.LayoutParams asp = new LinearLayout.LayoutParams(0, dp(42), 1);
         asp.setMargins(dp(6),0,0,0);
         abas.addView(abaSaidasBtn, asp);
         root.addView(abas);
@@ -351,7 +357,7 @@ public class FinanceiroActivity extends Activity {
         if (inicioAtual <= 0 || fimAtual <= inicioAtual) return;
 
         long fimInclusivo = fimAtual - 1;
-        periodoTexto.setText("Período: " +
+        periodoTexto.setText("📅  Período: " +
                 dataCurta.format(new Date(inicioAtual)) + " a " +
                 dataCurta.format(new Date(fimInclusivo)));
 

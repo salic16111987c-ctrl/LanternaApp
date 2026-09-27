@@ -281,9 +281,15 @@ public class PdvActivity extends Activity {
 
         LinearLayout bottom = new LinearLayout(this);
         bottom.setOrientation(LinearLayout.VERTICAL);
-        bottom.setPadding(dp(14), dp(10), dp(14), dp(12));
+        final int bottomBasePadding = dp(12);
+        bottom.setPadding(dp(14), dp(10), dp(14), bottomBasePadding);
         bottom.setBackground(bordered(Color.WHITE, 0, BORDER));
         bottom.setElevation(dp(8));
+        bottom.setOnApplyWindowInsetsListener((v, insets) -> {
+            int nav = Math.max(0, insets.getSystemWindowInsetBottom());
+            v.setPadding(dp(14), dp(10), dp(14), bottomBasePadding + nav);
+            return insets;
+        });
 
         finalizar = filledButton("▣   FINALIZAR VENDA   →", GREEN);
         finalizar.setTextSize(18);
@@ -295,6 +301,7 @@ public class PdvActivity extends Activity {
         screen.addView(bottom, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
+        bottom.requestApplyInsets();
 
         busca.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
