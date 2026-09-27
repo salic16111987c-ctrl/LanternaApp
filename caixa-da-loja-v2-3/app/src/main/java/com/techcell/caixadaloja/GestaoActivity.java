@@ -16,6 +16,7 @@ import java.util.Locale;
 
 public class GestaoActivity extends Activity {
     private final NumberFormat moeda=NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
+    private boolean syncProdutosRodando;
     private int dp(int v){return TechCellUi.dp(this,v);}
     private TextView text(String v,int s,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t;}
     private Button moduleButton(String label){Button b=new Button(this);b.setText(label);b.setTextSize(14);TechCellUi.styleSecondary(this,b);return b;}
@@ -49,12 +50,38 @@ public class GestaoActivity extends Activity {
         }catch(Throwable ignored){}
     }
     @Override protected void onCreate(Bundle b){super.onCreate(b);render();}
-    @Override protected void onResume(){super.onResume();garantirMasterLocal();render();}
+    @Override protected void onResume(){
+        super.onResume();
+        garantirMasterLocal();
+        render();
+        sincronizarTerminal();
+    }
+
+    private void sincronizarTerminal(){
+        if(syncProdutosRodando)return;
+        GestaoDbHelper db=new GestaoDbHelper(this);
+        GestaoDbHelper.SyncContext ctx=db.getSyncContext();
+        if(!ctx.configurado||"MASTER".equalsIgnoreCase(ctx.papelDispositivo))return;
+        if(ctx.masterHost==null||ctx.masterHost.trim().isEmpty())return;
+        if(ctx.masterAuthToken==null||ctx.masterAuthToken.trim().isEmpty())return;
+
+        syncProdutosRodando=true;
+        new Thread(()->{
+            if(db.countVendasPendentesMaster()>0){
+                TechCellSaleSync.enviarPendentes(getApplicationContext(),"");
+            }
+            TechCellProductSync.Resultado resultado=TechCellProductSync.puxarAlteracoes(getApplicationContext());
+            runOnUiThread(()->{
+                syncProdutosRodando=false;
+                if(resultado.total()>0)render();
+            });
+        },"TechCell-Gestao-Sync").start();
+    }
     private void render(){
         TechCellUi.applyWindowChrome(this);GestaoDbHelper db=new GestaoDbHelper(this);GestaoDbHelper.ResumoVendas hoje=db.resumoHoje();
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(18),dp(16),dp(30));scroll.addView(root);
         Button back=new Button(this);back.setText("←  Voltar");TechCellUi.styleSecondary(this,back);back.setOnClickListener(v->finish());root.addView(back,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
-        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);TextView sub=text("Painel principal • Alpha 34",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
+        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);TextView sub=text("Painel principal • Alpha 35",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
         TextView ht=text("Hoje",17,true);ht.setPadding(0,dp(16),0,0);root.addView(ht);
         addMetricRow(root,metric("TOTAL VENDIDO",moeda.format(hoje.total),TechCellUi.GREEN),metric("LUCRO BRUTO",moeda.format(hoje.lucro),TechCellUi.GREEN));
         addMetricRow(root,metric("VENDAS",String.valueOf(hoje.quantidadeVendas),TechCellUi.BLUE),metric("CUSTO",moeda.format(hoje.custo),TechCellUi.TEXT));
@@ -75,11 +102,14 @@ public class GestaoActivity extends Activity {
         int pendentes=db.countSyncPendentes();
         String papel=sync.configurado ? sync.papelDispositivo : "NÃO CONFIGURADO";
         TextView infra=text(
-                "Estrutura local v16 • multiempresa e rede preparada\n"+
+                "Estrutura local v17 • multiempresa e rede preparada\n"+
                 "Empresa "+curto(sync.empresaUuid)+"  •  Filial "+curto(sync.filialUuid)+"  •  Dispositivo "+curto(sync.dispositivoUuid)+
                 "\n"+(sync.configurado ? sync.nomeDispositivo+"  •  Função: "+papel : "Função do aparelho: "+papel)+
                 "\nRede local: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo) ? "Master ativo/configurado" :
                         (sync.masterHost==null||sync.masterHost.trim().isEmpty() ? "Master não vinculado" : "Master "+sync.masterHost))+
+                "\nProdutos/estoque: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo) ? "fonte principal" :
+                        (sync.masterAuthToken==null||sync.masterAuthToken.trim().isEmpty() ? "aguardando autorização" :
+                                "sincronização incremental ativa • cursor "+sync.lastProductPullSeq))+
                 "\nNuvem: "+(sync.cloudAtiva ? "ativa" : "ainda não configurada")+
                 "  •  Alterações locais pendentes: "+pendentes,
                 11,true);

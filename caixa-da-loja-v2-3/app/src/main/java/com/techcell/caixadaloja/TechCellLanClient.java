@@ -31,6 +31,8 @@ public final class TechCellLanClient {
     private static final String SNAPSHOT_OK = "TECHCELL_SNAPSHOT_OK_V1";
     private static final String SALE = "TECHCELL_SALE_V1";
     private static final String SALE_OK = "TECHCELL_SALE_OK_V1";
+    private static final String PRODUCT_DELTA = "TECHCELL_PRODUCT_DELTA_V1";
+    private static final String PRODUCT_DELTA_OK = "TECHCELL_PRODUCT_DELTA_OK_V1";
     private static final String ERROR = "TECHCELL_ERROR_V1";
 
     public static class MasterInfo {
@@ -211,6 +213,42 @@ public final class TechCellLanClient {
             out.jaExistia = "EXISTE".equalsIgnoreCase(p[3]);
             out.authToken = p[4];
             return out;
+        } finally {
+            try { socket.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    public static String baixarDeltaProdutos(String host, int port, String dispositivoUuid,
+                                             String authToken, long afterSeq) throws Exception {
+        String token = authToken == null ? "" : authToken.trim();
+        if (token.isEmpty()) throw new SecurityException("Terminal ainda não autorizado pelo Master.");
+
+        Socket socket = new Socket();
+        try {
+            socket.connect(new java.net.InetSocketAddress(host, port), 2200);
+            socket.setSoTimeout(15000);
+
+            BufferedWriter w = writer(socket);
+            BufferedReader r = reader(socket);
+            w.write(PRODUCT_DELTA + "|" + limpar(dispositivoUuid) + "|" + limpar(token) + "|" + Math.max(0, afterSeq));
+            w.newLine();
+            w.flush();
+
+            String linha = r.readLine();
+            if (linha == null) throw new IllegalStateException("O Master encerrou a conexão sem enviar atualizações.");
+            if (linha.startsWith(ERROR + "|")) {
+                String erro = linha.substring((ERROR + "|").length());
+                if ("NAO_AUTORIZADO".equals(erro)) throw new SecurityException("Terminal não autorizado pelo Master.");
+                if ("NAO_MASTER".equals(erro)) throw new IllegalStateException("O aparelho remoto não está configurado como Master.");
+                throw new IllegalStateException("Master recusou a atualização: " + erro);
+            }
+            if (!linha.startsWith(PRODUCT_DELTA_OK + "|")) {
+                throw new IllegalStateException("Resposta de atualização inválida.");
+            }
+
+            String payload = linha.substring((PRODUCT_DELTA_OK + "|").length());
+            if (payload.isEmpty()) throw new IllegalStateException("Pacote de atualização vazio.");
+            return descompactar(payload);
         } finally {
             try { socket.close(); } catch (Throwable ignored) {}
         }

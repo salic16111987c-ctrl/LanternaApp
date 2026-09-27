@@ -20,6 +20,7 @@ import java.util.Locale;
 public class EstoqueActivity extends Activity {
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
     private int ordem = 0;
+    private boolean syncProdutosRodando;
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
 
@@ -40,6 +41,24 @@ public class EstoqueActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         if (getWindow() != null && getWindow().getDecorView() != null) render();
+        sincronizarProdutosMaster();
+    }
+
+    private void sincronizarProdutosMaster() {
+        if (syncProdutosRodando) return;
+        GestaoDbHelper db = new GestaoDbHelper(this);
+        GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+        if (!ctx.configurado || "MASTER".equalsIgnoreCase(ctx.papelDispositivo) ||
+                ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) return;
+
+        syncProdutosRodando = true;
+        new Thread(() -> {
+            TechCellProductSync.Resultado r = TechCellProductSync.puxarAlteracoes(getApplicationContext());
+            runOnUiThread(() -> {
+                syncProdutosRodando = false;
+                if (r.total() > 0) render();
+            });
+        }, "TechCell-Estoque-Sync").start();
     }
 
     private LinearLayout kpi(String label, String value, int color) {
@@ -110,7 +129,7 @@ public class EstoqueActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView sub = txt("Visão geral do seu estoque • Alpha 34", 12, false);
+        TextView sub = txt("Visão geral do seu estoque • Alpha 35", 12, false);
         sub.setTextColor(TechCellUi.MUTED);
         root.addView(sub);
 

@@ -40,6 +40,7 @@ public class ProdutosActivity extends Activity {
     private EditText busca;
     private Button ordenar;
     private int ordem = 0;
+    private boolean syncProdutosRodando;
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -101,7 +102,7 @@ public class ProdutosActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView info = txt("Cadastro e controle de mercadorias • Alpha 34", 12, false);
+        TextView info = txt("Cadastro e controle de mercadorias • Alpha 35", 12, false);
         info.setTextColor(TechCellUi.MUTED);
         root.addView(info);
 
@@ -155,6 +156,27 @@ public class ProdutosActivity extends Activity {
         setContentView(scroll);
         atualizarRotuloOrdenacao();
         carregar();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        sincronizarProdutosMaster();
+    }
+
+    private void sincronizarProdutosMaster() {
+        if (syncProdutosRodando || db == null) return;
+        GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+        if (!ctx.configurado || "MASTER".equalsIgnoreCase(ctx.papelDispositivo) ||
+                ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) return;
+
+        syncProdutosRodando = true;
+        new Thread(() -> {
+            TechCellProductSync.Resultado r = TechCellProductSync.puxarAlteracoes(getApplicationContext());
+            runOnUiThread(() -> {
+                syncProdutosRodando = false;
+                if (r.total() > 0) carregar();
+            });
+        }, "TechCell-Produtos-Sync").start();
     }
 
     private void atualizarRotuloOrdenacao() {

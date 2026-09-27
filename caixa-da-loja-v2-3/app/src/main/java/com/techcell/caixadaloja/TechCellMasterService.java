@@ -30,6 +30,8 @@ public class TechCellMasterService extends Service {
     private static final String SNAPSHOT_OK = "TECHCELL_SNAPSHOT_OK_V1";
     private static final String SALE = "TECHCELL_SALE_V1";
     private static final String SALE_OK = "TECHCELL_SALE_OK_V1";
+    private static final String PRODUCT_DELTA = "TECHCELL_PRODUCT_DELTA_V1";
+    private static final String PRODUCT_DELTA_OK = "TECHCELL_PRODUCT_DELTA_OK_V1";
     private static final String ERROR = "TECHCELL_ERROR_V1";
 
     private volatile boolean ativo;
@@ -137,6 +139,11 @@ public class TechCellMasterService extends Service {
 
             if (linha.startsWith(SALE + "|")) {
                 responderVenda(linha, w);
+                return;
+            }
+
+            if (linha.startsWith(PRODUCT_DELTA + "|")) {
+                responderDeltaProdutos(linha, w);
                 return;
             }
 
@@ -248,6 +255,42 @@ public class TechCellMasterService extends Service {
         GestaoDbHelper.RecebimentoVenda recebida = db.receberVendaDoTerminal(json);
         w.write(SALE_OK + "|" + seguro(recebida.vendaUuid) + "|" + recebida.vendaIdMaster + "|" +
                 (recebida.jaExistia ? "EXISTE" : "NOVA") + "|" + seguro(token));
+        w.newLine();
+        w.flush();
+    }
+
+    private void responderDeltaProdutos(String linha, BufferedWriter w) throws Exception {
+        GestaoDbHelper db = new GestaoDbHelper(this);
+        GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            w.write(ERROR + "|NAO_MASTER");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        String[] p = linha.split("\\|", -1);
+        if (p.length < 4) {
+            w.write(ERROR + "|PACOTE_INCOMPLETO");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        String deviceUuid = p[1] == null ? "" : p[1].trim();
+        String token = p[2] == null ? "" : p[2].trim();
+        if (!db.validarTokenLan(deviceUuid, token)) {
+            w.write(ERROR + "|NAO_AUTORIZADO");
+            w.newLine();
+            w.flush();
+            return;
+        }
+
+        long afterSeq = 0;
+        try { afterSeq = Math.max(0, Long.parseLong(p[3])); } catch (Throwable ignored) {}
+
+        String json = db.exportarDeltaProdutos(afterSeq, 500);
+        w.write(PRODUCT_DELTA_OK + "|" + TechCellLanClient.compactar(json));
         w.newLine();
         w.flush();
     }

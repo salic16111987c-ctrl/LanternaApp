@@ -7,6 +7,8 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -45,6 +47,16 @@ public class PdvActivity extends Activity {
     private TextView totalValor;
     private Button finalizar;
     private Button removerDesconto;
+    private TextView syncRedeStatus;
+    private final Handler syncHandler = new Handler(Looper.getMainLooper());
+    private boolean syncIncrementalRodando;
+
+    private final Runnable syncCiclo = new Runnable() {
+        @Override public void run() {
+            sincronizarRedeIncremental(false);
+            syncHandler.postDelayed(this, 7000);
+        }
+    };
 
     private boolean descontoPercentual = false;
     private double descontoEntrada = 0;
@@ -193,6 +205,17 @@ public class PdvActivity extends Activity {
         }
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        syncHandler.removeCallbacks(syncCiclo);
+        syncHandler.post(syncCiclo);
+    }
+
+    @Override protected void onPause() {
+        syncHandler.removeCallbacks(syncCiclo);
+        super.onPause();
+    }
+
     @Override public void onBackPressed() {
         tentarSair();
     }
@@ -324,7 +347,7 @@ public class PdvActivity extends Activity {
         title.setTextColor(Color.WHITE);
         titles.addView(title);
 
-        TextView sub = txt("Frente de Caixa • Alpha 34", 13, false);
+        TextView sub = txt("Frente de Caixa • Alpha 35", 13, false);
         sub.setTextColor(Color.parseColor("#D9E3F0"));
         sub.setPadding(0, dp(2), 0, 0);
         titles.addView(sub);
@@ -337,6 +360,11 @@ public class PdvActivity extends Activity {
         statusCarrinho.setTextColor(Color.WHITE);
         statusCarrinho.setPadding(dp(2), dp(16), 0, 0);
         header.addView(statusCarrinho);
+
+        syncRedeStatus = txt(statusRedeInicial(), 11, true);
+        syncRedeStatus.setTextColor(Color.parseColor("#D9E3F0"));
+        syncRedeStatus.setPadding(dp(2), dp(6), 0, 0);
+        header.addView(syncRedeStatus);
 
         root.addView(header);
     }
@@ -1351,29 +1379,100 @@ public class PdvActivity extends Activity {
         dialog.show();
     }
 
+    private String statusRedeInicial() {
+        try {
+            GestaoDbHelper.SyncContext ctx = db == null ? new GestaoDbHelper(this).getSyncContext() : db.getSyncContext();
+            if (!ctx.configurado) return "Rede: dispositivo ainda não configurado";
+            if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) return "Rede: este aparelho é o Master";
+            if (ctx.masterHost == null || ctx.masterHost.trim().isEmpty()) return "Rede: Master não vinculado";
+            if (ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) return "Rede: pareamento necessário";
+            return "Rede: Master " + ctx.masterHost + " • atualização automática ativa";
+        } catch (Throwable e) {
+            return "Rede: modo local";
+        }
+    }
+
+    private void recarregarProdutosDoCarrinho() {
+        boolean removido = false;
+        boolean estoqueMudou = false;
+        for (GestaoDbHelper.VendaItem item : new ArrayList<>(carrinho)) {
+            GestaoDbHelper.Produto antes = item.produto;
+            GestaoDbHelper.Produto atual = db.get(antes.id);
+            if (atual == null) {
+                carrinho.remove(item);
+                removido = true;
+                continue;
+            }
+            if (Math.abs(atual.estoque - antes.estoque) > 0.000001) estoqueMudou = true;
+            item.produto = atual;
+        }
+        atualizarResultados();
+        atualizarCarrinho();
+        if (removido) {
+            Toast.makeText(this, "Um produto do carrinho foi removido no Master e saiu da venda.", Toast.LENGTH_LONG).show();
+        } else if (estoqueMudou) {
+            Toast.makeText(this, "Estoque atualizado pelo Master.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void sincronizarRedeIncremental(boolean mostrarToast) {
+        if (syncIncrementalRodando || db == null) return;
+        GestaoDbHelper.SyncContext ctx;
+        try { ctx = db.getSyncContext(); } catch (Throwable e) { return; }
+        if (!ctx.configurado || "MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            if (syncRedeStatus != null) syncRedeStatus.setText(statusRedeInicial());
+            return;
+        }
+        if (ctx.masterHost == null || ctx.masterHost.trim().isEmpty() ||
+                ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) {
+            if (syncRedeStatus != null) syncRedeStatus.setText(statusRedeInicial());
+            return;
+        }
+
+        syncIncrementalRodando = true;
+        new Thread(() -> {
+            TechCellSaleSync.Resultado vendas = null;
+            if (db.countVendasPendentesMaster() > 0) {
+                vendas = TechCellSaleSync.enviarPendentes(getApplicationContext(), "");
+            }
+
+            TechCellProductSync.Resultado produtos = TechCellProductSync.puxarAlteracoes(getApplicationContext());
+            TechCellSaleSync.Resultado vendasFinal = vendas;
+            runOnUiThread(() -> {
+                syncIncrementalRodando = false;
+
+                if (vendasFinal != null && vendasFinal.erro != null && !vendasFinal.erro.trim().isEmpty()) {
+                    if (syncRedeStatus != null) syncRedeStatus.setText("Rede: venda pendente • " + vendasFinal.erro);
+                    return;
+                }
+
+                if (produtos.erro != null && !produtos.erro.trim().isEmpty()) {
+                    if (syncRedeStatus != null) syncRedeStatus.setText("Rede: Master temporariamente indisponível");
+                    return;
+                }
+
+                int total = produtos.total();
+                if (total > 0) {
+                    recarregarProdutosDoCarrinho();
+                    if (syncRedeStatus != null) syncRedeStatus.setText(
+                            "Rede: Master atualizado ✓ • " + total + " alteração(ões)");
+                } else if (syncRedeStatus != null) {
+                    syncRedeStatus.setText("Rede: sincronizado com o Master ✓");
+                }
+
+                if (mostrarToast && vendasFinal != null && vendasFinal.enviadas > 0) {
+                    Toast.makeText(this,
+                            vendasFinal.enviadas == 1 ? "Venda sincronizada com o Master ✓" :
+                                    vendasFinal.enviadas + " vendas sincronizadas com o Master ✓",
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
+        }, "TechCell-Realtime-Sync").start();
+    }
+
     private void tentarSincronizarVendasAutomaticamente() {
         try {
-            GestaoDbHelper.SyncContext ctx = db.getSyncContext();
-            if (!ctx.configurado || "MASTER".equalsIgnoreCase(ctx.papelDispositivo)) return;
-            if (ctx.masterHost == null || ctx.masterHost.trim().isEmpty()) return;
-            if (ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) return;
-
-            new Thread(() -> {
-                TechCellSaleSync.Resultado r = TechCellSaleSync.enviarPendentes(
-                        getApplicationContext(), "");
-                if ((r.erro == null || r.erro.trim().isEmpty()) && r.enviadas > 0) {
-                    runOnUiThread(() -> Toast.makeText(
-                            this,
-                            r.enviadas == 1 ? "Venda sincronizada com o Master ✓" :
-                                    r.enviadas + " vendas sincronizadas com o Master ✓",
-                            Toast.LENGTH_SHORT).show());
-                } else if (r.erro != null && !r.erro.trim().isEmpty()) {
-                    runOnUiThread(() -> Toast.makeText(
-                            this,
-                            "Venda salva localmente. Sincronização pendente: " + r.erro,
-                            Toast.LENGTH_LONG).show());
-                }
-            }, "TechCell-Auto-Sale-Sync").start();
+            sincronizarRedeIncremental(true);
         } catch (Throwable ignored) {
             // A venda local já foi concluída; falha de rede nunca desfaz a operação local.
         }

@@ -16,7 +16,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 16;
+    private static final int DB_VERSION = 17;
 
     public static class Produto {
         public long id;
@@ -318,6 +318,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public long lastSalePushAt;
         public int lastSalePushCount;
         public String lastSalePushError = "";
+        public long lastProductPullSeq;
+        public long lastProductPullAt;
+        public int lastProductPullCount;
+        public String lastProductPullError = "";
         public boolean configurado;
         public boolean cloudAtiva;
     }
@@ -451,6 +455,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         if (oldVersion < 16) {
             migrarParaV16(db);
+        }
+
+        if (oldVersion < 17) {
+            migrarParaV17(db);
         }
     }
 
@@ -710,6 +718,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "last_sale_push_at INTEGER NOT NULL DEFAULT 0," +
                 "last_sale_push_count INTEGER NOT NULL DEFAULT 0," +
                 "last_sale_push_error TEXT NOT NULL DEFAULT ''," +
+                "last_product_pull_seq INTEGER NOT NULL DEFAULT 0," +
+                "last_product_pull_at INTEGER NOT NULL DEFAULT 0," +
+                "last_product_pull_count INTEGER NOT NULL DEFAULT 0," +
+                "last_product_pull_error TEXT NOT NULL DEFAULT ''," +
                 "configurado INTEGER NOT NULL DEFAULT 0," +
                 "cloud_ativa INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL," +
@@ -746,6 +758,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "created_at INTEGER NOT NULL," +
                 "last_seen INTEGER NOT NULL" +
                 ")");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS lan_product_changes (" +
+                "seq INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "produto_uuid TEXT NOT NULL," +
+                "acao TEXT NOT NULL," +
+                "changed_at INTEGER NOT NULL" +
+                ")");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_lan_product_changes_seq ON lan_product_changes(seq)");
+
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_tombstones_uuid " +
                 "ON sync_tombstones(entidade,entidade_uuid)");
     }
@@ -781,6 +802,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         v.put("last_sale_push_at", 0);
         v.put("last_sale_push_count", 0);
         v.put("last_sale_push_error", "");
+        v.put("last_product_pull_seq", 0);
+        v.put("last_product_pull_at", 0);
+        v.put("last_product_pull_count", 0);
+        v.put("last_product_pull_error", "");
         v.put("configurado", 0);
         v.put("cloud_ativa", 0);
         v.put("created_at", now);
@@ -812,6 +837,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                         "master_name,master_last_seen,lan_pairing_code,last_snapshot_at," +
                         "last_snapshot_produtos,last_snapshot_clientes,last_snapshot_fornecedores," +
                         "master_auth_token,last_sale_push_at,last_sale_push_count,last_sale_push_error," +
+                        "last_product_pull_seq,last_product_pull_at,last_product_pull_count,last_product_pull_error," +
                         "configurado,cloud_ativa FROM sync_context WHERE id=1",
                 null);
         try {
@@ -836,8 +862,12 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 x.lastSalePushAt = c.getLong(17);
                 x.lastSalePushCount = c.getInt(18);
                 x.lastSalePushError = c.getString(19);
-                x.configurado = c.getInt(20) == 1;
-                x.cloudAtiva = c.getInt(21) == 1;
+                x.lastProductPullSeq = c.getLong(20);
+                x.lastProductPullAt = c.getLong(21);
+                x.lastProductPullCount = c.getInt(22);
+                x.lastProductPullError = c.getString(23);
+                x.configurado = c.getInt(24) == 1;
+                x.cloudAtiva = c.getInt(25) == 1;
             }
         } finally {
             c.close();
@@ -876,6 +906,33 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         adicionarColunaSeAusente(db, "sync_context", "last_sale_push_at", "INTEGER NOT NULL DEFAULT 0");
         adicionarColunaSeAusente(db, "sync_context", "last_sale_push_count", "INTEGER NOT NULL DEFAULT 0");
         adicionarColunaSeAusente(db, "sync_context", "last_sale_push_error", "TEXT NOT NULL DEFAULT ''");
+    }
+
+    private void migrarParaV17(SQLiteDatabase db) {
+        criarSyncBase(db);
+        adicionarColunaSeAusente(db, "sync_context", "last_product_pull_seq", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "sync_context", "last_product_pull_at", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "sync_context", "last_product_pull_count", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "sync_context", "last_product_pull_error", "TEXT NOT NULL DEFAULT ''");
+
+        Cursor total = db.rawQuery("SELECT COUNT(*) FROM lan_product_changes", null);
+        boolean vazio;
+        try {
+            vazio = !total.moveToFirst() || total.getLong(0) == 0;
+        } finally {
+            total.close();
+        }
+
+        if (vazio) {
+            Cursor produtos = db.rawQuery("SELECT uuid FROM produtos WHERE TRIM(uuid)<>'' ORDER BY id", null);
+            try {
+                while (produtos.moveToNext()) {
+                    registrarMudancaProdutoUuid(db, produtos.getString(0), "UPSERT");
+                }
+            } finally {
+                produtos.close();
+            }
+        }
     }
 
     public void salvarConfiguracaoDispositivo(String nome, String papel, String masterHost, int masterPort) {
@@ -993,6 +1050,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             root.put("filial_uuid", ctx.filialUuid);
             root.put("master_device_uuid", ctx.dispositivoUuid);
             root.put("gerado_em", System.currentTimeMillis());
+            root.put("product_change_cursor", ultimoSeqProduto(db));
 
             JSONObject tabelas = new JSONObject();
             tabelas.put("empresa_config", exportarTabela(db, "empresa_config"));
@@ -1062,6 +1120,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             sc.put("last_snapshot_produtos", produtos);
             sc.put("last_snapshot_clientes", clientes);
             sc.put("last_snapshot_fornecedores", fornecedores);
+            sc.put("last_product_pull_seq", Math.max(0, root.optLong("product_change_cursor", 0)));
+            sc.put("last_product_pull_at", agora);
+            sc.put("last_product_pull_count", produtos);
+            sc.put("last_product_pull_error", "");
             sc.put("master_last_seen", agora);
             sc.put("updated_at", agora);
             db.update("sync_context", sc, "id=1", null);
@@ -1147,6 +1209,184 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             }
         }
         return v;
+    }
+
+    private long ultimoSeqProduto(SQLiteDatabase db) {
+        Cursor c = db.rawQuery("SELECT COALESCE(MAX(seq),0) FROM lan_product_changes", null);
+        try {
+            return c.moveToFirst() ? c.getLong(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    private void registrarMudancaProduto(SQLiteDatabase db, long produtoId, String acao) {
+        Cursor c = db.rawQuery("SELECT uuid FROM produtos WHERE id=? LIMIT 1",
+                new String[]{String.valueOf(produtoId)});
+        try {
+            if (c.moveToFirst()) registrarMudancaProdutoUuid(db, c.getString(0), acao);
+        } finally {
+            c.close();
+        }
+    }
+
+    private void registrarMudancaProdutoUuid(SQLiteDatabase db, String produtoUuid, String acao) {
+        String uuid = produtoUuid == null ? "" : produtoUuid.trim();
+        if (uuid.isEmpty()) return;
+        ContentValues v = new ContentValues();
+        v.put("produto_uuid", uuid);
+        v.put("acao", "DELETE".equalsIgnoreCase(acao) ? "DELETE" : "UPSERT");
+        v.put("changed_at", System.currentTimeMillis());
+        db.insertOrThrow("lan_product_changes", null, v);
+    }
+
+    public static class ProductDeltaStats {
+        public long cursor;
+        public int upserts;
+        public int deletes;
+        public boolean hasMore;
+        public int total() { return upserts + deletes; }
+    }
+
+    public String exportarDeltaProdutos(long afterSeq, int limite) {
+        SQLiteDatabase db = getReadableDatabase();
+        int max = Math.max(1, Math.min(limite, 500));
+        try {
+            SyncContext ctx = lerSyncContext(db);
+            JSONObject root = new JSONObject();
+            root.put("schema", 1);
+            root.put("empresa_uuid", ctx.empresaUuid);
+            root.put("filial_uuid", ctx.filialUuid);
+
+            JSONArray changes = new JSONArray();
+            long cursor = Math.max(0, afterSeq);
+            Cursor c = db.rawQuery(
+                    "SELECT seq,produto_uuid,acao FROM lan_product_changes WHERE seq>? ORDER BY seq LIMIT " + max,
+                    new String[]{String.valueOf(cursor)});
+            try {
+                while (c.moveToNext()) {
+                    long seq = c.getLong(0);
+                    String uuid = c.getString(1);
+                    String acao = c.getString(2);
+                    JSONObject ch = new JSONObject();
+                    ch.put("seq", seq);
+                    ch.put("produto_uuid", uuid);
+
+                    if ("DELETE".equalsIgnoreCase(acao)) {
+                        ch.put("acao", "DELETE");
+                    } else {
+                        Cursor p = db.rawQuery("SELECT * FROM produtos WHERE uuid=? LIMIT 1", new String[]{uuid});
+                        try {
+                            if (p.moveToFirst()) {
+                                ch.put("acao", "UPSERT");
+                                ch.put("produto", cursorRowJson(p));
+                            } else {
+                                ch.put("acao", "DELETE");
+                            }
+                        } finally {
+                            p.close();
+                        }
+                    }
+                    changes.put(ch);
+                    cursor = seq;
+                }
+            } finally {
+                c.close();
+            }
+
+            boolean hasMore = false;
+            Cursor mais = db.rawQuery("SELECT 1 FROM lan_product_changes WHERE seq>? LIMIT 1",
+                    new String[]{String.valueOf(cursor)});
+            try {
+                hasMore = mais.moveToFirst();
+            } finally {
+                mais.close();
+            }
+
+            root.put("cursor", cursor);
+            root.put("has_more", hasMore);
+            root.put("changes", changes);
+            return root.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Falha ao preparar atualização de produtos: " + e.getMessage(), e);
+        }
+    }
+
+    public ProductDeltaStats aplicarDeltaProdutos(String json) {
+        if (json == null || json.trim().isEmpty()) throw new IllegalArgumentException("Atualização vazia.");
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            JSONObject root = new JSONObject(json);
+            if (root.optInt("schema", 0) != 1) throw new IllegalStateException("Versão de atualização incompatível.");
+
+            SyncContext ctx = lerSyncContext(db);
+            if (!ctx.empresaUuid.equalsIgnoreCase(root.optString("empresa_uuid", "")) ||
+                    !ctx.filialUuid.equalsIgnoreCase(root.optString("filial_uuid", ""))) {
+                throw new IllegalStateException("Atualização pertence a outra empresa/filial.");
+            }
+
+            ProductDeltaStats st = new ProductDeltaStats();
+            st.cursor = Math.max(ctx.lastProductPullSeq, root.optLong("cursor", ctx.lastProductPullSeq));
+            st.hasMore = root.optBoolean("has_more", false);
+
+            JSONArray changes = root.optJSONArray("changes");
+            if (changes != null) {
+                for (int i = 0; i < changes.length(); i++) {
+                    JSONObject ch = changes.getJSONObject(i);
+                    String uuid = ch.optString("produto_uuid", "").trim();
+                    if (uuid.isEmpty()) continue;
+
+                    if ("DELETE".equalsIgnoreCase(ch.optString("acao", ""))) {
+                        int apagados = db.delete("produtos", "uuid=?", new String[]{uuid});
+                        if (apagados > 0) st.deletes++;
+                        continue;
+                    }
+
+                    JSONObject row = ch.optJSONObject("produto");
+                    if (row == null) continue;
+                    ContentValues v = jsonParaValues(row, true);
+                    v.put("empresa_uuid", ctx.empresaUuid);
+                    v.put("filial_uuid", ctx.filialUuid);
+                    v.put("sync_status", "MASTER_SYNCED");
+
+                    long existente = idPorUuid(db, "produtos", uuid);
+                    if (existente > 0) {
+                        db.update("produtos", v, "id=?", new String[]{String.valueOf(existente)});
+                    } else {
+                        db.insertOrThrow("produtos", null, v);
+                    }
+                    st.upserts++;
+                }
+            }
+
+            long agora = System.currentTimeMillis();
+            ContentValues sc = new ContentValues();
+            sc.put("last_product_pull_seq", st.cursor);
+            sc.put("last_product_pull_at", agora);
+            sc.put("last_product_pull_count", st.total());
+            sc.put("last_product_pull_error", "");
+            sc.put("master_last_seen", agora);
+            sc.put("updated_at", agora);
+            db.update("sync_context", sc, "id=1", null);
+
+            db.setTransactionSuccessful();
+            return st;
+        } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException)e;
+            throw new IllegalStateException("Falha ao aplicar atualização de produtos: " + e.getMessage(), e);
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    public void registrarErroPullProdutos(String erro) {
+        ContentValues v = new ContentValues();
+        v.put("last_product_pull_at", System.currentTimeMillis());
+        v.put("last_product_pull_count", 0);
+        v.put("last_product_pull_error", erro == null ? "" : erro);
+        v.put("updated_at", System.currentTimeMillis());
+        getWritableDatabase().update("sync_context", v, "id=1", null);
     }
 
     public void salvarTokenMaster(String token) {
@@ -1374,6 +1614,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     db.update("produtos", estoqueV, "id=?", new String[]{String.valueOf(produtoId)});
                     db.execSQL("UPDATE produtos SET sync_version=sync_version+1 WHERE id=?",
                             new Object[]{produtoId});
+                    registrarMudancaProduto(db, produtoId, "UPSERT");
                 }
             }
 
@@ -1576,17 +1817,20 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         if (p.id > 0) {
             db.update("produtos", v, "id=?", new String[]{String.valueOf(p.id)});
             marcarAlteracao(db, "produtos", p.id);
+            registrarMudancaProduto(db, p.id, "UPSERT");
             return p.id;
         } else {
             v.put("created_at", now);
             aplicarMetadadosNovo(db, v);
             p.id = db.insertOrThrow("produtos", null, v);
+            registrarMudancaProduto(db, p.id, "UPSERT");
             return p.id;
         }
     }
 
     public void delete(long id) {
         SQLiteDatabase db = getWritableDatabase();
+        registrarMudancaProduto(db, id, "DELETE");
         registrarExclusao(db, "produtos", id, "PRODUTO");
         db.delete("produtos", "id=?", new String[]{String.valueOf(id)});
     }
@@ -1761,6 +2005,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     est.put("updated_at", System.currentTimeMillis());
                     db.update("produtos", est, "id=?", new String[]{String.valueOf(p.id)});
                     marcarAlteracao(db, "produtos", p.id);
+                    registrarMudancaProduto(db, p.id, "UPSERT");
                 }
             }
 
@@ -1927,7 +2172,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     int alterados = db.update(
                             "produtos", estoque, "id=?",
                             new String[]{String.valueOf(produtoId)});
-                    if (alterados == 1) marcarAlteracao(db, "produtos", produtoId);
+                    if (alterados == 1) {
+                        marcarAlteracao(db, "produtos", produtoId);
+                        registrarMudancaProduto(db, produtoId, "UPSERT");
+                    }
                     if (alterados != 1) {
                         throw new IllegalStateException(
                                 "Não foi possível devolver ao estoque o produto \"" + nome + "\".");
