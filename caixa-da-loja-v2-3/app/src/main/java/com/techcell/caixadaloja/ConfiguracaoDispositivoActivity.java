@@ -107,7 +107,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView titulo=text("Dispositivo e rede",27,true);
         titulo.setPadding(0,dp(16),0,0);root.addView(titulo);
-        TextView sub=text("Pareamento e sincronização inicial • Alpha 41",13,false);
+        TextView sub=text("Pareamento e sincronização inicial • Alpha 42",13,false);
         sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout identidade=TechCellUi.card(this);
@@ -277,7 +277,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));
         sp.setMargins(0,dp(16),0,0);root.addView(salvar,sp);
 
-        TextView aviso=text("Alpha 41 sincroniza vendas e estornos nos dois sentidos, mantém o número oficial do Master em todos os aparelhos e continua sincronizando produtos, preços e estoque automaticamente.",11,false);
+        TextView aviso=text("Alpha 42 sincroniza vendas e estornos nos dois sentidos, mantém o número oficial do Master em todos os aparelhos e continua sincronizando produtos, preços e estoque automaticamente.",11,false);
         aviso.setTextColor(TechCellUi.MUTED);aviso.setGravity(Gravity.CENTER);
         aviso.setPadding(dp(8),dp(12),dp(8),0);root.addView(aviso);
 

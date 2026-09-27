@@ -39,8 +39,11 @@ public class ProdutosActivity extends Activity {
     private TextView contador;
     private EditText busca;
     private Button ordenar;
+    private Button novo;
+    private TextView info;
     private int ordem = 0;
     private boolean syncProdutosRodando;
+    private boolean somenteConsultaCaixa;
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -80,6 +83,7 @@ public class ProdutosActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         db = new GestaoDbHelper(this);
+        somenteConsultaCaixa = ehCaixa();
         TechCellUi.applyWindowChrome(this);
 
         ScrollView scroll = new ScrollView(this);
@@ -102,11 +106,11 @@ public class ProdutosActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView info = txt("Cadastro e controle de mercadorias • Alpha 41", 12, false);
+        info = txt("Cadastro e controle de mercadorias • Alpha 42", 12, false);
         info.setTextColor(TechCellUi.MUTED);
         root.addView(info);
 
-        Button novo = new Button(this);
+        novo = new Button(this);
         novo.setText("+  Novo produto");
         novo.setTextSize(16);
         TechCellUi.stylePrimary(this, novo);
@@ -115,6 +119,7 @@ public class ProdutosActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
         np.setMargins(0, dp(14), 0, dp(10));
         root.addView(novo, np);
+        atualizarModoAcesso();
 
         busca = field("🔎  Buscar por nome, código ou código de barras", InputType.TYPE_CLASS_TEXT);
         TechCellUi.styleSearch(this, busca);
@@ -160,6 +165,10 @@ public class ProdutosActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        boolean modoAnterior = somenteConsultaCaixa;
+        somenteConsultaCaixa = ehCaixa();
+        atualizarModoAcesso();
+        if (modoAnterior != somenteConsultaCaixa && lista != null) carregar();
         TechCellBackgroundSync.garantir(this);
         sincronizarProdutosMaster();
     }
@@ -181,6 +190,27 @@ public class ProdutosActivity extends Activity {
                 if (!r.ocupado && r.produtosAlterados > 0) carregar();
             });
         }, "TechCell-Produtos-Sync").start();
+    }
+
+    private boolean ehCaixa() {
+        if (db == null) return false;
+        GestaoDbHelper.SyncContext ctx = db.getSyncContext();
+        return ctx != null && "CAIXA".equalsIgnoreCase(ctx.papelDispositivo);
+    }
+
+    private void atualizarModoAcesso() {
+        if (novo == null || info == null) return;
+        novo.setVisibility(somenteConsultaCaixa ? View.GONE : View.VISIBLE);
+        info.setText(somenteConsultaCaixa
+                ? "Consulta de mercadorias • produtos, preços e estoque são gerenciados pelo Master • Alpha 42"
+                : "Cadastro e controle de mercadorias • Alpha 42");
+        info.setTextColor(somenteConsultaCaixa ? TechCellUi.ORANGE : TechCellUi.MUTED);
+    }
+
+    private void avisoSomenteLeitura() {
+        Toast.makeText(this,
+                "Este aparelho está configurado como Caixa. Produtos, preços e estoque só podem ser alterados no Master.",
+                Toast.LENGTH_LONG).show();
     }
 
     private void atualizarRotuloOrdenacao() {
@@ -264,7 +294,7 @@ public class ProdutosActivity extends Activity {
             topo.addView(dados, new LinearLayout.LayoutParams(
                     0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-            TextView seta = txt("›", 26, true);
+            TextView seta = txt(somenteConsultaCaixa ? "🔒" : "›", 26, true);
             seta.setTextColor(TechCellUi.NAVY);
             topo.addView(seta);
 
@@ -296,7 +326,13 @@ public class ProdutosActivity extends Activity {
             }
 
             card.addView(chips);
-            card.setOnClickListener(v -> abrirFormulario(p));
+            card.setOnClickListener(v -> {
+                if (somenteConsultaCaixa) {
+                    avisoSomenteLeitura();
+                } else {
+                    abrirFormulario(p);
+                }
+            });
             lista.addView(card);
         }
     }
@@ -368,6 +404,10 @@ public class ProdutosActivity extends Activity {
     }
 
     private void abrirFormulario(GestaoDbHelper.Produto original) {
+        if (ehCaixa()) {
+            avisoSomenteLeitura();
+            return;
+        }
         GestaoDbHelper.Produto p = original == null ? new GestaoDbHelper.Produto() : original;
 
         ScrollView sv = new ScrollView(this);

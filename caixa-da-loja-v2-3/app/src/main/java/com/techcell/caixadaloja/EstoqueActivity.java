@@ -132,7 +132,7 @@ public class EstoqueActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView sub = txt("Visão geral do seu estoque • Alpha 41", 12, false);
+        TextView sub = txt("Visão geral do seu estoque • Alpha 42", 12, false);
         sub.setTextColor(TechCellUi.MUTED);
         root.addView(sub);
 
