@@ -86,7 +86,7 @@ public class HistoricoVendasActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Vendas consolidadas do Master e Caixas • Alpha 39", 14, false);
+        TextView sub = txt("Vendas consolidadas do Master e Caixas • Alpha 40", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);
@@ -169,6 +169,18 @@ public class HistoricoVendasActivity extends Activity {
                 card.addView(cli);
             }
 
+            Button verDetalhes = new Button(this);
+            verDetalhes.setText("Ver detalhes   ›");
+            verDetalhes.setTextSize(13);
+            TechCellUi.styleSecondary(this, verDetalhes);
+            verDetalhes.setTextColor(TechCellUi.BLUE);
+            LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(44));
+            vp.setMargins(0, dp(10), 0, 0);
+            verDetalhes.setLayoutParams(vp);
+            verDetalhes.setOnClickListener(x -> abrirVenda(v.id));
+            card.addView(verDetalhes);
+
             card.setOnClickListener(x -> abrirVenda(v.id));
             lista.addView(card);
         }
@@ -196,39 +208,76 @@ public class HistoricoVendasActivity extends Activity {
             return;
         }
 
-        StringBuilder detalhes = new StringBuilder();
-        detalhes.append("Data: ").append(data.format(new Date(v.dataMillis))).append("\n");
-        detalhes.append("Pagamento: ").append(v.formaPagamento).append("\n");
-
         boolean estornada = "ESTORNADA".equalsIgnoreCase(v.statusVenda);
+
+        LinearLayout painel = new LinearLayout(this);
+        painel.setOrientation(LinearLayout.VERTICAL);
+        painel.setPadding(dp(20), dp(16), dp(20), dp(18));
+
+        LinearLayout cabecalho = new LinearLayout(this);
+        cabecalho.setOrientation(LinearLayout.HORIZONTAL);
+        cabecalho.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout tituloBox = new LinearLayout(this);
+        tituloBox.setOrientation(LinearLayout.VERTICAL);
+        TextView tituloVenda = txt("Venda #" + v.numeroExibicao(), 22, true);
+        tituloBox.addView(tituloVenda);
+        TextView dataVenda = txt(data.format(new Date(v.dataMillis)) + " • " + v.formaPagamento, 12, false);
+        dataVenda.setTextColor(TechCellUi.MUTED);
+        tituloBox.addView(dataVenda);
+        cabecalho.addView(tituloBox,
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView totalVenda = txt(moeda.format(v.total), 20, true);
+        totalVenda.setTextColor(estornada ? TechCellUi.RED : TechCellUi.GREEN);
+        cabecalho.addView(totalVenda);
+        painel.addView(cabecalho);
+
         if (estornada) {
-            detalhes.append("Situação: VENDA ESTORNADA\n");
+            TextView chip = TechCellUi.chip(this, "VENDA ESTORNADA",
+                    TechCellUi.RED, Color.parseColor("#FFF1F0"));
+            LinearLayout.LayoutParams chipP = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            chipP.setMargins(0, dp(10), 0, 0);
+            chip.setLayoutParams(chipP);
+            painel.addView(chip);
+        }
+
+        TextView secaoItens = txt("DETALHES DA VENDA", 11, true);
+        secaoItens.setTextColor(TechCellUi.MUTED);
+        secaoItens.setPadding(0, dp(16), 0, dp(7));
+        painel.addView(secaoItens);
+
+        LinearLayout detalhesCard = TechCellUi.card(this);
+        StringBuilder detalhes = new StringBuilder();
+
+        if (estornada) {
             if (v.estornoEm > 0) {
                 detalhes.append("Estornada em: ")
                         .append(data.format(new Date(v.estornoEm))).append("\n");
             }
             if (v.estornoMotivo != null && !v.estornoMotivo.trim().isEmpty()) {
-                detalhes.append("Motivo: ").append(v.estornoMotivo).append("\n");
+                detalhes.append("Motivo: ").append(v.estornoMotivo).append("\n\n");
             }
         }
-        detalhes.append("\n");
 
         for (GestaoDbHelper.VendaItemRegistro item : v.itens) {
-            detalhes.append(item.nome).append("\n")
-                    .append(formatarQtd(item.quantidade)).append(" ")
+            detalhes.append("• ").append(item.nome).append("\n")
+                    .append("   ").append(formatarQtd(item.quantidade)).append(" ")
                     .append(item.unidade == null || item.unidade.isEmpty() ? "UN" : item.unidade)
                     .append(" × ").append(moeda.format(item.precoUnitario))
-                    .append(" = ").append(moeda.format(item.total)).append("\n\n");
+                    .append(" = ").append(moeda.format(item.total)).append("\n");
         }
 
-        detalhes.append("Subtotal: ").append(moeda.format(v.subtotal)).append("\n");
-        detalhes.append("Desconto: - ").append(moeda.format(v.desconto)).append("\n");
-        detalhes.append("TOTAL: ").append(moeda.format(v.total)).append("\n");
-
-        if (v.troco > 0.001) detalhes.append("Troco: ").append(moeda.format(v.troco)).append("\n");
+        detalhes.append("\nSubtotal: ").append(moeda.format(v.subtotal));
+        if (v.desconto > 0.001) {
+            detalhes.append("\nDesconto: - ").append(moeda.format(v.desconto));
+        }
+        detalhes.append("\nTotal: ").append(moeda.format(v.total));
+        if (v.troco > 0.001) detalhes.append("\nTroco: ").append(moeda.format(v.troco));
 
         if (v.destNome != null && !v.destNome.trim().isEmpty()) {
-            detalhes.append("\nCliente: ").append(v.destNome);
+            detalhes.append("\n\nCliente: ").append(v.destNome);
             if (v.destDocumento != null && !v.destDocumento.isEmpty()) {
                 boolean cnpj = v.destDocumento.length() > 11;
                 detalhes.append("\nDocumento: ")
@@ -236,62 +285,89 @@ public class HistoricoVendasActivity extends Activity {
             }
         }
 
-        detalhes.append("\n\n").append("Situação fiscal: ")
-                .append(v.notaStatus == null ? "NAO_EMITIDA" : v.notaStatus.replace('_',' '));
+        detalhes.append("\n\nFiscal: ")
+                .append(v.notaStatus == null ? "NAO EMITIDA" : v.notaStatus.replace('_',' '));
         if (v.notaTipo != null && !v.notaTipo.isEmpty())
-            detalhes.append("\nDocumento: ").append(v.notaTipo);
+            detalhes.append(" • ").append(v.notaTipo);
         if (v.notaNumero != null && !v.notaNumero.isEmpty())
-            detalhes.append("\nNúmero: ").append(v.notaNumero);
-        if (v.notaChave != null && !v.notaChave.isEmpty())
-            detalhes.append("\nChave: ").append(v.notaChave);
+            detalhes.append(" #").append(v.notaNumero);
+
+        TextView corpo = txt(detalhes.toString(), 13, false);
+        corpo.setTextColor(Color.parseColor("#344054"));
+        detalhesCard.addView(corpo);
+        painel.addView(detalhesCard);
+
+        TextView secaoAcoes = txt("AÇÕES DA VENDA", 11, true);
+        secaoAcoes.setTextColor(TechCellUi.MUTED);
+        secaoAcoes.setPadding(0, dp(18), 0, dp(3));
+        painel.addView(secaoAcoes);
+
+        TextView dica = txt("Escolha uma opção abaixo.", 12, false);
+        dica.setTextColor(TechCellUi.MUTED);
+        dica.setPadding(0, 0, 0, dp(4));
+        painel.addView(dica);
+
+        Button comprovante = new Button(this);
+        comprovante.setText("🧾   Abrir comprovante");
+        comprovante.setTextSize(14);
+        TechCellUi.styleSecondary(this, comprovante);
+        adicionarBotaoAcao(painel, comprovante);
+        comprovante.setOnClickListener(x -> compartilharComprovante(vendaId));
+
+        Button nota = new Button(this);
+        nota.setText("📄   Nota fiscal");
+        nota.setTextSize(14);
+        TechCellUi.stylePrimary(this, nota);
+        adicionarBotaoAcao(painel, nota);
+        nota.setOnClickListener(x -> abrirNotaFiscal(vendaId));
+
+        Button estornar = new Button(this);
+        if (estornada) {
+            estornar.setText("↩   Venda já estornada");
+            estornar.setEnabled(false);
+            TechCellUi.styleDanger(this, estornar);
+            estornar.setAlpha(0.55f);
+        } else {
+            estornar.setText("↩   Estornar venda");
+            TechCellUi.styleDanger(this, estornar);
+        }
+        estornar.setTextSize(14);
+        adicionarBotaoAcao(painel, estornar);
+
+        Button fechar = new Button(this);
+        fechar.setText("Fechar");
+        fechar.setTextSize(13);
+        TechCellUi.styleSecondary(this, fechar);
+        adicionarBotaoAcao(painel, fechar);
+
+        ScrollView scrollDialog = new ScrollView(this);
+        scrollDialog.addView(painel);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Venda #" + v.numeroExibicao())
-                .setMessage(detalhes.toString())
-                .setPositiveButton("Comprovante", null)
-                .setNeutralButton("Ações", null)
-                .setNegativeButton("Fechar", null)
+                .setView(scrollDialog)
                 .create();
 
-        dialog.setOnShowListener(x -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                    .setOnClickListener(y -> compartilharComprovante(vendaId));
-
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
-                    .setOnClickListener(y -> {
-                        dialog.dismiss();
-                        abrirAcoesVenda(vendaId);
-                    });
+        estornar.setOnClickListener(x -> {
+            if (estornada) return;
+            dialog.dismiss();
+            confirmarEstorno(vendaId);
         });
+        fechar.setOnClickListener(x -> dialog.dismiss());
         dialog.show();
     }
 
-    private void abrirAcoesVenda(long vendaId) {
-        GestaoDbHelper.VendaDetalhe v = db.getVendaDetalhe(vendaId);
-        if (v == null) {
-            Toast.makeText(this, "Venda não encontrada.", Toast.LENGTH_SHORT).show();
-            return;
-        }
+    private void adicionarBotaoAcao(LinearLayout painel, Button botao) {
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+        p.setMargins(0, dp(8), 0, 0);
+        botao.setLayoutParams(p);
+        painel.addView(botao);
+    }
 
-        if ("ESTORNADA".equalsIgnoreCase(v.statusVenda)) {
-            Toast.makeText(this, "Esta venda já foi estornada.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        String[] opcoes = {"Nota fiscal", "Estornar venda"};
-        new AlertDialog.Builder(this)
-                .setTitle("Ações da venda #" + v.numeroExibicao())
-                .setItems(opcoes, (d, which) -> {
-                    if (which == 0) {
-                        Intent i = new Intent(this, PdvActivity.class);
-                        i.putExtra("emitir_nota_venda_id", vendaId);
-                        startActivity(i);
-                    } else {
-                        confirmarEstorno(vendaId);
-                    }
-                })
-                .setNegativeButton("Fechar", null)
-                .show();
+    private void abrirNotaFiscal(long vendaId) {
+        Intent i = new Intent(this, PdvActivity.class);
+        i.putExtra("emitir_nota_venda_id", vendaId);
+        startActivity(i);
     }
 
     private void confirmarEstorno(long vendaId) {
