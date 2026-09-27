@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -26,6 +28,13 @@ public class HistoricoVendasActivity extends Activity {
     private final SimpleDateFormat data = new SimpleDateFormat("dd/MM/yyyy HH:mm", new Locale("pt","BR"));
     private GestaoDbHelper db;
     private LinearLayout lista;
+    private final Handler refreshHandler = new Handler(Looper.getMainLooper());
+    private final Runnable refreshCiclo = new Runnable() {
+        @Override public void run() {
+            if (lista != null) carregar();
+            refreshHandler.postDelayed(this, 5000);
+        }
+    };
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
 
@@ -46,7 +55,14 @@ public class HistoricoVendasActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (lista != null) carregar();
+        TechCellBackgroundSync.garantir(this);
+        refreshHandler.removeCallbacks(refreshCiclo);
+        refreshHandler.post(refreshCiclo);
+    }
+
+    @Override protected void onPause() {
+        refreshHandler.removeCallbacks(refreshCiclo);
+        super.onPause();
     }
 
     private void montar() {
@@ -70,7 +86,7 @@ public class HistoricoVendasActivity extends Activity {
         titulo.setPadding(0, dp(18), 0, 0);
         root.addView(titulo);
 
-        TextView sub = txt("Últimas vendas realizadas • Alpha 27", 14, false);
+        TextView sub = txt("Vendas consolidadas do Master e Caixas • Alpha 38", 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         sub.setPadding(0, dp(2), 0, dp(10));
         root.addView(sub);

@@ -64,28 +64,36 @@ public class TechCellTerminalSyncService extends Service {
                     break;
                 }
 
-                TechCellSaleSync.Resultado vendas = null;
+                TechCellSaleSync.Resultado envio = null;
                 if (db.countVendasPendentesMaster() > 0) {
-                    vendas = TechCellSaleSync.enviarPendentes(getApplicationContext(), "");
+                    envio = TechCellSaleSync.enviarPendentes(getApplicationContext(), "");
                 }
 
-                if (vendas != null && vendas.erro != null && !vendas.erro.trim().isEmpty()) {
+                if (envio != null && envio.erro != null && !envio.erro.trim().isEmpty()) {
                     atualizarNotificacao("Venda pendente • tentando novamente automaticamente");
                     pausa = 20000;
                 } else {
                     TechCellProductSync.Resultado produtos =
                             TechCellProductSync.puxarAlteracoes(getApplicationContext());
+                    TechCellSalePullSync.Resultado vendasMaster =
+                            TechCellSalePullSync.puxarAlteracoes(getApplicationContext());
 
-                    if (produtos.erro != null && !produtos.erro.trim().isEmpty()) {
+                    String erroProdutos = produtos.erro == null ? "" : produtos.erro.trim();
+                    String erroVendas = vendasMaster.erro == null ? "" : vendasMaster.erro.trim();
+
+                    if (!erroProdutos.isEmpty() || !erroVendas.isEmpty()) {
                         atualizarNotificacao("Master indisponível • nova tentativa automática");
                         pausa = 20000;
                     } else {
-                        int vendasEnviadas = vendas == null ? 0 : vendas.enviadas;
-                        int alteracoes = produtos.total();
-                        if (vendasEnviadas > 0 || alteracoes > 0) {
+                        int vendasEnviadas = envio == null ? 0 : envio.enviadas;
+                        int produtosAlterados = produtos.total();
+                        int vendasRecebidas = vendasMaster.total();
+
+                        if (vendasEnviadas > 0 || produtosAlterados > 0 || vendasRecebidas > 0) {
                             atualizarNotificacao(
-                                    "Sincronizado ✓ • vendas " + vendasEnviadas +
-                                            " • alterações " + alteracoes);
+                                    "Sincronizado ✓ • enviadas " + vendasEnviadas +
+                                            " • recebidas " + vendasRecebidas +
+                                            " • produtos " + produtosAlterados);
                         } else {
                             atualizarNotificacao("Sincronizado com o Master ✓");
                         }

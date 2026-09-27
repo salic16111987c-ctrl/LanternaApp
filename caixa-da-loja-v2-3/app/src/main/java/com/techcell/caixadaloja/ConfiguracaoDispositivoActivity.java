@@ -107,7 +107,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         TextView titulo=text("Dispositivo e rede",27,true);
         titulo.setPadding(0,dp(16),0,0);root.addView(titulo);
-        TextView sub=text("Pareamento e sincronização inicial • Alpha 37",13,false);
+        TextView sub=text("Pareamento e sincronização inicial • Alpha 38",13,false);
         sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout identidade=TechCellUi.card(this);
@@ -206,7 +206,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         blocoMasterRemoto.addView(resumoVendas);
 
         atualizarProdutos=new Button(this);
-        atualizarProdutos.setText("↻  Atualizar produtos / estoque agora");
+        atualizarProdutos.setText("↻  Atualizar vendas / produtos / estoque agora");
         atualizarProdutos.setTextSize(15);TechCellUi.styleSecondary(this,atualizarProdutos);
         atualizarProdutos.setOnClickListener(v->atualizarProdutosDoMaster());
         LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));
@@ -277,7 +277,7 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));
         sp.setMargins(0,dp(16),0,0);root.addView(salvar,sp);
 
-        TextView aviso=text("Alpha 37 reforça a sincronização com a tela bloqueada: serviço contínuo, CPU disponível para a rede e verificação da otimização de bateria. O botão manual continua apenas para teste/contingência.",11,false);
+        TextView aviso=text("Alpha 38 sincroniza vendas nos dois sentidos, além de produtos, preços e estoque. O Master consolida o histórico e os Caixas recebem as vendas automaticamente; o botão manual continua apenas para teste/contingência.",11,false);
         aviso.setTextColor(TechCellUi.MUTED);aviso.setGravity(Gravity.CENTER);
         aviso.setPadding(dp(8),dp(12),dp(8),0);root.addView(aviso);
 
@@ -307,10 +307,17 @@ public class ConfiguracaoDispositivoActivity extends Activity {
     private String resumoVendasPendentes(){
         int pendentes=db.countVendasPendentesMaster();
         if(pendentes>0)return "Vendas aguardando envio ao Master: "+pendentes;
-        if(atual.lastSalePushAt>0 && (atual.lastSalePushError==null||atual.lastSalePushError.trim().isEmpty())){
-            return "Vendas locais sincronizadas com o Master ✓";
+        if(atual.lastSalePullError!=null&&!atual.lastSalePullError.trim().isEmpty()){
+            return "Falha ao receber histórico do Master: "+atual.lastSalePullError;
         }
-        return "Vendas pendentes: 0";
+        if(atual.lastSalePullAt>0){
+            return "Vendas sincronizadas nos dois sentidos ✓ • cursor "+atual.lastSalePullSeq+
+                    " • recebidas no último ciclo: "+atual.lastSalePullCount;
+        }
+        if(atual.lastSalePushAt>0 && (atual.lastSalePushError==null||atual.lastSalePushError.trim().isEmpty())){
+            return "Vendas locais enviadas ao Master ✓ • aguardando primeiro recebimento.";
+        }
+        return "Vendas pendentes: 0 • histórico do Master aguardando primeiro ciclo.";
     }
 
     private String resumoProdutosIncremental(){
@@ -628,10 +635,13 @@ public class ConfiguracaoDispositivoActivity extends Activity {
         new Thread(()->{
             TechCellSaleSync.Resultado r=TechCellSaleSync.enviarPendentes(this,codigo);
             TechCellProductSync.Resultado pr=null;
+            TechCellSalePullSync.Resultado vr=null;
             if(r.erro==null||r.erro.trim().isEmpty()){
                 pr=TechCellProductSync.puxarAlteracoes(this);
+                vr=TechCellSalePullSync.puxarAlteracoes(this);
             }
             TechCellProductSync.Resultado produtosFinal=pr;
+            TechCellSalePullSync.Resultado vendasFinal=vr;
             runOnUiThread(()->{
                 enviarVendas.setEnabled(true);
                 atual=db.getSyncContext();
@@ -644,7 +654,10 @@ public class ConfiguracaoDispositivoActivity extends Activity {
                     resultadoRede.setText("Envio interrompido: "+r.erro);
                 }
                 resumoVendas.setText(resumoVendasPendentes());
-                resumoVendas.setTextColor(db.countVendasPendentesMaster()>0?TechCellUi.ORANGE:TechCellUi.GREEN);
+                resumoVendas.setTextColor(
+                        db.countVendasPendentesMaster()>0 ||
+                                (vendasFinal!=null&&vendasFinal.erro!=null&&!vendasFinal.erro.trim().isEmpty())
+                                ?TechCellUi.ORANGE:TechCellUi.GREEN);
                 if(resumoProdutos!=null){
                     resumoProdutos.setText(resumoProdutosIncremental());
                     resumoProdutos.setTextColor(produtosFinal!=null&&produtosFinal.erro!=null&&!produtosFinal.erro.trim().isEmpty()
@@ -671,24 +684,31 @@ public class ConfiguracaoDispositivoActivity extends Activity {
 
         atualizarProdutos.setEnabled(false);
         resultadoRede.setTextColor(TechCellUi.BLUE);
-        resultadoRede.setText("Buscando alterações de produtos/estoque no Master…");
+        resultadoRede.setText("Buscando vendas, produtos e estoque no Master…");
 
         new Thread(()->{
             TechCellProductSync.Resultado r=TechCellProductSync.puxarAlteracoes(this);
+            TechCellSalePullSync.Resultado vr=TechCellSalePullSync.puxarAlteracoes(this);
             runOnUiThread(()->{
                 atualizarProdutos.setEnabled(true);
                 atual=db.getSyncContext();
-                if(r.erro==null||r.erro.trim().isEmpty()){
+                boolean okProdutos=r.erro==null||r.erro.trim().isEmpty();
+                boolean okVendas=vr.erro==null||vr.erro.trim().isEmpty();
+                if(okProdutos&&okVendas){
                     resultadoRede.setTextColor(TechCellUi.GREEN);
-                    resultadoRede.setText("PRODUTOS/ESTOQUE ATUALIZADOS ✓  Alterações recebidas: "+r.total());
+                    resultadoRede.setText("SINCRONIZAÇÃO ATUALIZADA ✓  Vendas: "+vr.total()+
+                            " • produtos/estoque: "+r.total());
                 }else{
                     resultadoRede.setTextColor(TechCellUi.RED);
-                    resultadoRede.setText("Falha na atualização: "+r.erro);
+                    resultadoRede.setText("Falha na atualização: "+
+                            (!okVendas?vr.erro:r.erro));
                 }
+                resumoVendas.setText(resumoVendasPendentes());
+                resumoVendas.setTextColor(okVendas?TechCellUi.GREEN:TechCellUi.RED);
                 resumoProdutos.setText(resumoProdutosIncremental());
-                resumoProdutos.setTextColor(r.erro==null||r.erro.trim().isEmpty()?TechCellUi.GREEN:TechCellUi.RED);
+                resumoProdutos.setTextColor(okProdutos?TechCellUi.GREEN:TechCellUi.RED);
             });
-        },"TechCell-Manual-Product-Pull").start();
+        },"TechCell-Manual-Full-Pull").start();
     }
 
     private String nomeMaster(TechCellLanClient.MasterInfo info){

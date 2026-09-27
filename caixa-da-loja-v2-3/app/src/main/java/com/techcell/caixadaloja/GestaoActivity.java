@@ -64,10 +64,11 @@ public class GestaoActivity extends Activity {
             if(db.countVendasPendentesMaster()>0){
                 TechCellSaleSync.enviarPendentes(getApplicationContext(),"");
             }
-            TechCellProductSync.Resultado resultado=TechCellProductSync.puxarAlteracoes(getApplicationContext());
+            TechCellProductSync.Resultado produtos=TechCellProductSync.puxarAlteracoes(getApplicationContext());
+            TechCellSalePullSync.Resultado vendas=TechCellSalePullSync.puxarAlteracoes(getApplicationContext());
             runOnUiThread(()->{
                 syncProdutosRodando=false;
-                if(resultado.total()>0)render();
+                if(produtos.total()>0||vendas.total()>0)render();
             });
         },"TechCell-Gestao-Sync").start();
     }
@@ -75,7 +76,7 @@ public class GestaoActivity extends Activity {
         TechCellUi.applyWindowChrome(this);GestaoDbHelper db=new GestaoDbHelper(this);GestaoDbHelper.ResumoVendas hoje=db.resumoHoje();
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(18),dp(16),dp(30));scroll.addView(root);
         Button back=new Button(this);back.setText("←  Voltar");TechCellUi.styleSecondary(this,back);back.setOnClickListener(v->finish());root.addView(back,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
-        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);TextView sub=text("Painel principal • Alpha 37",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
+        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);TextView sub=text("Painel principal • Alpha 38",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
         TextView ht=text("Hoje",17,true);ht.setPadding(0,dp(16),0,0);root.addView(ht);
         addMetricRow(root,metric("TOTAL VENDIDO",moeda.format(hoje.total),TechCellUi.GREEN),metric("LUCRO BRUTO",moeda.format(hoje.lucro),TechCellUi.GREEN));
         addMetricRow(root,metric("VENDAS",String.valueOf(hoje.quantidadeVendas),TechCellUi.BLUE),metric("CUSTO",moeda.format(hoje.custo),TechCellUi.TEXT));
@@ -96,7 +97,7 @@ public class GestaoActivity extends Activity {
         int pendentes=db.countSyncPendentes();
         String papel=sync.configurado ? sync.papelDispositivo : "NÃO CONFIGURADO";
         TextView infra=text(
-                "Estrutura local v17 • multiempresa e rede preparada\n"+
+                "Estrutura local v18 • multiempresa e rede preparada\n"+
                 "Empresa "+curto(sync.empresaUuid)+"  •  Filial "+curto(sync.filialUuid)+"  •  Dispositivo "+curto(sync.dispositivoUuid)+
                 "\n"+(sync.configurado ? sync.nomeDispositivo+"  •  Função: "+papel : "Função do aparelho: "+papel)+
                 "\nRede local: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo) ? "Master ativo/configurado" :
@@ -104,6 +105,9 @@ public class GestaoActivity extends Activity {
                 "\nProdutos/estoque: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo) ? "fonte principal" :
                         (sync.masterAuthToken==null||sync.masterAuthToken.trim().isEmpty() ? "aguardando autorização" :
                                 "segundo plano ativo • cursor "+sync.lastProductPullSeq))+
+                "\nVendas: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo) ? "histórico consolidado" :
+                        (sync.masterAuthToken==null||sync.masterAuthToken.trim().isEmpty() ? "aguardando autorização" :
+                                "bidirecional • cursor "+sync.lastSalePullSeq))+
                 "\nTela bloqueada: "+(TechCellBatteryGuard.liberado(this) ? "proteção liberada ✓" : "revisar bateria")+
                 "\nNuvem: "+(sync.cloudAtiva ? "ativa" : "ainda não configurada")+
                 "  •  Alterações locais pendentes: "+pendentes,
