@@ -304,11 +304,16 @@ public class RelatoriosActivity extends Activity {
         TextView t = txt("RECEBIMENTOS", 11, true);
         t.setTextColor(TechCellUi.MUTED);
         rec.addView(t);
-        TextView valores = txt(
+        double outrosRecebimentos = Math.max(0,
+                r.vendas.total - r.vendas.dinheiro - r.vendas.pix - r.vendas.cartao);
+        String recebimentosTexto =
                 "Dinheiro " + moeda.format(r.vendas.dinheiro) +
                         "   •   PIX " + moeda.format(r.vendas.pix) +
-                        "   •   Cartão " + moeda.format(r.vendas.cartao),
-                13, true);
+                        "   •   Cartão " + moeda.format(r.vendas.cartao);
+        if (outrosRecebimentos > 0.005) {
+            recebimentosTexto += "   •   Outros/prazo " + moeda.format(outrosRecebimentos);
+        }
+        TextView valores = txt(recebimentosTexto, 13, true);
         valores.setPadding(0, dp(5), 0, 0);
         rec.addView(valores);
         conteudo.addView(rec);

@@ -6,9 +6,16 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 import org.json.JSONArray;
@@ -16,7 +23,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 21;
+    private static final int DB_VERSION = 22;
 
     public static class Produto {
         public long id;
@@ -360,6 +367,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public int clientesImportados;
         public int ignoradosImportacao;
         public long importedAt;
+        public int vendasImportadas;
+        public int itensVendaImportados;
+        public int caixaPreservado;
+        public int avisosHistorico;
+        public long salesImportedAt;
     }
 
     public static class SmbImportResult {
@@ -368,6 +380,19 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public int clientesImportados;
         public int ignorados;
         public int produtosConflitantes;
+    }
+
+    public static class SmbSalesImportResult {
+        public int vendasImportadas;
+        public int itensImportados;
+        public int vendasIgnoradas;
+        public int caixaPreservado;
+        public int caixaSemVenda;
+        public int itensSemProduto;
+        public int divergenciasReconciliadas;
+        public int vendasSemValor;
+        public int vendasAPrazo;
+        public double faturamentoImportado;
     }
 
     public GestaoDbHelper(Context context) {
@@ -520,6 +545,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         if (oldVersion < 21) {
             migrarParaV21(db);
+        }
+
+        if (oldVersion < 22) {
+            migrarParaV22(db);
         }
     }
 
@@ -2197,7 +2226,23 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
     }
 
     public long numeroVendaExibicao(long vendaId) {
-        Cursor c = getReadableDatabase().rawQuery(
+        SQLiteDatabase db = getReadableDatabase();
+        Cursor legado = db.rawQuery(
+                "SELECT nr_venda FROM smb_legacy_sales WHERE local_venda_id=? LIMIT 1",
+                new String[]{String.valueOf(vendaId)});
+        try {
+            if (legado.moveToFirst()) {
+                String n = legado.getString(0);
+                try {
+                    long numero = Long.parseLong(n == null ? "" : n.trim());
+                    if (numero > 0) return numero;
+                } catch (Throwable ignored) {}
+            }
+        } finally {
+            legado.close();
+        }
+
+        Cursor c = db.rawQuery(
                 "SELECT master_sale_id FROM vendas WHERE id=?",
                 new String[]{String.valueOf(vendaId)});
         try {
@@ -3555,6 +3600,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "imported_clients INTEGER NOT NULL DEFAULT 0," +
                 "skipped_conflicts INTEGER NOT NULL DEFAULT 0," +
                 "imported_at INTEGER NOT NULL DEFAULT 0," +
+                "imported_sales INTEGER NOT NULL DEFAULT 0," +
+                "imported_sale_items INTEGER NOT NULL DEFAULT 0," +
+                "imported_cash_rows INTEGER NOT NULL DEFAULT 0," +
+                "sales_warnings INTEGER NOT NULL DEFAULT 0," +
+                "sales_imported_at INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -3579,6 +3629,34 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_records_parent ON smb_import_records(session_id,entity_type,parent_source_id)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_records_match1 ON smb_import_records(session_id,entity_type,match_key1)");
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_records_match2 ON smb_import_records(session_id,entity_type,match_key2)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS smb_legacy_sales (" +
+                "legacy_key TEXT PRIMARY KEY," +
+                "source_file TEXT NOT NULL DEFAULT ''," +
+                "local_venda_id INTEGER NOT NULL," +
+                "nr_venda TEXT NOT NULL DEFAULT ''," +
+                "nr_afcaixa TEXT NOT NULL DEFAULT ''," +
+                "caixa_codlanc TEXT NOT NULL DEFAULT ''," +
+                "data_venda TEXT NOT NULL DEFAULT ''," +
+                "imported_at INTEGER NOT NULL DEFAULT 0" +
+                ")");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_legacy_sales_venda ON smb_legacy_sales(local_venda_id)");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS smb_legacy_cash (" +
+                "legacy_key TEXT PRIMARY KEY," +
+                "source_file TEXT NOT NULL DEFAULT ''," +
+                "codlanc TEXT NOT NULL DEFAULT ''," +
+                "nr_afcaixa TEXT NOT NULL DEFAULT ''," +
+                "tipo_lanc TEXT NOT NULL DEFAULT ''," +
+                "valor REAL NOT NULL DEFAULT 0," +
+                "descricao TEXT NOT NULL DEFAULT ''," +
+                "tipo_doc TEXT NOT NULL DEFAULT ''," +
+                "nr_doc TEXT NOT NULL DEFAULT ''," +
+                "data_millis INTEGER NOT NULL DEFAULT 0," +
+                "usuario TEXT NOT NULL DEFAULT ''," +
+                "imported_at INTEGER NOT NULL DEFAULT 0" +
+                ")");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_legacy_cash_data ON smb_legacy_cash(data_millis)");
     }
 
     public long iniciarPreImportacaoSmb(SQLiteDatabase db,
@@ -3661,7 +3739,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         criarImportacaoSmb(db);
         Cursor c = db.rawQuery(
                 "SELECT id,source_name,source_system,source_file,backup_date,status,staged_records,warnings,created_at," +
-                        "imported_products,imported_suppliers,imported_clients,skipped_conflicts,imported_at " +
+                        "imported_products,imported_suppliers,imported_clients,skipped_conflicts,imported_at," +
+                        "imported_sales,imported_sale_items,imported_cash_rows,sales_warnings,sales_imported_at " +
                         "FROM smb_import_sessions ORDER BY id DESC LIMIT 1", null);
         SmbImportResumo r = null;
         try {
@@ -3681,6 +3760,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 r.clientesImportados = c.getInt(11);
                 r.ignoradosImportacao = c.getInt(12);
                 r.importedAt = c.getLong(13);
+                r.vendasImportadas = c.getInt(14);
+                r.itensVendaImportados = c.getInt(15);
+                r.caixaPreservado = c.getInt(16);
+                r.avisosHistorico = c.getInt(17);
+                r.salesImportedAt = c.getLong(18);
             }
         } finally {
             c.close();
@@ -3738,6 +3822,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         adicionarColunaSeAusente(db, "smb_import_sessions", "imported_clients", "INTEGER NOT NULL DEFAULT 0");
         adicionarColunaSeAusente(db, "smb_import_sessions", "skipped_conflicts", "INTEGER NOT NULL DEFAULT 0");
         adicionarColunaSeAusente(db, "smb_import_sessions", "imported_at", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private void migrarParaV22(SQLiteDatabase db) {
+        criarImportacaoSmb(db);
+        adicionarColunaSeAusente(db, "smb_import_sessions", "imported_sales", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "imported_sale_items", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "imported_cash_rows", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "sales_warnings", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "sales_imported_at", "INTEGER NOT NULL DEFAULT 0");
     }
 
     public SmbImportResult importarCadastrosSmb() {
@@ -3947,6 +4040,666 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         }
 
         return out;
+    }
+
+
+    private static class SmbProdutoRef {
+        long id;
+        double custo;
+        SmbProdutoRef(long id, double custo) {
+            this.id = id;
+            this.custo = custo;
+        }
+    }
+
+    private static class SmbVendaItemLegado {
+        String sourceId = "";
+        String nrAfcaixa = "";
+        String nrVenda = "";
+        String data = "";
+        String hora = "";
+        String codigo = "";
+        String barras = "";
+        String nome = "";
+        String unidade = "";
+        String tipoPagamento = "";
+        long quando;
+        JSONObject json;
+    }
+
+    private static class SmbCaixaLegado {
+        String sourceId = "";
+        String codLanc = "";
+        String nrAfcaixa = "";
+        String nrDoc = "";
+        String data = "";
+        String hora = "";
+        double valor;
+        long quando;
+        boolean usado;
+        JSONObject json;
+    }
+
+    private static class SmbVendaGrupoLegado {
+        String baseKey = "";
+        String legacyKey = "";
+        final List<SmbVendaItemLegado> itens = new ArrayList<>();
+        SmbCaixaLegado caixa;
+
+        long quando() {
+            if (caixa != null && caixa.quando > 0) return caixa.quando;
+            long v = 0;
+            for (SmbVendaItemLegado x : itens) v = Math.max(v, x.quando);
+            return v;
+        }
+    }
+
+    private static class SmbItemCalculado {
+        SmbVendaItemLegado item;
+        SmbProdutoRef produto;
+        double quantidade;
+        double bruto;
+        double liquido;
+        double desconto;
+        double custoUnitario;
+        double custoTotal;
+    }
+
+    public SmbSalesImportResult importarHistoricoSmb() {
+        SQLiteDatabase db = getWritableDatabase();
+        criarImportacaoSmb(db);
+
+        long sessionId = 0;
+        String sourceFile = "";
+        String sourceName = "";
+        String statusSessao = "";
+        Cursor sessao = db.rawQuery(
+                "SELECT id,source_file,source_name,status FROM smb_import_sessions ORDER BY id DESC LIMIT 1",
+                null);
+        try {
+            if (sessao.moveToFirst()) {
+                sessionId = sessao.getLong(0);
+                sourceFile = sessao.getString(1);
+                sourceName = sessao.getString(2);
+                statusSessao = sessao.getString(3);
+            }
+        } finally {
+            sessao.close();
+        }
+
+        if (sessionId <= 0) {
+            throw new IllegalStateException("Nenhuma pré-importação SMB foi carregada.");
+        }
+        if ("HISTORICO_IMPORTADO".equalsIgnoreCase(statusSessao)) {
+            throw new IllegalStateException("O histórico deste pacote já foi importado.");
+        }
+        if (!"CADASTROS_IMPORTADOS".equalsIgnoreCase(statusSessao)) {
+            throw new IllegalStateException(
+                    "Importe primeiro os cadastros e o estoque antes do histórico de vendas.");
+        }
+
+        Cursor papel = db.rawQuery(
+                "SELECT configurado,papel_dispositivo FROM sync_context WHERE id=1", null);
+        try {
+            if (papel.moveToFirst()) {
+                boolean configurado = papel.getInt(0) == 1;
+                String funcao = papel.getString(1);
+                if (configurado && !"MASTER".equalsIgnoreCase(funcao)) {
+                    throw new IllegalStateException(
+                            "A importação definitiva deve ser executada no aparelho Master.");
+                }
+            }
+        } finally {
+            papel.close();
+        }
+
+        String origem = sourceFile == null ? "" : sourceFile.trim();
+        if (origem.isEmpty()) origem = sourceName == null ? "SMB" : sourceName.trim();
+        final String origemFinal = origem.isEmpty() ? "SMB" : origem;
+        final long agora = System.currentTimeMillis();
+        final SyncContext ctx = lerSyncContext(db);
+        final SmbSalesImportResult out = new SmbSalesImportResult();
+
+        db.beginTransaction();
+        try {
+            Map<String, List<SmbCaixaLegado>> caixasPorVenda = new LinkedHashMap<>();
+            int caixasDeVenda = 0;
+
+            Cursor caixas = db.rawQuery(
+                    "SELECT source_id,payload_json FROM smb_import_records " +
+                            "WHERE session_id=? AND entity_type='CAIXA' ORDER BY id",
+                    new String[]{String.valueOf(sessionId)});
+            try {
+                while (caixas.moveToNext()) {
+                    String sourceId = caixas.getString(0);
+                    JSONObject j = new JSONObject(caixas.getString(1));
+
+                    SmbCaixaLegado x = new SmbCaixaLegado();
+                    x.sourceId = sourceId == null ? "" : sourceId.trim();
+                    x.codLanc = smbValor(j, "CODLANC");
+                    if (x.codLanc.isEmpty()) x.codLanc = x.sourceId;
+                    x.nrAfcaixa = smbValor(j, "NRAFCAIXA");
+                    x.nrDoc = smbValor(j, "NRDOC");
+                    x.data = smbValor(j, "DTCAD");
+                    x.hora = smbValor(j, "HRCAD");
+                    x.valor = smbCentavos(Math.max(0, smbDecimal(j, "VLLANC")));
+                    x.quando = smbDataHoraMillis(x.data, x.hora);
+                    x.json = j;
+
+                    ContentValues cv = new ContentValues();
+                    cv.put("legacy_key", origemFinal + "|CAIXA|" + x.codLanc);
+                    cv.put("source_file", origemFinal);
+                    cv.put("codlanc", x.codLanc);
+                    cv.put("nr_afcaixa", x.nrAfcaixa);
+                    cv.put("tipo_lanc", smbValor(j, "TPLANC"));
+                    cv.put("valor", x.valor);
+                    cv.put("descricao", smbValor(j, "DESCRLANC"));
+                    cv.put("tipo_doc", smbValor(j, "TPDOC"));
+                    cv.put("nr_doc", x.nrDoc);
+                    cv.put("data_millis", x.quando);
+                    String operador = smbValor(j, "USUARIO");
+                    if (operador.isEmpty()) operador = smbValor(j, "NM_CADCAIXAS");
+                    cv.put("usuario", operador);
+                    cv.put("imported_at", agora);
+                    long caixaId = db.insertWithOnConflict(
+                            "smb_legacy_cash", null, cv, SQLiteDatabase.CONFLICT_IGNORE);
+                    if (caixaId != -1) out.caixaPreservado++;
+
+                    String tipoDoc = smbValor(j, "TPDOC").toLowerCase(Locale.ROOT);
+                    if (tipoDoc.contains("venda") && !x.nrDoc.isEmpty()) {
+                        caixasDeVenda++;
+                        String base = smbBaseVenda(x.nrAfcaixa, x.nrDoc, x.data);
+                        List<SmbCaixaLegado> listaCaixa = caixasPorVenda.get(base);
+                        if (listaCaixa == null) {
+                            listaCaixa = new ArrayList<>();
+                            caixasPorVenda.put(base, listaCaixa);
+                        }
+                        listaCaixa.add(x);
+                    }
+                }
+            } finally {
+                caixas.close();
+            }
+
+            Map<String, List<SmbVendaItemLegado>> itensPorVenda = new LinkedHashMap<>();
+            Cursor itensCursor = db.rawQuery(
+                    "SELECT source_id,parent_source_id,payload_json FROM smb_import_records " +
+                            "WHERE session_id=? AND entity_type='VENDA_ITEM' ORDER BY id",
+                    new String[]{String.valueOf(sessionId)});
+            try {
+                while (itensCursor.moveToNext()) {
+                    SmbVendaItemLegado x = new SmbVendaItemLegado();
+                    x.sourceId = itensCursor.getString(0) == null ? "" : itensCursor.getString(0).trim();
+                    String parent = itensCursor.getString(1) == null ? "" : itensCursor.getString(1).trim();
+                    JSONObject j = new JSONObject(itensCursor.getString(2));
+                    x.json = j;
+                    x.nrVenda = parent.isEmpty() ? smbValor(j, "NRVENDA") : parent;
+                    x.nrAfcaixa = smbValor(j, "NRAFCAIXA");
+                    x.data = smbValor(j, "DTCAD");
+                    x.hora = smbValor(j, "HRCAD");
+                    x.codigo = smbValor(j, "CODPROD");
+                    x.barras = smbValor(j, "CODBARRAS");
+                    x.nome = smbValor(j, "NMPROD");
+                    x.unidade = smbValor(j, "UNIDMED");
+                    x.tipoPagamento = smbValor(j, "TPPGTO");
+                    x.quando = smbDataHoraMillis(x.data, x.hora);
+
+                    if (x.nrVenda.isEmpty()) continue;
+                    String base = smbBaseVenda(x.nrAfcaixa, x.nrVenda, x.data);
+                    List<SmbVendaItemLegado> lista = itensPorVenda.get(base);
+                    if (lista == null) {
+                        lista = new ArrayList<>();
+                        itensPorVenda.put(base, lista);
+                    }
+                    lista.add(x);
+                }
+            } finally {
+                itensCursor.close();
+            }
+
+            List<SmbVendaGrupoLegado> grupos = new ArrayList<>();
+            for (Map.Entry<String, List<SmbVendaItemLegado>> entry : itensPorVenda.entrySet()) {
+                final List<SmbVendaItemLegado> itensVenda = entry.getValue();
+                Collections.sort(itensVenda, new Comparator<SmbVendaItemLegado>() {
+                    @Override public int compare(SmbVendaItemLegado a, SmbVendaItemLegado b) {
+                        return Long.compare(a.quando, b.quando);
+                    }
+                });
+
+                List<SmbCaixaLegado> cx = caixasPorVenda.get(entry.getKey());
+                if (cx == null || cx.isEmpty()) {
+                    SmbVendaGrupoLegado g = new SmbVendaGrupoLegado();
+                    g.baseKey = entry.getKey();
+                    g.itens.addAll(itensVenda);
+                    g.legacyKey = "ITEM|" + entry.getKey() + "|" + itensVenda.get(0).sourceId;
+                    grupos.add(g);
+                    continue;
+                }
+
+                Collections.sort(cx, new Comparator<SmbCaixaLegado>() {
+                    @Override public int compare(SmbCaixaLegado a, SmbCaixaLegado b) {
+                        return Long.compare(a.quando, b.quando);
+                    }
+                });
+
+                if (cx.size() == 1) {
+                    SmbVendaGrupoLegado g = new SmbVendaGrupoLegado();
+                    g.baseKey = entry.getKey();
+                    g.caixa = cx.get(0);
+                    g.caixa.usado = true;
+                    g.itens.addAll(itensVenda);
+                    g.legacyKey = "CAIXA|" + g.caixa.codLanc;
+                    grupos.add(g);
+                    continue;
+                }
+
+                List<List<SmbVendaItemLegado>> buckets = new ArrayList<>();
+                for (int i = 0; i < cx.size(); i++) buckets.add(new ArrayList<SmbVendaItemLegado>());
+
+                for (SmbVendaItemLegado item : itensVenda) {
+                    int destino = -1;
+                    for (int i = 0; i < cx.size(); i++) {
+                        if (cx.get(i).quando >= item.quando) {
+                            destino = i;
+                            break;
+                        }
+                    }
+                    if (destino < 0) destino = cx.size() - 1;
+                    buckets.get(destino).add(item);
+                }
+
+                for (int i = 0; i < cx.size(); i++) {
+                    if (buckets.get(i).isEmpty()) continue;
+                    SmbVendaGrupoLegado g = new SmbVendaGrupoLegado();
+                    g.baseKey = entry.getKey();
+                    g.caixa = cx.get(i);
+                    g.caixa.usado = true;
+                    g.itens.addAll(buckets.get(i));
+                    g.legacyKey = "CAIXA|" + g.caixa.codLanc;
+                    grupos.add(g);
+                }
+            }
+
+            Collections.sort(grupos, new Comparator<SmbVendaGrupoLegado>() {
+                @Override public int compare(SmbVendaGrupoLegado a, SmbVendaGrupoLegado b) {
+                    return Long.compare(a.quando(), b.quando());
+                }
+            });
+
+            Map<String, SmbProdutoRef> produtoPorCodigo = new HashMap<>();
+            Map<String, SmbProdutoRef> produtoPorBarras = new HashMap<>();
+            Map<String, SmbProdutoRef> produtoPorNome = new HashMap<>();
+            Map<String, Boolean> nomeDuplicado = new HashMap<>();
+
+            Cursor produtos = db.rawQuery(
+                    "SELECT id,COALESCE(codigo,''),COALESCE(codigo_barras,''),COALESCE(nome,''),custo FROM produtos",
+                    null);
+            try {
+                while (produtos.moveToNext()) {
+                    SmbProdutoRef refProd = new SmbProdutoRef(produtos.getLong(0), produtos.getDouble(4));
+                    String codigo = produtos.getString(1) == null ? "" : produtos.getString(1).trim();
+                    String barras = produtos.getString(2) == null ? "" : produtos.getString(2).trim();
+                    String nome = smbNomeChave(produtos.getString(3));
+
+                    if (!codigo.isEmpty() && !produtoPorCodigo.containsKey(codigo)) {
+                        produtoPorCodigo.put(codigo, refProd);
+                    }
+                    if (!barras.isEmpty() && !produtoPorBarras.containsKey(barras)) {
+                        produtoPorBarras.put(barras, refProd);
+                    }
+                    if (!nome.isEmpty()) {
+                        if (Boolean.TRUE.equals(nomeDuplicado.get(nome))) {
+                            // já sabemos que o nome não é único
+                        } else if (produtoPorNome.containsKey(nome)) {
+                            produtoPorNome.remove(nome);
+                            nomeDuplicado.put(nome, true);
+                        } else {
+                            produtoPorNome.put(nome, refProd);
+                        }
+                    }
+                }
+            } finally {
+                produtos.close();
+            }
+
+            for (SmbVendaGrupoLegado grupo : grupos) {
+                if (grupo.itens.isEmpty()) continue;
+
+                String legacyCompleta = origemFinal + "|SALE|" + grupo.legacyKey;
+                String saleUuid = smbUuidLegado("SALE|" + legacyCompleta);
+                long existente = idPorUuid(db, "vendas", saleUuid);
+                if (existente > 0) {
+                    registrarMapaVendaSmb(
+                            db, legacyCompleta, origemFinal, existente, grupo, agora);
+                    out.vendasIgnoradas++;
+                    continue;
+                }
+
+                double somaItens = 0;
+                double pagDin = 0;
+                double pagCrediario = 0;
+                double pagCartaoCredito = 0;
+                double pagCartaoDebito = 0;
+                boolean tipoDinheiro = false;
+                boolean tipoCartao = false;
+                boolean tipoPrazo = false;
+
+                for (SmbVendaItemLegado item : grupo.itens) {
+                    somaItens += Math.max(0, smbDecimal(item.json, "VLTOTALCOBRADO"));
+                    pagDin = Math.max(pagDin, Math.max(0, smbDecimal(item.json, "VLPGDIN")));
+                    pagCrediario = Math.max(pagCrediario, Math.max(0, smbDecimal(item.json, "VLPGCREDIARIO")));
+                    pagCartaoCredito = Math.max(pagCartaoCredito, Math.max(0, smbDecimal(item.json, "VLPGCARTAO")));
+                    pagCartaoDebito = Math.max(pagCartaoDebito, Math.max(0, smbDecimal(item.json, "VLPGCARTAODEB")));
+
+                    String tp = item.tipoPagamento == null ? "" :
+                            item.tipoPagamento.trim().toLowerCase(Locale.ROOT);
+                    if (tp.contains("dinheiro")) tipoDinheiro = true;
+                    if (tp.contains("cart")) tipoCartao = true;
+                    if (tp.contains("prazo")) tipoPrazo = true;
+                }
+
+                somaItens = smbCentavos(somaItens);
+                pagDin = smbCentavos(pagDin);
+                pagCrediario = smbCentavos(pagCrediario);
+                pagCartaoCredito = smbCentavos(pagCartaoCredito);
+                pagCartaoDebito = smbCentavos(pagCartaoDebito);
+
+                double somaPagamento = smbCentavos(
+                        pagDin + pagCrediario + pagCartaoCredito + pagCartaoDebito);
+                double valorCaixa = grupo.caixa == null ? 0 : grupo.caixa.valor;
+                double total;
+                if (somaPagamento > 0.005) total = somaPagamento;
+                else if (valorCaixa > 0.005) total = valorCaixa;
+                else total = somaItens;
+                total = smbCentavos(Math.max(0, total));
+
+                if (Math.abs(total - somaItens) > 0.011) {
+                    out.divergenciasReconciliadas++;
+                }
+                if (total <= 0.005) out.vendasSemValor++;
+
+                double dinheiro = pagDin;
+                double cartao = smbCentavos(pagCartaoCredito + pagCartaoDebito);
+                double crediario = pagCrediario;
+
+                if (somaPagamento <= 0.005) {
+                    if (tipoCartao) {
+                        cartao = total;
+                    } else if (tipoPrazo) {
+                        crediario = total;
+                    } else if (tipoDinheiro || valorCaixa > 0.005) {
+                        dinheiro = total;
+                    }
+                }
+
+                dinheiro = smbCentavos(dinheiro);
+                cartao = smbCentavos(cartao);
+                crediario = smbCentavos(crediario);
+
+                int qtdFormas = 0;
+                if (dinheiro > 0.005) qtdFormas++;
+                if (cartao > 0.005) qtdFormas++;
+                if (crediario > 0.005) qtdFormas++;
+
+                String forma;
+                if (qtdFormas > 1) {
+                    forma = "MISTO (LEGADO)";
+                } else if (crediario > 0.005) {
+                    forma = "À PRAZO (LEGADO)";
+                } else if (cartao > 0.005) {
+                    if (pagCartaoCredito > 0.005 && pagCartaoDebito <= 0.005) forma = "CARTÃO CRÉDITO";
+                    else if (pagCartaoDebito > 0.005 && pagCartaoCredito <= 0.005) forma = "CARTÃO DÉBITO";
+                    else forma = "CARTÃO (LEGADO)";
+                } else if (dinheiro > 0.005) {
+                    forma = "DINHEIRO";
+                } else {
+                    forma = "LEGADO";
+                }
+                if (crediario > 0.005) out.vendasAPrazo++;
+
+                double fator = somaItens > 0.005 ? total / somaItens : 0;
+                double restante = total;
+                List<SmbItemCalculado> calculados = new ArrayList<>();
+                double subtotal = 0;
+                double descontoTotal = 0;
+                double custoVenda = 0;
+
+                for (int i = 0; i < grupo.itens.size(); i++) {
+                    SmbVendaItemLegado item = grupo.itens.get(i);
+                    SmbItemCalculado calc = new SmbItemCalculado();
+                    calc.item = item;
+                    calc.quantidade = Math.max(0, smbDecimal(item.json, "QTD"));
+
+                    double liquidoOrig = Math.max(0, smbDecimal(item.json, "VLTOTALCOBRADO"));
+                    if (i == grupo.itens.size() - 1) {
+                        calc.liquido = smbCentavos(Math.max(0, restante));
+                    } else {
+                        calc.liquido = smbCentavos(Math.max(0, liquidoOrig * fator));
+                        if (calc.liquido > restante) calc.liquido = restante;
+                        restante = smbCentavos(restante - calc.liquido);
+                    }
+
+                    double bruto = Math.max(0, smbDecimal(item.json, "VLSUBTOTAL"));
+                    if (bruto <= 0.005) {
+                        bruto = Math.max(0, smbDecimal(item.json, "VLPROD")) * calc.quantidade;
+                    }
+                    calc.bruto = smbCentavos(Math.max(bruto, calc.liquido));
+                    calc.desconto = smbCentavos(Math.max(0, calc.bruto - calc.liquido));
+
+                    SmbProdutoRef refProd = null;
+                    if (!item.codigo.isEmpty()) refProd = produtoPorCodigo.get(item.codigo);
+                    if (refProd == null && !item.barras.isEmpty()) refProd = produtoPorBarras.get(item.barras);
+                    if (refProd == null) refProd = produtoPorNome.get(smbNomeChave(item.nome));
+                    calc.produto = refProd;
+
+                    if (refProd == null) {
+                        out.itensSemProduto++;
+                        calc.custoUnitario = 0;
+                    } else {
+                        calc.custoUnitario = Math.max(0, refProd.custo);
+                    }
+                    calc.custoTotal = smbCentavos(calc.custoUnitario * calc.quantidade);
+
+                    subtotal += calc.bruto;
+                    descontoTotal += calc.desconto;
+                    custoVenda += calc.custoTotal;
+                    calculados.add(calc);
+                }
+
+                subtotal = smbCentavos(subtotal);
+                descontoTotal = smbCentavos(Math.max(0, subtotal - total));
+                custoVenda = smbCentavos(custoVenda);
+
+                ContentValues venda = new ContentValues();
+                venda.put("data_millis", Math.max(1, grupo.quando()));
+                venda.put("subtotal", subtotal);
+                venda.put("desconto", descontoTotal);
+                venda.put("desconto_tipo", descontoTotal > 0.005 ? "LEGADO_SMB" : "");
+                venda.put("desconto_referencia", 0);
+                venda.put("total", total);
+                venda.put("custo_total", custoVenda);
+                venda.put("lucro_bruto", smbCentavos(total - custoVenda));
+                venda.put("forma_pagamento", forma);
+                venda.put("dinheiro", dinheiro);
+                venda.put("pix", 0);
+                venda.put("cartao", cartao);
+                venda.put("recebido", dinheiro);
+                venda.put("troco", 0);
+                venda.put("consumidor_documento", "");
+                venda.put("nota_status", "NAO_EMITIDA");
+                venda.put("nota_numero", "");
+                venda.put("nota_chave", "");
+                venda.put("nota_protocolo", "");
+                venda.put("nota_xml", "");
+                venda.put("nota_tipo", "");
+                venda.put("dest_nome", "");
+                venda.put("dest_documento", "");
+                venda.put("dest_ie", "");
+                venda.put("dest_logradouro", "");
+                venda.put("dest_numero", "");
+                venda.put("dest_complemento", "");
+                venda.put("dest_bairro", "");
+                venda.put("dest_cep", "");
+                venda.put("dest_municipio", "");
+                venda.put("dest_uf", "");
+                venda.put("dest_telefone", "");
+                venda.put("dest_email", "");
+                venda.put("status_venda", "CONCLUIDA");
+                venda.put("estorno_em", 0);
+                venda.put("estorno_motivo", "");
+                aplicarMetadadosImportacaoSmb(venda, ctx, saleUuid, agora);
+
+                long vendaId = db.insertOrThrow("vendas", null, venda);
+                if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+                    ContentValues numero = new ContentValues();
+                    numero.put("master_sale_id", vendaId);
+                    db.update("vendas", numero, "id=?", new String[]{String.valueOf(vendaId)});
+                }
+
+                for (SmbItemCalculado calc : calculados) {
+                    SmbVendaItemLegado item = calc.item;
+                    ContentValues vi = new ContentValues();
+                    vi.put("venda_id", vendaId);
+                    vi.put("produto_id", calc.produto == null ? 0 : calc.produto.id);
+                    vi.put("codigo", item.codigo);
+                    vi.put("nome", item.nome.isEmpty() ? "Produto legado SMB" : item.nome);
+                    vi.put("unidade", item.unidade);
+                    vi.put("quantidade", calc.quantidade);
+                    double precoUnit = calc.quantidade > 0.000001
+                            ? calc.bruto / calc.quantidade : calc.bruto;
+                    vi.put("preco_unitario", precoUnit);
+                    vi.put("custo_unitario", calc.custoUnitario);
+                    vi.put("total", calc.bruto);
+                    vi.put("desconto_rateio", calc.desconto);
+                    vi.put("total_liquido", calc.liquido);
+                    vi.put("custo_total", calc.custoTotal);
+                    vi.put("lucro", smbCentavos(calc.bruto - calc.custoTotal));
+                    vi.put("lucro_liquido", smbCentavos(calc.liquido - calc.custoTotal));
+                    String itemUuid = smbUuidLegado(
+                            "ITEM|" + legacyCompleta + "|" + item.sourceId);
+                    aplicarMetadadosImportacaoSmb(vi, ctx, itemUuid, agora);
+                    db.insertOrThrow("venda_itens", null, vi);
+                    out.itensImportados++;
+                }
+
+                registrarMapaVendaSmb(db, legacyCompleta, origemFinal, vendaId, grupo, agora);
+
+                if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+                    ContentValues ch = new ContentValues();
+                    ch.put("venda_uuid", saleUuid);
+                    ch.put("acao", "UPSERT");
+                    ch.put("changed_at", agora);
+                    db.insertOrThrow("lan_sale_changes", null, ch);
+                }
+
+                out.vendasImportadas++;
+                out.faturamentoImportado =
+                        smbCentavos(out.faturamentoImportado + total);
+            }
+
+            int caixasUsados = 0;
+            for (List<SmbCaixaLegado> lista : caixasPorVenda.values()) {
+                for (SmbCaixaLegado x : lista) if (x.usado) caixasUsados++;
+            }
+            out.caixaSemVenda = Math.max(0, caixasDeVenda - caixasUsados);
+
+            int avisos = out.divergenciasReconciliadas +
+                    out.itensSemProduto + out.vendasSemValor + out.caixaSemVenda;
+
+            ContentValues s = new ContentValues();
+            s.put("status", "HISTORICO_IMPORTADO");
+            s.put("imported_sales", out.vendasImportadas);
+            s.put("imported_sale_items", out.itensImportados);
+            s.put("imported_cash_rows", out.caixaPreservado);
+            s.put("sales_warnings", avisos);
+            s.put("sales_imported_at", agora);
+            s.put("updated_at", agora);
+            db.update("smb_import_sessions", s, "id=?",
+                    new String[]{String.valueOf(sessionId)});
+
+            db.setTransactionSuccessful();
+        } catch (Throwable e) {
+            throw e instanceof RuntimeException ? (RuntimeException)e :
+                    new IllegalStateException(e.getMessage(), e);
+        } finally {
+            db.endTransaction();
+        }
+
+        return out;
+    }
+
+    private void aplicarMetadadosImportacaoSmb(
+            ContentValues v, SyncContext ctx, String uuid, long agora) {
+        v.put("uuid", uuid == null ? "" : uuid);
+        v.put("empresa_uuid", ctx.empresaUuid);
+        v.put("filial_uuid", ctx.filialUuid);
+        v.put("dispositivo_uuid", ctx.dispositivoUuid);
+        v.put("sync_status", "PENDENTE");
+        v.put("sync_version", 1);
+        v.put("sync_updated_at", agora);
+    }
+
+    private void registrarMapaVendaSmb(
+            SQLiteDatabase db,
+            String legacyKey,
+            String sourceFile,
+            long vendaId,
+            SmbVendaGrupoLegado grupo,
+            long agora) {
+        SmbVendaItemLegado primeiro = grupo.itens.isEmpty() ? null : grupo.itens.get(0);
+        ContentValues m = new ContentValues();
+        m.put("legacy_key", legacyKey);
+        m.put("source_file", sourceFile);
+        m.put("local_venda_id", vendaId);
+        m.put("nr_venda", primeiro == null ? "" : primeiro.nrVenda);
+        m.put("nr_afcaixa", primeiro == null ? "" : primeiro.nrAfcaixa);
+        m.put("caixa_codlanc", grupo.caixa == null ? "" : grupo.caixa.codLanc);
+        m.put("data_venda", primeiro == null ? "" : primeiro.data);
+        m.put("imported_at", agora);
+        db.insertWithOnConflict(
+                "smb_legacy_sales", null, m, SQLiteDatabase.CONFLICT_IGNORE);
+    }
+
+    private String smbUuidLegado(String chave) {
+        String x = chave == null ? "" : chave;
+        return UUID.nameUUIDFromBytes(x.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private String smbBaseVenda(String nrAfcaixa, String nrVenda, String data) {
+        return (nrAfcaixa == null ? "" : nrAfcaixa.trim()) + "|" +
+                (nrVenda == null ? "" : nrVenda.trim()) + "|" +
+                (data == null ? "" : data.trim());
+    }
+
+    private String smbNomeChave(String valor) {
+        return valor == null ? "" : valor.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private double smbCentavos(double valor) {
+        return Math.round(valor * 100.0d) / 100.0d;
+    }
+
+    private long smbDataHoraMillis(String data, String hora) {
+        try {
+            String d = data == null ? "" : data.trim();
+            String h = hora == null ? "" : hora.trim();
+            if (d.length() < 10) return 0;
+            int ano = Integer.parseInt(d.substring(0, 4));
+            int mes = Integer.parseInt(d.substring(5, 7));
+            int dia = Integer.parseInt(d.substring(8, 10));
+            int hh = 0, mm = 0, ss = 0;
+            if (h.length() >= 8) {
+                hh = Integer.parseInt(h.substring(0, 2));
+                mm = Integer.parseInt(h.substring(3, 5));
+                ss = Integer.parseInt(h.substring(6, 8));
+            }
+            Calendar cal = Calendar.getInstance();
+            cal.clear();
+            cal.set(ano, mes - 1, dia, hh, mm, ss);
+            return cal.getTimeInMillis();
+        } catch (Throwable ignored) {
+            return 0;
+        }
     }
 
     private boolean smbProdutoExiste(SQLiteDatabase db, String codigo, String barras) {

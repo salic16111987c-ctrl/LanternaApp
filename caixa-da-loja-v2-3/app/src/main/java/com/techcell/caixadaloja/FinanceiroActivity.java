@@ -455,6 +455,17 @@ public class FinanceiroActivity extends Activity {
         formas.addView(recebimentoItem("Cartão", moeda.format(r.vendas.cartao), TechCellUi.NAVY),
                 new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         recebimentos.addView(formas);
+
+        double outrosRecebimentos = Math.max(0,
+                r.vendas.total - r.vendas.dinheiro - r.vendas.pix - r.vendas.cartao);
+        if (outrosRecebimentos > 0.005) {
+            TextView outros = txt(
+                    "Outros / a prazo: " + moeda.format(outrosRecebimentos),
+                    12, true);
+            outros.setTextColor(TechCellUi.ORANGE);
+            outros.setPadding(0, dp(8), 0, 0);
+            recebimentos.addView(outros);
+        }
         resumoBox.addView(recebimentos);
     }
 
