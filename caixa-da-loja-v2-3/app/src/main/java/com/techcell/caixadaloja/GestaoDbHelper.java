@@ -2470,10 +2470,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     "SELECT * FROM produtos ORDER BY " + orderBy + " LIMIT " + max, null);
         } else {
             String like = "%" + q + "%";
+            String prefix = q + "%";
             c = getReadableDatabase().rawQuery(
                     "SELECT * FROM produtos WHERE nome LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ? " +
-                            "ORDER BY " + orderBy + " LIMIT " + max,
-                    new String[]{like, like, like});
+                            "ORDER BY CASE " +
+                            "WHEN TRIM(COALESCE(codigo,''))=? OR TRIM(COALESCE(codigo_barras,''))=? THEN 0 " +
+                            "WHEN nome LIKE ? THEN 1 " +
+                            "WHEN codigo LIKE ? OR codigo_barras LIKE ? THEN 2 " +
+                            "ELSE 3 END, " + orderBy + " LIMIT " + max,
+                    new String[]{like, like, like, q, q, prefix, prefix, prefix});
         }
         try {
             while (c.moveToNext()) out.add(fromCursor(c));

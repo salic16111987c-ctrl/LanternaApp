@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.graphics.Color;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
@@ -41,6 +43,9 @@ public class ProdutosActivity extends Activity {
     private Button ordenar;
     private int ordem = 0;
     private boolean syncProdutosRodando;
+    private final Handler buscaHandler = new Handler(Looper.getMainLooper());
+    private final Runnable buscaRunnable = this::carregar;
+    private Button limparBusca;
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -82,78 +87,126 @@ public class ProdutosActivity extends Activity {
         db = new GestaoDbHelper(this);
         TechCellUi.applyWindowChrome(this);
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(TechCellUi.BG);
+        LinearLayout tela = new LinearLayout(this);
+        tela.setOrientation(LinearLayout.VERTICAL);
+        tela.setPadding(dp(14), dp(12), dp(14), dp(10));
+        tela.setBackgroundColor(TechCellUi.BG);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(14), dp(14), dp(14), dp(28));
-        scroll.addView(root);
+        LinearLayout topo = new LinearLayout(this);
+        topo.setOrientation(LinearLayout.HORIZONTAL);
+        topo.setGravity(Gravity.CENTER_VERTICAL);
 
         Button voltar = new Button(this);
-        voltar.setText("←  Voltar");
-        voltar.setTextSize(14);
+        voltar.setText("←");
+        voltar.setTextSize(20);
+        voltar.setMinWidth(0);
+        voltar.setMinHeight(0);
+        voltar.setPadding(0,0,0,0);
         TechCellUi.styleSecondary(this, voltar);
         voltar.setOnClickListener(v -> finish());
-        root.addView(voltar, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(44)));
+        topo.addView(voltar, new LinearLayout.LayoutParams(dp(48), dp(44)));
 
-        TextView title = txt("Produtos", 27, true);
-        title.setPadding(0, dp(14), 0, dp(2));
-        root.addView(title);
+        LinearLayout titulos = new LinearLayout(this);
+        titulos.setOrientation(LinearLayout.VERTICAL);
+        titulos.setPadding(dp(10),0,dp(8),0);
 
-        TextView info = txt("Cadastro e controle de mercadorias • Alpha 42", 12, false);
+        TextView title = txt("Produtos", 25, true);
+        titulos.addView(title);
+
+        TextView info = txt("Cadastro e controle • Alpha 42", 11, false);
         info.setTextColor(TechCellUi.MUTED);
-        root.addView(info);
+        titulos.addView(info);
+
+        topo.addView(titulos, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
         Button novo = new Button(this);
-        novo.setText("+  Novo produto");
-        novo.setTextSize(16);
+        novo.setText("+ Novo");
+        novo.setTextSize(14);
+        novo.setAllCaps(false);
+        novo.setMinHeight(0);
         TechCellUi.stylePrimary(this, novo);
         novo.setOnClickListener(v -> abrirFormulario(null));
-        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(54));
-        np.setMargins(0, dp(14), 0, dp(10));
-        root.addView(novo, np);
+        topo.addView(novo, new LinearLayout.LayoutParams(dp(108), dp(44)));
 
-        busca = field("🔎  Buscar por nome, código ou código de barras", InputType.TYPE_CLASS_TEXT);
+        tela.addView(topo);
+
+        LinearLayout buscaLinha = new LinearLayout(this);
+        buscaLinha.setOrientation(LinearLayout.HORIZONTAL);
+        buscaLinha.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+        blp.setMargins(0, dp(12), 0, 0);
+
+        busca = field("Buscar nome, código ou código de barras", InputType.TYPE_CLASS_TEXT);
         TechCellUi.styleSearch(this, busca);
-        root.addView(busca, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        busca.setPadding(dp(14),0,dp(10),0);
+        buscaLinha.addView(busca, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
+        limparBusca = new Button(this);
+        limparBusca.setText("×");
+        limparBusca.setTextSize(24);
+        limparBusca.setAllCaps(false);
+        limparBusca.setMinWidth(0);
+        limparBusca.setMinHeight(0);
+        limparBusca.setPadding(0,0,0,0);
+        TechCellUi.styleSecondary(this, limparBusca);
+        limparBusca.setVisibility(View.GONE);
+        limparBusca.setOnClickListener(v -> {
+            busca.setText("");
+            busca.requestFocus();
+        });
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        clp.setMargins(dp(6),0,0,0);
+        buscaLinha.addView(limparBusca, clp);
+
+        tela.addView(buscaLinha, blp);
 
         LinearLayout barraLista = new LinearLayout(this);
         barraLista.setOrientation(LinearLayout.HORIZONTAL);
         barraLista.setGravity(Gravity.CENTER_VERTICAL);
-        barraLista.setPadding(0, dp(10), 0, dp(4));
+        barraLista.setPadding(0, dp(7), 0, dp(6));
 
-        contador = txt("", 13, true);
+        contador = txt("", 12, true);
         contador.setTextColor(TechCellUi.NAVY);
         barraLista.addView(contador, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
         ordenar = new Button(this);
-        ordenar.setText("Ordenar: Nome");
+        ordenar.setText("Nome ↕");
         ordenar.setTextSize(12);
+        ordenar.setAllCaps(false);
+        ordenar.setMinHeight(0);
         TechCellUi.styleSecondary(this, ordenar);
         ordenar.setOnClickListener(v -> {
             ordem = (ordem + 1) % 3;
             atualizarRotuloOrdenacao();
             carregar();
         });
-        barraLista.addView(ordenar, new LinearLayout.LayoutParams(dp(140), dp(40)));
-        root.addView(barraLista);
+        barraLista.addView(ordenar, new LinearLayout.LayoutParams(dp(118), dp(38)));
+        tela.addView(barraLista);
 
+        ScrollView scrollLista = new ScrollView(this);
+        scrollLista.setFillViewport(true);
         lista = new LinearLayout(this);
         lista.setOrientation(LinearLayout.VERTICAL);
-        root.addView(lista);
+        lista.setPadding(0,0,0,dp(24));
+        scrollLista.addView(lista);
+        tela.addView(scrollLista, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
         busca.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int st, int c, int a) {}
-            public void onTextChanged(CharSequence s, int st, int b, int c) { carregar(); }
+            public void onTextChanged(CharSequence s, int st, int b, int c) {
+                limparBusca.setVisibility(s != null && s.length() > 0 ? View.VISIBLE : View.GONE);
+                buscaHandler.removeCallbacks(buscaRunnable);
+                buscaHandler.postDelayed(buscaRunnable, 160);
+            }
             public void afterTextChanged(Editable e) {}
         });
 
-        setContentView(scroll);
+        setContentView(tela);
         atualizarRotuloOrdenacao();
         carregar();
     }
@@ -185,9 +238,9 @@ public class ProdutosActivity extends Activity {
 
     private void atualizarRotuloOrdenacao() {
         if (ordenar == null) return;
-        ordenar.setText(ordem == 0 ? "Ordenar: Nome"
-                : ordem == 1 ? "Ordenar: Estoque"
-                : "Ordenar: Preço");
+        ordenar.setText(ordem == 0 ? "Nome ↕"
+                : ordem == 1 ? "Estoque ↑"
+                : "Preço ↓");
     }
 
     private void carregar() {
@@ -719,4 +772,11 @@ public class ProdutosActivity extends Activity {
         }));
         dialog.show();
     }
+
+    @Override protected void onDestroy() {
+        buscaHandler.removeCallbacks(buscaRunnable);
+        if (db != null) db.close();
+        super.onDestroy();
+    }
+
 }
