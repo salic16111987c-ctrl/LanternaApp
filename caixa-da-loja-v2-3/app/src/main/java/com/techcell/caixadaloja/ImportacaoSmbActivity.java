@@ -274,8 +274,9 @@ public class ImportacaoSmbActivity extends Activity {
                 }
 
                 runOnUiThread(()->{
-                    setOcupado(false,"Pré-importação carregada. Nenhum dado da base principal foi alterado.");
+                    setOcupado(false,"Pré-importação concluída com sucesso. Nenhum dado da base principal foi alterado.");
                     renderResumo();
+                    mostrarConclusaoPreImportacao();
                 });
             }catch(Throwable e){
                 if(db!=null && db.inTransaction()){
@@ -362,6 +363,32 @@ public class ImportacaoSmbActivity extends Activity {
         TextView t=txt(label+": "+String.format(new Locale("pt","BR"),"%,d",value),13,false);
         t.setPadding(0,dp(3),0,dp(3));
         return t;
+    }
+
+    private void mostrarConclusaoPreImportacao(){
+        GestaoDbHelper db=new GestaoDbHelper(this);
+        GestaoDbHelper.SmbImportResumo r=db.resumoImportacaoSmb();
+        db.close();
+        if(r==null)return;
+
+        String total=String.format(new Locale("pt","BR"),"%,d",r.stagedRecords);
+        String produtos=String.format(new Locale("pt","BR"),"%,d",r.produtos);
+        String vendas=String.format(new Locale("pt","BR"),"%,d",r.vendas);
+
+        StringBuilder msg=new StringBuilder();
+        msg.append(total).append(" registros foram analisados e carregados somente na área de pré-importação.");
+        msg.append("\n\nProdutos: ").append(produtos);
+        msg.append("\nVendas encontradas: ").append(vendas);
+        msg.append("\nPossíveis produtos já existentes: ").append(r.conflitosProdutos);
+        if(r.warnings>0)msg.append("\nAvisos para revisar: ").append(r.warnings);
+        msg.append("\n\nNenhum dado da base principal foi alterado.");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Pré-importação concluída com sucesso")
+                .setMessage(msg.toString())
+                .setPositiveButton("Ver resultado",null)
+                .setCancelable(false)
+                .show();
     }
 
     private void confirmarLimpeza(){
