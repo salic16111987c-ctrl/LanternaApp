@@ -12,8 +12,6 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.text.NumberFormat;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -35,7 +33,6 @@ public class EstoqueActivity extends Activity {
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        render();
     }
 
     @Override protected void onResume() {
@@ -48,8 +45,12 @@ public class EstoqueActivity extends Activity {
     private void sincronizarProdutosMaster() {
         if (syncProdutosRodando) return;
         GestaoDbHelper dbLocal = new GestaoDbHelper(this);
-        if (dbLocal == null) return;
-        GestaoDbHelper.SyncContext ctx = dbLocal.getSyncContext();
+        GestaoDbHelper.SyncContext ctx;
+        try {
+            ctx = dbLocal.getSyncContext();
+        } finally {
+            dbLocal.close();
+        }
         if (!ctx.configurado || "MASTER".equalsIgnoreCase(ctx.papelDispositivo) ||
                 ctx.masterAuthToken == null || ctx.masterAuthToken.trim().isEmpty()) return;
 
@@ -94,23 +95,13 @@ public class EstoqueActivity extends Activity {
     private void render() {
         TechCellUi.applyWindowChrome(this);
         GestaoDbHelper db = new GestaoDbHelper(this);
-        List<GestaoDbHelper.Produto> ps = db.list("");
-
-        double custo=0, venda=0, lucro=0, itens=0;
-        int baixos=0;
-        for (GestaoDbHelper.Produto p : ps) {
-            custo += p.valorEstoqueCusto();
-            venda += p.valorEstoqueVenda();
-            lucro += p.lucroPotencial();
-            itens += p.estoque;
-            if (p.estoqueMinimo > 0 && p.estoque <= p.estoqueMinimo) baixos++;
-        }
-
-        if (ordem == 0) {
-            Collections.sort(ps, Comparator.comparing(
-                    p -> p.nome == null ? "" : p.nome.toLowerCase(new Locale("pt","BR"))));
-        } else {
-            Collections.sort(ps, Comparator.comparingDouble(p -> p.estoque));
+        GestaoDbHelper.ResumoEstoqueGeral resumoGeral;
+        List<GestaoDbHelper.Produto> ps;
+        try {
+            resumoGeral = db.resumoEstoqueGeral();
+            ps = db.listProdutosTela("", ordem == 0 ? 0 : 1, 80);
+        } finally {
+            db.close();
         }
 
         ScrollView scroll = new ScrollView(this);
@@ -132,7 +123,7 @@ public class EstoqueActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView sub = txt("Visão geral do seu estoque • Alpha 41", 12, false);
+        TextView sub = txt("Visão geral do seu estoque • Alpha 42", 12, false);
         sub.setTextColor(TechCellUi.MUTED);
         root.addView(sub);
 
@@ -144,14 +135,15 @@ public class EstoqueActivity extends Activity {
         resumo.addView(resumoTitulo);
 
         addKpiRow(resumo,
-                kpi("Produtos cadastrados", String.valueOf(ps.size()), TechCellUi.NAVY),
-                kpi("Soma das quantidades", fmt(itens), TechCellUi.NAVY));
+                kpi("Produtos cadastrados", String.valueOf(resumoGeral.produtos), TechCellUi.NAVY),
+                kpi("Soma das quantidades", fmt(resumoGeral.quantidadeTotal), TechCellUi.NAVY));
         addKpiRow(resumo,
-                kpi("Custo do estoque", moeda.format(custo), TechCellUi.TEXT),
-                kpi("Venda potencial", moeda.format(venda), TechCellUi.GREEN));
+                kpi("Custo do estoque", moeda.format(resumoGeral.custoTotal), TechCellUi.TEXT),
+                kpi("Venda potencial", moeda.format(resumoGeral.vendaPotencial), TechCellUi.GREEN));
         addKpiRow(resumo,
-                kpi("Lucro bruto potencial", moeda.format(lucro), TechCellUi.GREEN),
-                kpi("Estoque baixo", String.valueOf(baixos), baixos > 0 ? TechCellUi.RED : TechCellUi.GREEN));
+                kpi("Lucro bruto potencial", moeda.format(resumoGeral.lucroPotencial), TechCellUi.GREEN),
+                kpi("Estoque baixo", String.valueOf(resumoGeral.estoqueBaixo),
+                        resumoGeral.estoqueBaixo > 0 ? TechCellUi.RED : TechCellUi.GREEN));
 
         TextView obs = txt(
                 "ⓘ A soma das quantidades é apenas informativa porque o estoque pode misturar UN, PC, CX, KG, M etc.",
@@ -189,6 +181,14 @@ public class EstoqueActivity extends Activity {
         });
         cabLista.addView(ordenar, new LinearLayout.LayoutParams(dp(138), dp(40)));
         root.addView(cabLista);
+
+        TextView limiteLista = txt(
+                "Exibindo " + ps.size() + " de " + resumoGeral.produtos +
+                        " produtos. O resumo acima considera o estoque completo.",
+                11, false);
+        limiteLista.setTextColor(TechCellUi.MUTED);
+        limiteLista.setPadding(0, dp(5), 0, dp(4));
+        root.addView(limiteLista);
 
         for (GestaoDbHelper.Produto p : ps) {
             LinearLayout card = TechCellUi.card(this);

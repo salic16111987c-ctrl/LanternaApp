@@ -192,6 +192,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double minimo;
     }
 
+    public static class ResumoEstoqueGeral {
+        public int produtos;
+        public double quantidadeTotal;
+        public double custoTotal;
+        public double vendaPotencial;
+        public double lucroPotencial;
+        public int estoqueBaixo;
+    }
+
     public static class VendaItemRegistro {
         public String codigo = "";
         public String nome = "";
@@ -2493,6 +2502,32 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM produtos", null);
         try { return c.moveToFirst() ? c.getInt(0) : 0; }
         finally { c.close(); }
+    }
+
+    public ResumoEstoqueGeral resumoEstoqueGeral() {
+        ResumoEstoqueGeral r = new ResumoEstoqueGeral();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*)," +
+                        "COALESCE(SUM(estoque),0)," +
+                        "COALESCE(SUM(custo*estoque),0)," +
+                        "COALESCE(SUM(preco_venda*estoque),0)," +
+                        "COALESCE(SUM((preco_venda-custo)*estoque),0)," +
+                        "COALESCE(SUM(CASE WHEN estoque_minimo>0 AND estoque<=estoque_minimo THEN 1 ELSE 0 END),0) " +
+                        "FROM produtos",
+                null);
+        try {
+            if (c.moveToFirst()) {
+                r.produtos = c.getInt(0);
+                r.quantidadeTotal = c.getDouble(1);
+                r.custoTotal = c.getDouble(2);
+                r.vendaPotencial = c.getDouble(3);
+                r.lucroPotencial = c.getDouble(4);
+                r.estoqueBaixo = c.getInt(5);
+            }
+        } finally {
+            c.close();
+        }
+        return r;
     }
 
     public int countProdutos(String busca) {
