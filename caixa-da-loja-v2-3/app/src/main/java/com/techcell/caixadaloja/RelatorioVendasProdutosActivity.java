@@ -88,7 +88,7 @@ public class RelatorioVendasProdutosActivity extends Activity {
         root.addView(titulo);
 
         TextView sub = txt(
-                "Mercadorias vendidas, custo e lucratividade • Alpha 41",
+                "Mercadorias vendidas, custo e lucratividade • Alpha 42",
                 14, false);
         sub.setTextColor(Color.parseColor("#667085"));
         root.addView(sub);

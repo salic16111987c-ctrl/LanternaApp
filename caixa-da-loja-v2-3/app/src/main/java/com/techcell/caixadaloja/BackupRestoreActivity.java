@@ -31,7 +31,7 @@ public class BackupRestoreActivity extends Activity {
     private static final int REQ_CREATE_BACKUP = 7301;
     private static final int REQ_OPEN_BACKUP = 7302;
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 19;
+    private static final int DB_VERSION = 20;
 
     private final SimpleDateFormat nomeData =
             new SimpleDateFormat("yyyyMMdd_HHmmss", new Locale("pt","BR"));
@@ -90,7 +90,7 @@ public class BackupRestoreActivity extends Activity {
         root.addView(titulo);
 
         TextView sub=txt(
-                "Proteção do banco do Tech Cell • Alpha 41",
+                "Proteção do banco do Tech Cell • Alpha 42",
                 13,false);
         sub.setTextColor(TechCellUi.MUTED);
         root.addView(sub);

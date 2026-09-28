@@ -16,7 +16,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 19;
+    private static final int DB_VERSION = 20;
 
     public static class Produto {
         public long id;
@@ -334,6 +334,29 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public boolean cloudAtiva;
     }
 
+    public static class SmbImportResumo {
+        public long sessionId;
+        public String sourceName = "";
+        public String sourceSystem = "";
+        public String sourceFile = "";
+        public String backupDate = "";
+        public String status = "";
+        public long createdAt;
+        public int stagedRecords;
+        public int warnings;
+        public int empresa;
+        public int fornecedores;
+        public int grupos;
+        public int fabricantes;
+        public int produtos;
+        public int clientes;
+        public int vendaItens;
+        public int vendas;
+        public int caixa;
+        public int ajustesEstoque;
+        public int conflitosProdutos;
+    }
+
     public GestaoDbHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
@@ -347,6 +370,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         criarClientes(db);
         criarDespesas(db);
         criarFornecedores(db);
+        criarImportacaoSmb(db);
     }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
@@ -475,6 +499,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         if (oldVersion < 19) {
             migrarParaV19(db);
+        }
+
+        if (oldVersion < 20) {
+            criarImportacaoSmb(db);
         }
     }
 
@@ -3445,4 +3473,186 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         p.gtinTributavel = c.getString(c.getColumnIndexOrThrow("gtin_tributavel"));
         return p;
     }
+
+    private void criarImportacaoSmb(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS smb_import_sessions (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "source_name TEXT NOT NULL DEFAULT ''," +
+                "source_system TEXT NOT NULL DEFAULT ''," +
+                "source_file TEXT NOT NULL DEFAULT ''," +
+                "backup_date TEXT NOT NULL DEFAULT ''," +
+                "format_version TEXT NOT NULL DEFAULT ''," +
+                "manifest_json TEXT NOT NULL DEFAULT ''," +
+                "status TEXT NOT NULL DEFAULT 'CARREGANDO'," +
+                "staged_records INTEGER NOT NULL DEFAULT 0," +
+                "warnings INTEGER NOT NULL DEFAULT 0," +
+                "created_at INTEGER NOT NULL," +
+                "updated_at INTEGER NOT NULL" +
+                ")");
+
+        db.execSQL("CREATE TABLE IF NOT EXISTS smb_import_records (" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "session_id INTEGER NOT NULL," +
+                "entity_type TEXT NOT NULL," +
+                "source_id TEXT NOT NULL DEFAULT ''," +
+                "parent_source_id TEXT NOT NULL DEFAULT ''," +
+                "display_name TEXT NOT NULL DEFAULT ''," +
+                "match_key1 TEXT NOT NULL DEFAULT ''," +
+                "match_key2 TEXT NOT NULL DEFAULT ''," +
+                "payload_json TEXT NOT NULL," +
+                "validation_status TEXT NOT NULL DEFAULT 'OK'," +
+                "warning TEXT NOT NULL DEFAULT ''," +
+                "created_at INTEGER NOT NULL," +
+                "FOREIGN KEY(session_id) REFERENCES smb_import_sessions(id)" +
+                ")");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_records_session ON smb_import_records(session_id,entity_type)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_records_source ON smb_import_records(session_id,entity_type,source_id)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_records_parent ON smb_import_records(session_id,entity_type,parent_source_id)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_records_match1 ON smb_import_records(session_id,entity_type,match_key1)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_smb_records_match2 ON smb_import_records(session_id,entity_type,match_key2)");
+    }
+
+    public long iniciarPreImportacaoSmb(SQLiteDatabase db,
+                                        String sourceName,
+                                        String sourceSystem,
+                                        String sourceFile,
+                                        String backupDate,
+                                        String formatVersion,
+                                        String manifestJson) {
+        criarImportacaoSmb(db);
+        db.delete("smb_import_records", null, null);
+        db.delete("smb_import_sessions", null, null);
+
+        long now = System.currentTimeMillis();
+        ContentValues v = new ContentValues();
+        v.put("source_name", sourceName == null ? "" : sourceName);
+        v.put("source_system", sourceSystem == null ? "" : sourceSystem);
+        v.put("source_file", sourceFile == null ? "" : sourceFile);
+        v.put("backup_date", backupDate == null ? "" : backupDate);
+        v.put("format_version", formatVersion == null ? "" : formatVersion);
+        v.put("manifest_json", manifestJson == null ? "" : manifestJson);
+        v.put("status", "CARREGANDO");
+        v.put("staged_records", 0);
+        v.put("warnings", 0);
+        v.put("created_at", now);
+        v.put("updated_at", now);
+        return db.insertOrThrow("smb_import_sessions", null, v);
+    }
+
+    public void inserirRegistroSmb(SQLiteDatabase db,
+                                   long sessionId,
+                                   String entityType,
+                                   String sourceId,
+                                   String parentSourceId,
+                                   String displayName,
+                                   String matchKey1,
+                                   String matchKey2,
+                                   String payloadJson,
+                                   String validationStatus,
+                                   String warning) {
+        ContentValues v = new ContentValues();
+        v.put("session_id", sessionId);
+        v.put("entity_type", entityType == null ? "" : entityType);
+        v.put("source_id", sourceId == null ? "" : sourceId);
+        v.put("parent_source_id", parentSourceId == null ? "" : parentSourceId);
+        v.put("display_name", displayName == null ? "" : displayName);
+        v.put("match_key1", matchKey1 == null ? "" : matchKey1);
+        v.put("match_key2", matchKey2 == null ? "" : matchKey2);
+        v.put("payload_json", payloadJson == null ? "{}" : payloadJson);
+        v.put("validation_status", validationStatus == null ? "OK" : validationStatus);
+        v.put("warning", warning == null ? "" : warning);
+        v.put("created_at", System.currentTimeMillis());
+        db.insertOrThrow("smb_import_records", null, v);
+    }
+
+    public void finalizarPreImportacaoSmb(SQLiteDatabase db, long sessionId, int stagedRecords, int warnings) {
+        ContentValues v = new ContentValues();
+        v.put("status", "PRONTA_PARA_REVISAO");
+        v.put("staged_records", stagedRecords);
+        v.put("warnings", warnings);
+        v.put("updated_at", System.currentTimeMillis());
+        db.update("smb_import_sessions", v, "id=?", new String[]{String.valueOf(sessionId)});
+    }
+
+    public void limparPreImportacaoSmb() {
+        SQLiteDatabase db = getWritableDatabase();
+        criarImportacaoSmb(db);
+        db.beginTransaction();
+        try {
+            db.delete("smb_import_records", null, null);
+            db.delete("smb_import_sessions", null, null);
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    public SmbImportResumo resumoImportacaoSmb() {
+        SQLiteDatabase db = getWritableDatabase();
+        criarImportacaoSmb(db);
+        Cursor c = db.rawQuery(
+                "SELECT id,source_name,source_system,source_file,backup_date,status,staged_records,warnings,created_at " +
+                        "FROM smb_import_sessions ORDER BY id DESC LIMIT 1", null);
+        SmbImportResumo r = null;
+        try {
+            if (c.moveToFirst()) {
+                r = new SmbImportResumo();
+                r.sessionId = c.getLong(0);
+                r.sourceName = c.getString(1);
+                r.sourceSystem = c.getString(2);
+                r.sourceFile = c.getString(3);
+                r.backupDate = c.getString(4);
+                r.status = c.getString(5);
+                r.stagedRecords = c.getInt(6);
+                r.warnings = c.getInt(7);
+                r.createdAt = c.getLong(8);
+            }
+        } finally {
+            c.close();
+        }
+        if (r == null) return null;
+
+        r.empresa = contarSmb(db, r.sessionId, "EMPRESA");
+        r.fornecedores = contarSmb(db, r.sessionId, "FORNECEDOR");
+        r.grupos = contarSmb(db, r.sessionId, "GRUPO");
+        r.fabricantes = contarSmb(db, r.sessionId, "FABRICANTE");
+        r.produtos = contarSmb(db, r.sessionId, "PRODUTO");
+        r.clientes = contarSmb(db, r.sessionId, "CLIENTE");
+        r.vendaItens = contarSmb(db, r.sessionId, "VENDA_ITEM");
+        r.vendas = contarSmbDistintos(db, r.sessionId, "VENDA_ITEM", "parent_source_id");
+        r.caixa = contarSmb(db, r.sessionId, "CAIXA");
+        r.ajustesEstoque = contarSmb(db, r.sessionId, "AJUSTE_ESTOQUE");
+        r.conflitosProdutos = contarConflitosProdutosSmb(db, r.sessionId);
+        return r;
+    }
+
+    private int contarSmb(SQLiteDatabase db, long sessionId, String entityType) {
+        Cursor c = db.rawQuery(
+                "SELECT COUNT(*) FROM smb_import_records WHERE session_id=? AND entity_type=?",
+                new String[]{String.valueOf(sessionId), entityType});
+        try { return c.moveToFirst() ? c.getInt(0) : 0; }
+        finally { c.close(); }
+    }
+
+    private int contarSmbDistintos(SQLiteDatabase db, long sessionId, String entityType, String field) {
+        String coluna = "parent_source_id".equals(field) ? "parent_source_id" : "source_id";
+        Cursor c = db.rawQuery(
+                "SELECT COUNT(DISTINCT " + coluna + ") FROM smb_import_records " +
+                        "WHERE session_id=? AND entity_type=? AND TRIM(" + coluna + ")<>''",
+                new String[]{String.valueOf(sessionId), entityType});
+        try { return c.moveToFirst() ? c.getInt(0) : 0; }
+        finally { c.close(); }
+    }
+
+    private int contarConflitosProdutosSmb(SQLiteDatabase db, long sessionId) {
+        Cursor c = db.rawQuery(
+                "SELECT COUNT(*) FROM smb_import_records s " +
+                        "WHERE s.session_id=? AND s.entity_type='PRODUTO' AND (" +
+                        "(TRIM(s.match_key1)<>'' AND EXISTS(SELECT 1 FROM produtos p WHERE TRIM(COALESCE(p.codigo,''))=TRIM(s.match_key1))) OR " +
+                        "(TRIM(s.match_key2)<>'' AND EXISTS(SELECT 1 FROM produtos p WHERE TRIM(COALESCE(p.codigo_barras,''))=TRIM(s.match_key2))))",
+                new String[]{String.valueOf(sessionId)});
+        try { return c.moveToFirst() ? c.getInt(0) : 0; }
+        finally { c.close(); }
+    }
+
 }
