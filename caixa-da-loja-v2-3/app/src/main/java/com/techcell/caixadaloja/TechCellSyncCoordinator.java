@@ -156,6 +156,20 @@ public final class TechCellSyncCoordinator {
         return m == null || m.trim().isEmpty() ? e.getClass().getSimpleName() : m.trim();
     }
 
+    public static boolean iniciarManutencao() {
+        if (!LOCK.tryLock()) return false;
+        emAndamento = true;
+        ultimoInicio = System.currentTimeMillis();
+        return true;
+    }
+
+    public static void finalizarManutencao() {
+        if (!LOCK.isHeldByCurrentThread()) return;
+        emAndamento = false;
+        ultimoFim = System.currentTimeMillis();
+        LOCK.unlock();
+    }
+
     public static boolean estaSincronizando() {
         return emAndamento || LOCK.isLocked();
     }

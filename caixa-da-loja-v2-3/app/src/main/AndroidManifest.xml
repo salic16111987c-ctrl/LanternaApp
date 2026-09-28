@@ -42,6 +42,7 @@
         <activity android:name="com.techcell.caixadaloja.ComprovanteDespesaActivity" android:exported="false" android:screenOrientation="portrait" />\n        <activity android:name="com.techcell.caixadaloja.FornecedoresActivity" android:exported="false" android:screenOrientation="portrait" />\n        <activity android:name="com.techcell.caixadaloja.RelatoriosActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.RelatorioVendasProdutosActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.ConfiguracaoDispositivoActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.BackupRestoreActivity" android:exported="false" android:screenOrientation="portrait" />
         <service
             android:name="com.techcell.caixadaloja.TechCellMasterService"
             android:exported="false"

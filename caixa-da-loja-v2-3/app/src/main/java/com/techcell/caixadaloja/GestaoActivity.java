@@ -90,6 +90,8 @@ public class GestaoActivity extends Activity {
         Button rede=moduleButton("📡  Dispositivo / Rede");rede.setOnClickListener(v->startActivity(new Intent(this,ConfiguracaoDispositivoActivity.class)));
         LinearLayout.LayoutParams rpRede=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rpRede.setMargins(0,dp(8),0,0);root.addView(rede,rpRede);
         Button prep=moduleButton("✅  Homologação");prep.setOnClickListener(v->startActivity(new Intent(this,PreparacaoFiscalActivity.class)));Button smb=moduleButton("🗃️  Importação SMB");smb.setOnClickListener(v->Toast.makeText(this,"Importação bloqueada até conferirmos os registros do SMB.",Toast.LENGTH_LONG).show());addModuleRow(root,prep,smb);
+        Button backup=moduleButton("💾  Backup / Restaurar");backup.setOnClickListener(v->startActivity(new Intent(this,BackupRestoreActivity.class)));
+        LinearLayout.LayoutParams rpBackup=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rpBackup.setMargins(0,dp(8),0,0);root.addView(backup,rpBackup);
         GestaoDbHelper.SyncContext sync=db.getSyncContext();
         int pendentes=db.countSyncPendentes();
         String papel=sync.configurado ? sync.papelDispositivo : "NÃO CONFIGURADO";
