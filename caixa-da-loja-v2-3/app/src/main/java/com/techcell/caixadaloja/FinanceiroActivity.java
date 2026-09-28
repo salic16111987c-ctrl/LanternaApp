@@ -542,6 +542,15 @@ public class FinanceiroActivity extends Activity {
             return;
         }
 
+        if (produtos.size() >= 100) {
+            TextView limite = txt(
+                    "Exibindo os 100 produtos com maior faturamento. Os totais acima consideram todo o período.",
+                    11, false);
+            limite.setTextColor(TechCellUi.MUTED);
+            limite.setPadding(dp(6), dp(4), dp(6), dp(8));
+            resumoBox.addView(limite);
+        }
+
         for (GestaoDbHelper.RelatorioProduto p : produtos) {
             LinearLayout card = produtoCardBase();
             TextView nome = txt(p.nome, 15, true);
@@ -576,6 +585,15 @@ public class FinanceiroActivity extends Activity {
         if (itens.isEmpty()) {
             produtoVazio("Nenhuma mercadoria vendida neste período.");
             return;
+        }
+
+        if (itens.size() >= 150) {
+            TextView limite = txt(
+                    "Exibindo os 150 itens vendidos mais recentes. Os totais abaixo consideram todo o período.",
+                    11, false);
+            limite.setTextColor(TechCellUi.MUTED);
+            limite.setPadding(dp(6), dp(4), dp(6), dp(8));
+            resumoBox.addView(limite);
         }
 
         for (GestaoDbHelper.RelatorioItemVendido x : itens) {
@@ -636,7 +654,7 @@ public class FinanceiroActivity extends Activity {
     }
 
     private void carregarSaidasFinanceiro() {
-        List<GestaoDbHelper.Despesa> despesas = db.listDespesas(inicioAtual, fimAtual, 500);
+        List<GestaoDbHelper.Despesa> despesas = db.listDespesas(inicioAtual, fimAtual, 120);
         if (despesas.isEmpty()) {
             TextView vazio = txt("Nenhuma saída registrada neste período.", 14, false);
             vazio.setTextColor(TechCellUi.MUTED);
@@ -644,6 +662,15 @@ public class FinanceiroActivity extends Activity {
             vazio.setPadding(0, dp(22), 0, dp(22));
             lista.addView(vazio);
             return;
+        }
+
+        if (despesas.size() >= 120) {
+            TextView limite = txt(
+                    "Exibindo as 120 saídas mais recentes deste período.",
+                    11, false);
+            limite.setTextColor(TechCellUi.MUTED);
+            limite.setPadding(dp(6), dp(6), dp(6), dp(8));
+            lista.addView(limite);
         }
 
         for (GestaoDbHelper.Despesa d : despesas) {

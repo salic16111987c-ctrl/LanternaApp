@@ -3387,7 +3387,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                         "AND v.status_venda<>'ESTORNADA' " +
                         "AND UPPER(TRIM(COALESCE(vi.unidade,'')))<>'SERVIÇO' " +
                         "GROUP BY vi.produto_id,vi.nome,vi.unidade " +
-                        "ORDER BY SUM(vi.total_liquido) DESC,SUM(vi.quantidade) DESC,vi.nome COLLATE NOCASE",
+                        "ORDER BY SUM(vi.total_liquido) DESC,SUM(vi.quantidade) DESC,vi.nome COLLATE NOCASE LIMIT 100",
                 new String[]{String.valueOf(inicio), String.valueOf(fim)});
         try {
             while (c.moveToNext()) {
@@ -3414,7 +3414,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                         "WHERE v.data_millis>=? AND v.data_millis<? " +
                         "AND v.status_venda<>'ESTORNADA' " +
                         "AND UPPER(TRIM(COALESCE(vi.unidade,'')))<>'SERVIÇO' " +
-                        "ORDER BY v.data_millis DESC,v.id DESC,vi.id DESC",
+                        "ORDER BY v.data_millis DESC,v.id DESC,vi.id DESC LIMIT 150",
                 new String[]{String.valueOf(inicio), String.valueOf(fim)});
         try {
             while (c.moveToNext()) {

@@ -344,6 +344,15 @@ public class RelatorioVendasProdutosActivity extends Activity {
             return;
         }
 
+        if (produtos.size() >= 100) {
+            TextView limite = txt(
+                    "Exibindo os 100 produtos com maior faturamento. Os totais acima consideram todo o período.",
+                    11, false);
+            limite.setTextColor(TechCellUi.MUTED);
+            limite.setPadding(dp(6), dp(4), dp(6), dp(8));
+            conteudo.addView(limite);
+        }
+
         for (GestaoDbHelper.RelatorioProduto p : produtos) {
             LinearLayout card = cardBase();
 
@@ -379,6 +388,15 @@ public class RelatorioVendasProdutosActivity extends Activity {
         if (itens.isEmpty()) {
             vazio("Nenhuma mercadoria vendida neste período.");
             return;
+        }
+
+        if (itens.size() >= 150) {
+            TextView limite = txt(
+                    "Exibindo os 150 itens vendidos mais recentes. Os totais abaixo consideram todo o período.",
+                    11, false);
+            limite.setTextColor(TechCellUi.MUTED);
+            limite.setPadding(dp(6), dp(4), dp(6), dp(8));
+            conteudo.addView(limite);
         }
 
         for (GestaoDbHelper.RelatorioItemVendido x : itens) {
