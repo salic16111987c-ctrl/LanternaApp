@@ -31,7 +31,8 @@ public class ImportacaoSmbActivity extends Activity {
     private LinearLayout resumoBox;
     private Button selecionar;
     private Button limpar;
-    private Button importarFinal;
+    private Button importarCadastros;
+    private Button importarVendas;
 
     private int dp(int v){ return TechCellUi.dp(this,v); }
 
@@ -116,17 +117,34 @@ public class ImportacaoSmbActivity extends Activity {
         resumoBox.setOrientation(LinearLayout.VERTICAL);
         root.addView(resumoBox);
 
-        importarFinal=action("🔒  Importação final — aguardando validação");
-        TechCellUi.styleSecondary(this,importarFinal);
-        importarFinal.setEnabled(false);
-        importarFinal.setAlpha(0.55f);
+        importarCadastros=action("✅  Importar cadastros e estoque");
+        TechCellUi.stylePrimary(this,importarCadastros,TechCellUi.GREEN);
+        importarCadastros.setEnabled(false);
+        importarCadastros.setAlpha(0.55f);
+        importarCadastros.setOnClickListener(v->confirmarImportacaoCadastros());
         LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,dp(54));
         ip.setMargins(0,dp(12),0,0);
-        root.addView(importarFinal,ip);
+        root.addView(importarCadastros,ip);
+
+        TextView etapaCad=txt(
+                "Esta etapa grava produtos, saldo atual de estoque, fornecedores e clientes. Grupos e fabricantes entram nos próprios produtos. O histórico de ajustes não é reaplicado.",
+                11,false);
+        etapaCad.setTextColor(TechCellUi.MUTED);
+        etapaCad.setPadding(dp(4),dp(7),dp(4),0);
+        root.addView(etapaCad);
+
+        importarVendas=action("🔒  Vendas e caixa — aguardando validação");
+        TechCellUi.styleSecondary(this,importarVendas);
+        importarVendas.setEnabled(false);
+        importarVendas.setAlpha(0.55f);
+        LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,dp(52));
+        vp.setMargins(0,dp(12),0,0);
+        root.addView(importarVendas,vp);
 
         TextView bloqueio=txt(
-                "Nesta Alpha 42, a migração fica em pré-importação. Só liberaremos a gravação definitiva depois de validar duplicidades, histórico de vendas, caixa e pagamentos.",
+                "Vendas, pagamentos e lançamentos de caixa continuam bloqueados até validarmos o vínculo entre venda, recebimento e caixa.",
                 11,false);
         bloqueio.setTextColor(TechCellUi.MUTED);
         bloqueio.setPadding(dp(4),dp(7),dp(4),0);
@@ -301,11 +319,19 @@ public class ImportacaoSmbActivity extends Activity {
         if(r==null){
             limpar.setEnabled(false);
             limpar.setAlpha(0.55f);
+            importarCadastros.setEnabled(false);
+            importarCadastros.setAlpha(0.55f);
             db.close();
             return;
         }
         limpar.setEnabled(true);
         limpar.setAlpha(1f);
+        boolean jaImportado="CADASTROS_IMPORTADOS".equalsIgnoreCase(r.status);
+        importarCadastros.setEnabled(!jaImportado);
+        importarCadastros.setAlpha(jaImportado?0.60f:1f);
+        importarCadastros.setText(jaImportado?
+                "✓  Cadastros e estoque já importados":
+                "✅  Importar cadastros e estoque");
 
         LinearLayout card=TechCellUi.card(this);
         card.setLayoutParams(TechCellUi.fullCardParams(this,12));
@@ -355,6 +381,19 @@ public class ImportacaoSmbActivity extends Activity {
         safe.setPadding(0,dp(10),0,0);
         card.addView(safe);
 
+        if("CADASTROS_IMPORTADOS".equalsIgnoreCase(r.status)){
+            TextView aplicado=txt(
+                    "✓ Cadastros aplicados na base principal: "+
+                            r.produtosImportados+" produtos • "+
+                            r.fornecedoresImportados+" fornecedores • "+
+                            r.clientesImportados+" clientes • "+
+                            r.ignoradosImportacao+" ignorado(s)/duplicado(s).",
+                    12,true);
+            aplicado.setTextColor(TechCellUi.GREEN);
+            aplicado.setPadding(0,dp(8),0,0);
+            card.addView(aplicado);
+        }
+
         resumoBox.addView(card);
         db.close();
     }
@@ -391,6 +430,93 @@ public class ImportacaoSmbActivity extends Activity {
                 .show();
     }
 
+    private void confirmarImportacaoCadastros(){
+        GestaoDbHelper db=new GestaoDbHelper(this);
+        GestaoDbHelper.SmbImportResumo r=db.resumoImportacaoSmb();
+        db.close();
+        if(r==null){
+            Toast.makeText(this,"Carregue primeiro a pré-importação SMB.",Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        String msg=
+                "Serão importados até:\n\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.produtos)+" produtos com o saldo atual de estoque\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.fornecedores)+" fornecedores\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.clientes)+" clientes\n\n"+
+                "Produtos que já existirem por código ou código de barras serão preservados e ignorados.\n\n"+
+                "Os "+String.format(new Locale("pt","BR"),"%,d",r.ajustesEstoque)+
+                " ajustes antigos NÃO serão reaplicados, pois o saldo atual já está no cadastro dos produtos.\n\n"+
+                "Vendas e caixa ainda NÃO serão importados nesta etapa.";
+
+        new AlertDialog.Builder(this)
+                .setTitle("Importar cadastros e estoque?")
+                .setMessage(msg)
+                .setPositiveButton("Importar",(d,w)->executarImportacaoCadastros())
+                .setNegativeButton("Cancelar",null)
+                .show();
+    }
+
+    private void executarImportacaoCadastros(){
+        setOcupado(true,"Importando cadastros e estoque…");
+        new Thread(()->{
+            boolean lock=TechCellSyncCoordinator.iniciarManutencao();
+            if(!lock){
+                runOnUiThread(()->setOcupado(false,
+                        "Sincronização ocupada. Tente novamente em alguns segundos."));
+                return;
+            }
+
+            try{
+                TechCellBackgroundSync.parar(getApplicationContext());
+                GestaoDbHelper db=new GestaoDbHelper(getApplicationContext());
+                GestaoDbHelper.SmbImportResult r;
+                try{
+                    r=db.importarCadastrosSmb();
+                }finally{
+                    db.close();
+                }
+
+                runOnUiThread(()->{
+                    setOcupado(false,
+                            "Cadastros e estoque importados. Vendas e caixa continuam aguardando validação.");
+                    renderResumo();
+                    mostrarConclusaoCadastros(r);
+                });
+            }catch(Throwable e){
+                runOnUiThread(()->{
+                    setOcupado(false,"Importação não concluída: "+mensagem(e));
+                    new AlertDialog.Builder(this)
+                            .setTitle("Importação não concluída")
+                            .setMessage(mensagem(e)+"\n\nA operação usa uma transação única; em caso de falha, as alterações desta etapa são revertidas.")
+                            .setPositiveButton("OK",null)
+                            .show();
+                });
+            }finally{
+                TechCellSyncCoordinator.finalizarManutencao();
+                TechCellBackgroundSync.garantir(getApplicationContext());
+            }
+        },"TechCell-SMB-Import-Cadastros").start();
+    }
+
+    private void mostrarConclusaoCadastros(GestaoDbHelper.SmbImportResult r){
+        String msg=
+                "Produtos importados: "+String.format(new Locale("pt","BR"),"%,d",r.produtosImportados)+"\n"+
+                "Fornecedores importados: "+String.format(new Locale("pt","BR"),"%,d",r.fornecedoresImportados)+"\n"+
+                "Clientes importados: "+String.format(new Locale("pt","BR"),"%,d",r.clientesImportados)+"\n"+
+                "Ignorados/duplicados: "+String.format(new Locale("pt","BR"),"%,d",r.ignorados)+"\n"+
+                "Conflitos de produtos preservados: "+String.format(new Locale("pt","BR"),"%,d",r.produtosConflitantes)+"\n\n"+
+                "O saldo de estoque veio diretamente do saldo atual do SMB.\n"+
+                "Vendas, pagamentos e caixa ainda não foram importados.";
+
+        new AlertDialog.Builder(this)
+                .setTitle("Cadastros e estoque importados")
+                .setMessage(msg)
+                .setPositiveButton("Ver no sistema",null)
+                .setCancelable(false)
+                .show();
+    }
+
     private void confirmarLimpeza(){
         new AlertDialog.Builder(this)
                 .setTitle("Limpar pré-importação?")
@@ -409,8 +535,10 @@ public class ImportacaoSmbActivity extends Activity {
     private void setOcupado(boolean ocupado,String texto){
         selecionar.setEnabled(!ocupado);
         limpar.setEnabled(!ocupado);
+        if(importarCadastros!=null)importarCadastros.setEnabled(!ocupado);
         selecionar.setAlpha(ocupado?0.55f:1f);
         limpar.setAlpha(ocupado?0.55f:1f);
+        if(importarCadastros!=null)importarCadastros.setAlpha(ocupado?0.55f:1f);
         status.setText(texto);
     }
 

@@ -16,7 +16,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 20;
+    private static final int DB_VERSION = 21;
 
     public static class Produto {
         public long id;
@@ -355,6 +355,19 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public int caixa;
         public int ajustesEstoque;
         public int conflitosProdutos;
+        public int produtosImportados;
+        public int fornecedoresImportados;
+        public int clientesImportados;
+        public int ignoradosImportacao;
+        public long importedAt;
+    }
+
+    public static class SmbImportResult {
+        public int produtosImportados;
+        public int fornecedoresImportados;
+        public int clientesImportados;
+        public int ignorados;
+        public int produtosConflitantes;
     }
 
     public GestaoDbHelper(Context context) {
@@ -503,6 +516,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         if (oldVersion < 20) {
             criarImportacaoSmb(db);
+        }
+
+        if (oldVersion < 21) {
+            migrarParaV21(db);
         }
     }
 
@@ -3486,6 +3503,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "status TEXT NOT NULL DEFAULT 'CARREGANDO'," +
                 "staged_records INTEGER NOT NULL DEFAULT 0," +
                 "warnings INTEGER NOT NULL DEFAULT 0," +
+                "imported_products INTEGER NOT NULL DEFAULT 0," +
+                "imported_suppliers INTEGER NOT NULL DEFAULT 0," +
+                "imported_clients INTEGER NOT NULL DEFAULT 0," +
+                "skipped_conflicts INTEGER NOT NULL DEFAULT 0," +
+                "imported_at INTEGER NOT NULL DEFAULT 0," +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -3591,7 +3613,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = getWritableDatabase();
         criarImportacaoSmb(db);
         Cursor c = db.rawQuery(
-                "SELECT id,source_name,source_system,source_file,backup_date,status,staged_records,warnings,created_at " +
+                "SELECT id,source_name,source_system,source_file,backup_date,status,staged_records,warnings,created_at," +
+                        "imported_products,imported_suppliers,imported_clients,skipped_conflicts,imported_at " +
                         "FROM smb_import_sessions ORDER BY id DESC LIMIT 1", null);
         SmbImportResumo r = null;
         try {
@@ -3606,6 +3629,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 r.stagedRecords = c.getInt(6);
                 r.warnings = c.getInt(7);
                 r.createdAt = c.getLong(8);
+                r.produtosImportados = c.getInt(9);
+                r.fornecedoresImportados = c.getInt(10);
+                r.clientesImportados = c.getInt(11);
+                r.ignoradosImportacao = c.getInt(12);
+                r.importedAt = c.getLong(13);
             }
         } finally {
             c.close();
@@ -3653,6 +3681,284 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 new String[]{String.valueOf(sessionId)});
         try { return c.moveToFirst() ? c.getInt(0) : 0; }
         finally { c.close(); }
+    }
+
+
+    private void migrarParaV21(SQLiteDatabase db) {
+        criarImportacaoSmb(db);
+        adicionarColunaSeAusente(db, "smb_import_sessions", "imported_products", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "imported_suppliers", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "imported_clients", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "skipped_conflicts", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "imported_at", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    public SmbImportResult importarCadastrosSmb() {
+        SQLiteDatabase db = getWritableDatabase();
+        criarImportacaoSmb(db);
+
+        long sessionId = 0;
+        Cursor sessao = db.rawQuery(
+                "SELECT id FROM smb_import_sessions ORDER BY id DESC LIMIT 1", null);
+        try {
+            if (sessao.moveToFirst()) sessionId = sessao.getLong(0);
+        } finally {
+            sessao.close();
+        }
+        if (sessionId <= 0) throw new IllegalStateException("Nenhuma pré-importação SMB foi carregada.");
+
+        Cursor papel = db.rawQuery(
+                "SELECT configurado,papel_dispositivo FROM sync_context WHERE id=1", null);
+        try {
+            if (papel.moveToFirst()) {
+                boolean configurado = papel.getInt(0) == 1;
+                String funcao = papel.getString(1);
+                if (configurado && !"MASTER".equalsIgnoreCase(funcao)) {
+                    throw new IllegalStateException(
+                            "A importação definitiva deve ser executada no aparelho Master.");
+                }
+            }
+        } finally {
+            papel.close();
+        }
+
+        SmbImportResult out = new SmbImportResult();
+        long now = System.currentTimeMillis();
+
+        db.beginTransaction();
+        try {
+            Cursor fornecedores = db.rawQuery(
+                    "SELECT display_name,payload_json FROM smb_import_records " +
+                            "WHERE session_id=? AND entity_type='FORNECEDOR' ORDER BY id",
+                    new String[]{String.valueOf(sessionId)});
+            try {
+                while (fornecedores.moveToNext()) {
+                    JSONObject j = new JSONObject(fornecedores.getString(1));
+                    String fantasia = smbValor(j, "NMFANT");
+                    String razao = smbValor(j, "RZSOC");
+                    String nome = !razao.isEmpty() ? razao :
+                            (!fantasia.isEmpty() ? fantasia : fornecedores.getString(0));
+                    String documento = smbDocumento(j.optString("CNPJ", ""));
+
+                    if (nome == null || nome.trim().isEmpty() ||
+                            smbFornecedorExiste(db, documento, nome, fantasia)) {
+                        out.ignorados++;
+                        continue;
+                    }
+
+                    ContentValues v = new ContentValues();
+                    v.put("tipo", "PJ");
+                    v.put("nome", nome.trim());
+                    v.put("fantasia", fantasia);
+                    v.put("documento", documento);
+                    v.put("ie", smbValor(j, "IE"));
+                    v.put("contato", smbValor(j, "CONTATO"));
+                    v.put("logradouro", smbValor(j, "ENDERECO"));
+                    v.put("numero", smbValor(j, "NUMERO"));
+                    v.put("complemento", smbValor(j, "COMPL"));
+                    v.put("bairro", smbValor(j, "BAIRRO"));
+                    v.put("cep", smbDocumento(j.optString("CEP", "")));
+                    v.put("municipio", smbValor(j, "CIDADE"));
+                    v.put("uf", smbValor(j, "UF").toUpperCase(java.util.Locale.ROOT));
+                    v.put("telefone", smbValor(j, "TEL"));
+                    v.put("email", smbValor(j, "EMAIL"));
+                    v.put("observacao", "Importado do SMB");
+                    v.put("status", "ATIVO");
+                    v.put("created_at", now);
+                    v.put("updated_at", now);
+                    aplicarMetadadosNovo(db, v);
+                    db.insertOrThrow("fornecedores", null, v);
+                    out.fornecedoresImportados++;
+                }
+            } finally {
+                fornecedores.close();
+            }
+
+            Cursor clientes = db.rawQuery(
+                    "SELECT display_name,payload_json FROM smb_import_records " +
+                            "WHERE session_id=? AND entity_type='CLIENTE' ORDER BY id",
+                    new String[]{String.valueOf(sessionId)});
+            try {
+                while (clientes.moveToNext()) {
+                    JSONObject j = new JSONObject(clientes.getString(1));
+                    String nome = smbValor(j, "NMCLI");
+                    if (nome.isEmpty()) nome = clientes.getString(0) == null ? "" : clientes.getString(0).trim();
+                    String documento = smbDocumento(j.optString("CPF", ""));
+
+                    if (nome.isEmpty() || smbClienteExiste(db, documento, nome)) {
+                        out.ignorados++;
+                        continue;
+                    }
+
+                    ContentValues v = new ContentValues();
+                    v.put("tipo", "PF");
+                    v.put("nome", nome);
+                    v.put("documento", documento);
+                    v.put("ie", "");
+                    v.put("logradouro", smbValor(j, "ENDERECO"));
+                    v.put("numero", smbValor(j, "NUMERO"));
+                    v.put("complemento", smbValor(j, "COMPL"));
+                    v.put("bairro", smbValor(j, "BAIRRO"));
+                    v.put("cep", smbDocumento(j.optString("CEP", "")));
+                    v.put("municipio", smbValor(j, "CIDADE"));
+                    v.put("uf", smbValor(j, "UF").toUpperCase(java.util.Locale.ROOT));
+                    String tel = smbValor(j, "CEL");
+                    if (tel.isEmpty()) tel = smbValor(j, "TEL");
+                    v.put("telefone", tel);
+                    v.put("email", smbValor(j, "EMAIL"));
+                    v.put("created_at", now);
+                    v.put("updated_at", now);
+                    aplicarMetadadosNovo(db, v);
+                    db.insertOrThrow("clientes", null, v);
+                    out.clientesImportados++;
+                }
+            } finally {
+                clientes.close();
+            }
+
+            Cursor produtos = db.rawQuery(
+                    "SELECT display_name,payload_json FROM smb_import_records " +
+                            "WHERE session_id=? AND entity_type='PRODUTO' ORDER BY id",
+                    new String[]{String.valueOf(sessionId)});
+            try {
+                while (produtos.moveToNext()) {
+                    JSONObject j = new JSONObject(produtos.getString(1));
+                    String codigo = smbValor(j, "CODPROD");
+                    String barras = smbValor(j, "CODBARRAS");
+                    String nome = smbValor(j, "NMPROD");
+                    if (nome.isEmpty()) nome = produtos.getString(0) == null ? "" : produtos.getString(0).trim();
+
+                    if (nome.isEmpty()) {
+                        out.ignorados++;
+                        continue;
+                    }
+                    if (smbProdutoExiste(db, codigo, barras)) {
+                        out.ignorados++;
+                        out.produtosConflitantes++;
+                        continue;
+                    }
+
+                    double custo = smbDecimal(j, "VLCOMPRA");
+                    if (custo == 0) custo = smbDecimal(j, "VLTC");
+                    double venda = smbDecimal(j, "VLVENDA");
+                    double prazo = smbDecimal(j, "VLVENDA2");
+                    if (prazo == 0) prazo = venda;
+
+                    ContentValues v = new ContentValues();
+                    v.put("codigo", codigo);
+                    v.put("nome", nome);
+                    v.put("codigo_barras", barras);
+                    v.put("grupo", smbValor(j, "NMGRUPO"));
+                    v.put("fornecedor", smbValor(j, "NMFANTFORN"));
+                    v.put("unidade", smbValor(j, "UNIDMED"));
+                    v.put("fabricante", smbValor(j, "NMFABR"));
+                    v.put("custo", custo);
+                    v.put("preco_venda", venda);
+                    v.put("preco_prazo", prazo);
+                    v.put("estoque", smbDecimal(j, "QTDESTATU"));
+                    v.put("estoque_minimo", smbDecimal(j, "QTDESTMIN"));
+                    v.put("ncm", "");
+                    v.put("cest", "");
+                    v.put("cfop", "");
+                    v.put("origem", "");
+                    v.put("tributacao_icms", "");
+                    v.put("aliquota_icms", 0);
+                    v.put("cst_pis", "");
+                    v.put("aliquota_pis", 0);
+                    v.put("cst_cofins", "");
+                    v.put("aliquota_cofins", 0);
+                    v.put("unidade_tributavel", "");
+                    v.put("gtin_tributavel", "");
+                    v.put("created_at", now);
+                    v.put("updated_at", now);
+                    aplicarMetadadosNovo(db, v);
+                    long produtoId = db.insertOrThrow("produtos", null, v);
+                    registrarMudancaProduto(db, produtoId, "UPSERT");
+                    out.produtosImportados++;
+                }
+            } finally {
+                produtos.close();
+            }
+
+            ContentValues s = new ContentValues();
+            s.put("status", "CADASTROS_IMPORTADOS");
+            s.put("imported_products", out.produtosImportados);
+            s.put("imported_suppliers", out.fornecedoresImportados);
+            s.put("imported_clients", out.clientesImportados);
+            s.put("skipped_conflicts", out.ignorados);
+            s.put("imported_at", now);
+            s.put("updated_at", now);
+            db.update("smb_import_sessions", s, "id=?",
+                    new String[]{String.valueOf(sessionId)});
+
+            db.setTransactionSuccessful();
+        } catch (Throwable e) {
+            throw e instanceof RuntimeException ? (RuntimeException)e :
+                    new IllegalStateException(e.getMessage(), e);
+        } finally {
+            db.endTransaction();
+        }
+
+        return out;
+    }
+
+    private boolean smbProdutoExiste(SQLiteDatabase db, String codigo, String barras) {
+        String c = codigo == null ? "" : codigo.trim();
+        String b = barras == null ? "" : barras.trim();
+        Cursor q = db.rawQuery(
+                "SELECT 1 FROM produtos WHERE " +
+                        "(?<>'' AND TRIM(COALESCE(codigo,''))=?) OR " +
+                        "(?<>'' AND TRIM(COALESCE(codigo_barras,''))=?) LIMIT 1",
+                new String[]{c,c,b,b});
+        try { return q.moveToFirst(); }
+        finally { q.close(); }
+    }
+
+    private boolean smbFornecedorExiste(SQLiteDatabase db, String documento, String nome, String fantasia) {
+        String d = documento == null ? "" : documento.trim();
+        String n = nome == null ? "" : nome.trim();
+        String f = fantasia == null ? "" : fantasia.trim();
+        Cursor q = db.rawQuery(
+                "SELECT 1 FROM fornecedores WHERE " +
+                        "(?<>'' AND TRIM(COALESCE(documento,''))=?) OR " +
+                        "(?<>'' AND LOWER(TRIM(COALESCE(nome,'')))=LOWER(?)) OR " +
+                        "(?<>'' AND LOWER(TRIM(COALESCE(fantasia,'')))=LOWER(?)) LIMIT 1",
+                new String[]{d,d,n,n,f,f});
+        try { return q.moveToFirst(); }
+        finally { q.close(); }
+    }
+
+    private boolean smbClienteExiste(SQLiteDatabase db, String documento, String nome) {
+        String d = documento == null ? "" : documento.trim();
+        String n = nome == null ? "" : nome.trim();
+        Cursor q = db.rawQuery(
+                "SELECT 1 FROM clientes WHERE " +
+                        "(?<>'' AND TRIM(COALESCE(documento,''))=?) OR " +
+                        "(?<>'' AND LOWER(TRIM(COALESCE(nome,'')))=LOWER(?)) LIMIT 1",
+                new String[]{d,d,n,n});
+        try { return q.moveToFirst(); }
+        finally { q.close(); }
+    }
+
+    private String smbValor(JSONObject j, String chave) {
+        if (j == null || chave == null || j.isNull(chave)) return "";
+        Object v = j.opt(chave);
+        return v == null ? "" : String.valueOf(v).trim();
+    }
+
+    private String smbDocumento(String valor) {
+        if (valor == null) return "";
+        return valor.replaceAll("[^0-9]", "");
+    }
+
+    private double smbDecimal(JSONObject j, String chave) {
+        String x = smbValor(j, chave);
+        if (x.isEmpty()) return 0;
+        try {
+            return Double.parseDouble(x.replace(",", "."));
+        } catch (Throwable ignored) {
+            return 0;
+        }
     }
 
 }
