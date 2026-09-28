@@ -18,6 +18,9 @@ import android.widget.Toast;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -34,6 +37,7 @@ public class ImportacaoSmbActivity extends Activity {
     private Button limpar;
     private Button importarCadastros;
     private Button importarVendas;
+    private Button limparBase;
 
     private int dp(int v){ return TechCellUi.dp(this,v); }
 
@@ -151,6 +155,29 @@ public class ImportacaoSmbActivity extends Activity {
         bloqueio.setTextColor(TechCellUi.MUTED);
         bloqueio.setPadding(dp(4),dp(7),dp(4),0);
         root.addView(bloqueio);
+
+        LinearLayout perigo=TechCellUi.card(this);
+        perigo.setBackground(TechCellUi.solid(this,Color.parseColor("#FFF4E5"),14));
+        LinearLayout.LayoutParams perigoLp=TechCellUi.fullCardParams(this,16);
+        perigo.setLayoutParams(perigoLp);
+
+        TextView perigoTitulo=txt("BASE LIMPA PARA MIGRAÇÃO",12,true);
+        perigoTitulo.setTextColor(Color.parseColor("#B54708"));
+        perigo.addView(perigoTitulo);
+
+        TextView perigoTexto=txt(
+                "Use quando quiser apagar todos os cadastros, vendas e testes desta Alpha 42 e reconstruir a base somente com os dados reais do SMB. Configuração do aparelho, empresa e pareamento são preservados.",
+                12,false);
+        perigoTexto.setTextColor(Color.parseColor("#475467"));
+        perigoTexto.setPadding(0,dp(6),0,dp(9));
+        perigo.addView(perigoTexto);
+
+        limparBase=action("🧹  Preparar base limpa para migração");
+        TechCellUi.styleSecondary(this,limparBase);
+        limparBase.setOnClickListener(v->confirmarLimpezaBase());
+        perigo.addView(limparBase,new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+        root.addView(perigo);
 
         limpar=action("🗑  Limpar somente a pré-importação");
         TechCellUi.styleSecondary(this,limpar);
@@ -673,6 +700,148 @@ public class ImportacaoSmbActivity extends Activity {
                 .show();
     }
 
+
+    private void confirmarLimpezaBase(){
+        new AlertDialog.Builder(this)
+                .setTitle("Preparar base limpa para migração?")
+                .setMessage(
+                        "Esta operação vai apagar os dados operacionais desta Alpha 42:\n\n"+
+                        "• produtos e estoque atuais\n"+
+                        "• vendas e itens de venda\n"+
+                        "• clientes e fornecedores\n"+
+                        "• despesas e saídas\n"+
+                        "• pré-importação e histórico SMB já carregado\n\n"+
+                        "Serão preservados:\n"+
+                        "• configuração do aparelho\n"+
+                        "• UUIDs da empresa/filial/dispositivo\n"+
+                        "• configuração da empresa\n"+
+                        "• pareamento do Master\n\n"+
+                        "Antes da limpeza será criada uma cópia interna de segurança da base atual.")
+                .setPositiveButton("Continuar",(d,w)->confirmarLimpezaBaseFinal())
+                .setNegativeButton("Cancelar",null)
+                .show();
+    }
+
+    private void confirmarLimpezaBaseFinal(){
+        new AlertDialog.Builder(this)
+                .setTitle("CONFIRMAR LIMPEZA")
+                .setMessage(
+                        "Depois desta etapa, carregue novamente o pacote SMB e importe primeiro cadastros/estoque e depois o histórico.\n\n"+
+                        "Deseja realmente apagar os dados de teste agora?")
+                .setPositiveButton("Sim, limpar dados de teste",(d,w)->executarLimpezaBase())
+                .setNegativeButton("Cancelar",null)
+                .show();
+    }
+
+    private void executarLimpezaBase(){
+        setOcupado(true,"Criando cópia de segurança e limpando dados de teste…");
+        new Thread(()->{
+            boolean lock=TechCellSyncCoordinator.iniciarManutencao();
+            if(!lock){
+                runOnUiThread(()->setOcupado(false,
+                        "Sincronização ocupada. Tente novamente em alguns segundos."));
+                return;
+            }
+
+            File copia=null;
+            try{
+                TechCellBackgroundSync.parar(getApplicationContext());
+
+                GestaoDbHelper checkpoint=new GestaoDbHelper(getApplicationContext());
+                try{
+                    SQLiteDatabase sql=checkpoint.getWritableDatabase();
+                    android.database.Cursor ck=sql.rawQuery("PRAGMA wal_checkpoint(FULL)",null);
+                    try{ while(ck.moveToNext()){} }finally{ ck.close(); }
+                }finally{
+                    checkpoint.close();
+                }
+
+                copia=criarCopiaSegurancaInterna();
+
+                GestaoDbHelper helper=new GestaoDbHelper(getApplicationContext());
+                GestaoDbHelper.ResetMigracaoResult r;
+                try{
+                    r=helper.resetarDadosOperacionaisParaMigracao();
+                }finally{
+                    helper.close();
+                }
+
+                final File copiaFinal=copia;
+                runOnUiThread(()->{
+                    setOcupado(false,
+                            "Base preparada. Agora selecione novamente o pacote SMB.");
+                    renderResumo();
+                    mostrarConclusaoLimpezaBase(r,copiaFinal);
+                });
+            }catch(Throwable e){
+                final File copiaFinal=copia;
+                runOnUiThread(()->{
+                    setOcupado(false,"Limpeza não concluída: "+mensagem(e));
+                    new AlertDialog.Builder(this)
+                            .setTitle("Limpeza não concluída")
+                            .setMessage(
+                                    mensagem(e)+
+                                    (copiaFinal==null?"":"\n\nA cópia interna de segurança foi criada antes da tentativa."))
+                            .setPositiveButton("OK",null)
+                            .show();
+                });
+            }finally{
+                TechCellSyncCoordinator.finalizarManutencao();
+                TechCellBackgroundSync.garantir(getApplicationContext());
+            }
+        },"TechCell-SMB-Reset-Base").start();
+    }
+
+    private File criarCopiaSegurancaInterna() throws Exception{
+        File origem=getDatabasePath("gestao_techcell.db");
+        if(origem==null||!origem.exists())
+            throw new IllegalStateException("Banco de dados atual não foi encontrado.");
+
+        File dir=new File(getFilesDir(),"migration_safety");
+        if(!dir.exists()&&!dir.mkdirs())
+            throw new IllegalStateException("Não foi possível criar a pasta de segurança.");
+
+        File destino=new File(dir,
+                "gestao_techcell-pre_migracao-"+System.currentTimeMillis()+".db");
+
+        try(FileInputStream in=new FileInputStream(origem);
+            FileOutputStream out=new FileOutputStream(destino)){
+            byte[] buffer=new byte[64*1024];
+            int n;
+            while((n=in.read(buffer))>0)out.write(buffer,0,n);
+            out.flush();
+            out.getFD().sync();
+        }
+
+        if(destino.length()<=0)throw new IllegalStateException(
+                "A cópia interna de segurança ficou vazia.");
+        return destino;
+    }
+
+    private void mostrarConclusaoLimpezaBase(
+            GestaoDbHelper.ResetMigracaoResult r,File copia){
+        String msg=
+                "Base operacional limpa com sucesso.\n\n"+
+                "Removidos:\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.produtos)+" produtos\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.vendas)+" vendas\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.itensVenda)+" itens de venda\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.clientes)+" clientes\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.fornecedores)+" fornecedores\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.despesas)+" despesas/saídas\n\n"+
+                "Configuração do aparelho, empresa e pareamento foram preservados.\n"+
+                "Cópia interna de segurança: "+(copia==null?"não disponível":copia.getName())+"\n\n"+
+                "Agora selecione novamente o pacote SMB e faça as duas etapas de importação.";
+
+        new AlertDialog.Builder(this)
+                .setTitle("Base pronta para migração")
+                .setMessage(msg)
+                .setPositiveButton("Selecionar pacote SMB",(d,w)->selecionarPacote())
+                .setNegativeButton("Depois",null)
+                .setCancelable(false)
+                .show();
+    }
+
     private void confirmarLimpeza(){
         new AlertDialog.Builder(this)
                 .setTitle("Limpar pré-importação?")
@@ -691,10 +860,12 @@ public class ImportacaoSmbActivity extends Activity {
     private void setOcupado(boolean ocupado,String texto){
         selecionar.setEnabled(!ocupado);
         limpar.setEnabled(!ocupado);
+        if(limparBase!=null)limparBase.setEnabled(!ocupado);
         if(importarCadastros!=null)importarCadastros.setEnabled(!ocupado);
         if(importarVendas!=null)importarVendas.setEnabled(!ocupado);
         selecionar.setAlpha(ocupado?0.55f:1f);
         limpar.setAlpha(ocupado?0.55f:1f);
+        if(limparBase!=null)limparBase.setAlpha(ocupado?0.55f:1f);
         if(importarCadastros!=null)importarCadastros.setAlpha(ocupado?0.55f:1f);
         if(importarVendas!=null)importarVendas.setAlpha(ocupado?0.55f:1f);
         status.setText(texto);

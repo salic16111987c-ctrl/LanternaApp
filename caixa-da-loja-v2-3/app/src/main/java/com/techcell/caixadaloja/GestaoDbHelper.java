@@ -395,6 +395,17 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double faturamentoImportado;
     }
 
+    public static class ResetMigracaoResult {
+        public int produtos;
+        public int vendas;
+        public int itensVenda;
+        public int clientes;
+        public int fornecedores;
+        public int despesas;
+        public int staging;
+        public int legadoCaixa;
+    }
+
     public GestaoDbHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
     }
@@ -4699,6 +4710,80 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             return cal.getTimeInMillis();
         } catch (Throwable ignored) {
             return 0;
+        }
+    }
+
+
+    public ResetMigracaoResult resetarDadosOperacionaisParaMigracao() {
+        SQLiteDatabase db = getWritableDatabase();
+        criarImportacaoSmb(db);
+
+        SyncContext ctx = lerSyncContext(db);
+        if (ctx.configurado && !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            throw new IllegalStateException(
+                    "A limpeza para migração deve ser executada no aparelho Master.");
+        }
+
+        ResetMigracaoResult out = new ResetMigracaoResult();
+        db.beginTransaction();
+        try {
+            out.itensVenda = contarTabela(db, "venda_itens");
+            out.vendas = contarTabela(db, "vendas");
+            out.produtos = contarTabela(db, "produtos");
+            out.clientes = contarTabela(db, "clientes");
+            out.fornecedores = contarTabela(db, "fornecedores");
+            out.despesas = contarTabela(db, "despesas");
+            out.staging = contarTabela(db, "smb_import_records");
+            out.legadoCaixa = contarTabela(db, "smb_legacy_cash");
+
+            db.delete("venda_itens", null, null);
+            db.delete("vendas", null, null);
+            db.delete("despesas", null, null);
+            db.delete("clientes", null, null);
+            db.delete("fornecedores", null, null);
+            db.delete("produtos", null, null);
+
+            db.delete("smb_import_records", null, null);
+            db.delete("smb_import_sessions", null, null);
+            db.delete("smb_legacy_sales", null, null);
+            db.delete("smb_legacy_cash", null, null);
+
+            db.delete("sync_outbox", null, null);
+            db.delete("sync_tombstones", null, null);
+            db.delete("lan_product_changes", null, null);
+            db.delete("lan_sale_changes", null, null);
+
+            long now = System.currentTimeMillis();
+            ContentValues sync = new ContentValues();
+            sync.put("last_snapshot_at", 0);
+            sync.put("last_snapshot_produtos", 0);
+            sync.put("last_snapshot_clientes", 0);
+            sync.put("last_snapshot_fornecedores", 0);
+            sync.put("last_sale_push_at", 0);
+            sync.put("last_sale_push_count", 0);
+            sync.put("last_sale_push_error", "");
+            sync.put("last_product_pull_at", 0);
+            sync.put("last_product_pull_count", 0);
+            sync.put("last_product_pull_error", "");
+            sync.put("last_sale_pull_at", 0);
+            sync.put("last_sale_pull_count", 0);
+            sync.put("last_sale_pull_error", "");
+            sync.put("updated_at", now);
+            db.update("sync_context", sync, "id=1", null);
+
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return out;
+    }
+
+    private int contarTabela(SQLiteDatabase db, String tabela) {
+        Cursor c = db.rawQuery("SELECT COUNT(*) FROM " + tabela, null);
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
         }
     }
 
