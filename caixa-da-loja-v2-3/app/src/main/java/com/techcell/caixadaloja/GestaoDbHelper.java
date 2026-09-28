@@ -2439,6 +2439,48 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         finally { c.close(); }
     }
 
+    public int countProdutos(String busca) {
+        String q = busca == null ? "" : busca.trim();
+        Cursor c;
+        if (q.isEmpty()) {
+            c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM produtos", null);
+        } else {
+            String like = "%" + q + "%";
+            c = getReadableDatabase().rawQuery(
+                    "SELECT COUNT(*) FROM produtos WHERE nome LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ?",
+                    new String[]{like, like, like});
+        }
+        try { return c.moveToFirst() ? c.getInt(0) : 0; }
+        finally { c.close(); }
+    }
+
+    public List<Produto> listProdutosTela(String busca, int ordem, int limite) {
+        List<Produto> out = new ArrayList<>();
+        String q = busca == null ? "" : busca.trim();
+        int max = Math.max(1, Math.min(limite, 200));
+
+        String orderBy;
+        if (ordem == 1) orderBy = "estoque ASC, nome COLLATE NOCASE ASC";
+        else if (ordem == 2) orderBy = "preco_venda DESC, nome COLLATE NOCASE ASC";
+        else orderBy = "nome COLLATE NOCASE ASC";
+
+        Cursor c;
+        if (q.isEmpty()) {
+            c = getReadableDatabase().rawQuery(
+                    "SELECT * FROM produtos ORDER BY " + orderBy + " LIMIT " + max, null);
+        } else {
+            String like = "%" + q + "%";
+            c = getReadableDatabase().rawQuery(
+                    "SELECT * FROM produtos WHERE nome LIKE ? OR codigo LIKE ? OR codigo_barras LIKE ? " +
+                            "ORDER BY " + orderBy + " LIMIT " + max,
+                    new String[]{like, like, like});
+        }
+        try {
+            while (c.moveToNext()) out.add(fromCursor(c));
+        } finally { c.close(); }
+        return out;
+    }
+
     public int countProdutosFiscalPendente() {
         int pendentes = 0;
         for (Produto p : list("")) {

@@ -715,7 +715,8 @@ public class PdvActivity extends Activity {
         campo.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEARCH ||
                     actionId == EditorInfo.IME_ACTION_DONE) {
-                List<GestaoDbHelper.Produto> r = db.list(campo.getText().toString());
+                List<GestaoDbHelper.Produto> r =
+                        db.listProdutosTela(campo.getText().toString(), 0, 50);
                 if (r.size() == 1) {
                     adicionarProduto(r.get(0));
                     dialog.dismiss();
@@ -731,8 +732,8 @@ public class PdvActivity extends Activity {
 
     private void preencherBuscaProduto(LinearLayout lista, String termo, AlertDialog dialog) {
         lista.removeAllViews();
-        List<GestaoDbHelper.Produto> produtos = db.list(
-                termo == null ? "" : termo.trim());
+        List<GestaoDbHelper.Produto> produtos = db.listProdutosTela(
+                termo == null ? "" : termo.trim(), 0, 50);
 
         if (produtos.isEmpty()) {
             TextView vazio = txt("Nenhum produto encontrado.", 14, false);

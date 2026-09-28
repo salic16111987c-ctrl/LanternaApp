@@ -102,7 +102,7 @@ public class ProdutosActivity extends Activity {
         title.setPadding(0, dp(14), 0, dp(2));
         root.addView(title);
 
-        TextView info = txt("Cadastro e controle de mercadorias • Alpha 41", 12, false);
+        TextView info = txt("Cadastro e controle de mercadorias • Alpha 42", 12, false);
         info.setTextColor(TechCellUi.MUTED);
         root.addView(info);
 
@@ -191,20 +191,17 @@ public class ProdutosActivity extends Activity {
     }
 
     private void carregar() {
+        String termo = busca == null ? "" : busca.getText().toString().trim();
+        int totalEncontrados = db.countProdutos(termo);
         List<GestaoDbHelper.Produto> produtos =
-                db.list(busca == null ? "" : busca.getText().toString());
-
-        if (ordem == 0) {
-            Collections.sort(produtos, Comparator.comparing(
-                    p -> p.nome == null ? "" : p.nome.toLowerCase(new Locale("pt","BR"))));
-        } else if (ordem == 1) {
-            Collections.sort(produtos, Comparator.comparingDouble(p -> p.estoque));
-        } else {
-            Collections.sort(produtos, (a,b) -> Double.compare(b.precoVenda, a.precoVenda));
-        }
+                db.listProdutosTela(termo, ordem, 80);
 
         lista.removeAllViews();
-        contador.setText(produtos.size() + (produtos.size()==1 ? " produto" : " produtos"));
+        if (totalEncontrados > produtos.size()) {
+            contador.setText("Exibindo " + produtos.size() + " de " + totalEncontrados + " produtos");
+        } else {
+            contador.setText(totalEncontrados + (totalEncontrados==1 ? " produto" : " produtos"));
+        }
 
         if (produtos.isEmpty()) {
             TextView vazio = txt("Nenhum produto encontrado.", 14, false);
@@ -213,6 +210,16 @@ public class ProdutosActivity extends Activity {
             vazio.setPadding(dp(8), dp(28), dp(8), dp(28));
             lista.addView(vazio);
             return;
+        }
+
+        if (termo.isEmpty() && totalEncontrados > produtos.size()) {
+            TextView dica = txt(
+                    "Mostrando apenas os primeiros " + produtos.size() +
+                            " para manter a tela rápida. Use a busca para localizar qualquer produto.",
+                    12, false);
+            dica.setTextColor(TechCellUi.MUTED);
+            dica.setPadding(dp(8), dp(8), dp(8), dp(8));
+            lista.addView(dica);
         }
 
         for (GestaoDbHelper.Produto p : produtos) {
