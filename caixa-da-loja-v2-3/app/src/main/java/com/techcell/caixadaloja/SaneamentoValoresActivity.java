@@ -102,12 +102,12 @@ public class SaneamentoValoresActivity extends Activity {
         tela.addView(voltar,new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,dp(44)));
 
-        TextView titulo=txt("Revisão de valores suspeitos",25,true);
+        TextView titulo=txt("Revisão do custo do estoque",25,true);
         titulo.setPadding(0,dp(14),0,dp(2));
         tela.addView(titulo);
 
         TextView sub=txt(
-                "Saneamento temporário da base antiga • custo e preços",
+                "Saneamento temporário da base antiga • quantidade × custo unitário",
                 12,false);
         sub.setTextColor(TechCellUi.MUTED);
         tela.addView(sub);
@@ -121,8 +121,8 @@ public class SaneamentoValoresActivity extends Activity {
         aviso.addView(at);
 
         TextView av=txt(
-                "O relatório mostra somente produtos com custo, preço à vista ou preço a prazo acima do teto. "+
-                "Marque apenas o campo que estiver errado. Campos não marcados permanecem intactos.",
+                "O relatório mostra produtos cujo CUSTO TOTAL DO ESTOQUE (quantidade × custo unitário) passa do teto. "+
+                "Nada é corrigido sozinho. Marque somente os produtos cujo saldo de estoque antigo estiver errado.",
                 12,false);
         av.setTextColor(Color.parseColor("#475467"));
         av.setPadding(0,dp(5),0,0);
@@ -161,7 +161,7 @@ public class SaneamentoValoresActivity extends Activity {
         tela.addView(carregarMais,new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,dp(44)));
 
-        aplicar=action("Corrigir campos selecionados");
+        aplicar=action("Zerar estoque dos selecionados");
         TechCellUi.stylePrimary(this,aplicar,TechCellUi.ORANGE);
         aplicar.setOnClickListener(v->confirmarAplicacao());
         LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(
@@ -205,30 +205,30 @@ public class SaneamentoValoresActivity extends Activity {
                 ? p.nome : p.codigo+" • "+p.nome;
         card.addView(txt(cab,15,true));
 
+        double custoTotal=p.estoque*p.custo;
+        double vendaPotencial=p.estoque*p.precoVenda;
+
         TextView valores=txt(
-                "Custo "+moeda.format(p.custo)+
-                        "   •   Venda "+moeda.format(p.precoVenda)+
-                        "   •   Prazo "+moeda.format(p.precoPrazo),
+                "Qtd. "+formatarQtd(p.estoque)+" "+(p.unidade==null?"":p.unidade)+
+                        "   •   Custo unit. "+moeda.format(p.custo)+
+                        "\nCUSTO TOTAL "+moeda.format(custoTotal)+
+                        "   •   Venda potencial "+moeda.format(vendaPotencial),
                 11,false);
         valores.setTextColor(TechCellUi.MUTED);
         valores.setPadding(0,dp(4),0,dp(6));
         card.addView(valores);
 
-        if(p.custo>limite){
-            card.addView(checkCampo(
-                    p,GestaoDbHelper.VALOR_CAMPO_CUSTO,
-                    "Zerar CUSTO  •  "+moeda.format(p.custo)));
-        }
-        if(p.precoVenda>limite){
-            card.addView(checkCampo(
-                    p,GestaoDbHelper.VALOR_CAMPO_VENDA,
-                    "Zerar VENDA À VISTA  •  "+moeda.format(p.precoVenda)));
-        }
-        if(p.precoPrazo>limite){
-            card.addView(checkCampo(
-                    p,GestaoDbHelper.VALOR_CAMPO_PRAZO,
-                    "Zerar VENDA A PRAZO  •  "+moeda.format(p.precoPrazo)));
-        }
+        CheckBox zerar=new CheckBox(this);
+        zerar.setText("Zerar ESTOQUE deste produto");
+        zerar.setTextSize(13);
+        zerar.setTextColor(TechCellUi.RED);
+        zerar.setPadding(0,dp(2),0,dp(2));
+        zerar.setOnCheckedChangeListener((buttonView,isChecked)->{
+            if(isChecked)selecoes.put(p.id,1);
+            else selecoes.remove(p.id);
+            atualizarResumo();
+        });
+        card.addView(zerar);
 
         Button editar=action("Editar produto sem zerar");
         TechCellUi.styleSecondary(this,editar);
@@ -246,37 +246,15 @@ public class SaneamentoValoresActivity extends Activity {
         return card;
     }
 
-    private CheckBox checkCampo(
-            GestaoDbHelper.Produto p,int bit,String texto){
-        CheckBox cb=new CheckBox(this);
-        cb.setText(texto);
-        cb.setTextSize(13);
-        cb.setTextColor(TechCellUi.RED);
-        cb.setPadding(0,dp(2),0,dp(2));
-        cb.setOnCheckedChangeListener((buttonView,isChecked)->{
-            int atual=selecoes.containsKey(p.id)?selecoes.get(p.id):0;
-            if(isChecked)atual|=bit;
-            else atual&=~bit;
-            if(atual==0)selecoes.remove(p.id);
-            else selecoes.put(p.id,atual);
-            atualizarResumo();
-        });
-        return cb;
-    }
-
     private void atualizarResumo(){
         int produtos=selecoes.size();
-        int campos=0;
-        for(Integer m:selecoes.values()){
-            if(m!=null)campos+=Integer.bitCount(m);
-        }
 
         resumo.setText(
-                total+" produto(s) acima de "+moeda.format(limite)+
+                total+" produto(s) com CUSTO TOTAL acima de "+moeda.format(limite)+
                         "  •  exibidos "+Math.min(carregados,total)+"/"+total+
-                        "\nSelecionados: "+produtos+" produto(s) • "+campos+" campo(s)");
+                        "\nSelecionados para zerar estoque: "+produtos);
 
-        boolean pode=master && !ocupado && campos>0;
+        boolean pode=master && !ocupado && produtos>0;
         aplicar.setEnabled(pode);
         aplicar.setAlpha(pode?1f:0.55f);
     }
@@ -304,10 +282,10 @@ public class SaneamentoValoresActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         new AlertDialog.Builder(this)
-                .setTitle("Alterar teto do relatório")
+                .setTitle("Alterar teto do custo total")
                 .setMessage(
-                        "O teto apenas define quais valores serão mostrados como suspeitos. "+
-                        "Nada será zerado sem você marcar o campo.")
+                        "O teto é aplicado sobre quantidade × custo unitário. "+
+                        "Nada será zerado sem você marcar o produto.")
                 .setView(box)
                 .setPositiveButton("Aplicar teto",(d,w)->{
                     try{
@@ -324,19 +302,15 @@ public class SaneamentoValoresActivity extends Activity {
     }
 
     private void confirmarAplicacao(){
-        int campos=0;
-        for(Integer m:selecoes.values())
-            if(m!=null)campos+=Integer.bitCount(m);
-        if(campos<=0)return;
+        if(selecoes.isEmpty())return;
 
-        final int camposFinal=campos;
         new AlertDialog.Builder(this)
-                .setTitle("Corrigir valores selecionados?")
+                .setTitle("Zerar estoque dos selecionados?")
                 .setMessage(
-                        "Você selecionou "+selecoes.size()+" produto(s) e "+
-                                camposFinal+" campo(s).\n\n"+
-                                "Somente os campos marcados e que ainda estiverem acima de "+
-                                moeda.format(limite)+" serão alterados para R$ 0,00.\n\n"+
+                        "Você selecionou "+selecoes.size()+" produto(s).\n\n"+
+                                "Somente o ESTOQUE desses produtos será alterado para 0, desde que o custo total ainda esteja acima de "+
+                                moeda.format(limite)+".\n\n"+
+                                "O produto, custo unitário, preços e histórico de vendas serão preservados. "+
                                 "Antes da alteração será criada uma cópia interna de segurança.")
                 .setPositiveButton("Confirmar correção",(d,w)->executarAplicacao())
                 .setNegativeButton("Cancelar",null)
@@ -344,8 +318,8 @@ public class SaneamentoValoresActivity extends Activity {
     }
 
     private void executarAplicacao(){
-        final LinkedHashMap<Long,Integer> escolhidos=
-                new LinkedHashMap<>(selecoes);
+        final java.util.ArrayList<Long> escolhidos=
+                new java.util.ArrayList<>(selecoes.keySet());
         final double teto=limite;
         setOcupado(true);
 
@@ -381,21 +355,22 @@ public class SaneamentoValoresActivity extends Activity {
 
                 GestaoDbHelper helper=
                         new GestaoDbHelper(getApplicationContext());
-                GestaoDbHelper.CorrecaoValoresResult r;
+                int corrigidos;
                 try{
-                    r=helper.corrigirValoresSelecionados(escolhidos,teto);
+                    corrigidos=helper.zerarEstoquesSelecionadosPorValor(escolhidos,teto);
                 }finally{
                     helper.close();
                 }
 
                 final File copiaFinal=copia;
+                final int totalCorrigido=corrigidos;
                 runOnUiThread(()->{
                     setOcupado(false);
                     new AlertDialog.Builder(this)
                             .setTitle("Correção concluída")
                             .setMessage(
-                                    r.produtos+" produto(s) corrigido(s)\n"+
-                                    r.campos+" campo(s) alterado(s) para R$ 0,00\n\n"+
+                                    totalCorrigido+" produto(s) tiveram o estoque zerado.\n\n"+
+                                    "Custo unitário, preços, cadastro e histórico foram preservados.\n\n"+
                                     "Cópia interna de segurança: "+
                                     (copiaFinal==null?"não disponível":copiaFinal.getName()))
                             .setPositiveButton("Ver relatório",(d,w)->render())
@@ -420,6 +395,13 @@ public class SaneamentoValoresActivity extends Activity {
                 TechCellBackgroundSync.garantir(getApplicationContext());
             }
         },"TechCell-Saneamento-Valores").start();
+    }
+
+    private String formatarQtd(double v){
+        if(Math.abs(v-Math.rint(v))<0.000001)
+            return String.format(new Locale("pt","BR"),"%,d",(long)Math.rint(v));
+        return String.format(new Locale("pt","BR"),"%,.3f",v)
+                .replaceAll("0+$","").replaceAll("[,.]$","");
     }
 
     private File criarCopiaSegurancaInterna() throws Exception{

@@ -4024,8 +4024,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         double l = Math.max(0, limite);
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT COUNT(*) FROM produtos " +
-                        "WHERE custo>? OR preco_venda>? OR preco_prazo>?",
-                new String[]{String.valueOf(l), String.valueOf(l), String.valueOf(l)});
+                        "WHERE (estoque * custo)>?",
+                new String[]{String.valueOf(l)});
         try {
             return c.moveToFirst() ? c.getInt(0) : 0;
         } finally {
@@ -4041,10 +4041,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         int off = Math.max(0, offset);
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT * FROM produtos " +
-                        "WHERE custo>? OR preco_venda>? OR preco_prazo>? " +
-                        "ORDER BY MAX(custo,preco_venda,preco_prazo) DESC," +
+                        "WHERE (estoque * custo)>? " +
+                        "ORDER BY (estoque * custo) DESC," +
                         "nome COLLATE NOCASE ASC LIMIT " + max + " OFFSET " + off,
-                new String[]{String.valueOf(l), String.valueOf(l), String.valueOf(l)});
+                new String[]{String.valueOf(l)});
         try {
             while (c.moveToNext()) out.add(fromCursor(c));
         } finally {
@@ -4053,10 +4053,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         return out;
     }
 
-    public CorrecaoValoresResult corrigirValoresSelecionados(
-            Map<Long,Integer> selecoes, double limite) {
-        CorrecaoValoresResult out = new CorrecaoValoresResult();
-        if (selecoes == null || selecoes.isEmpty()) return out;
+    public int zerarEstoquesSelecionadosPorValor(
+            List<Long> produtoIds, double limite) {
+        if (produtoIds == null || produtoIds.isEmpty()) return 0;
         if (Double.isNaN(limite) || Double.isInfinite(limite) || limite < 0) {
             throw new IllegalArgumentException("Teto monetário inválido.");
         }
@@ -4065,52 +4064,38 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         SyncContext ctx = lerSyncContext(db);
         if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
             throw new IllegalStateException(
-                    "Somente o aparelho Master pode corrigir valores de produtos.");
+                    "Somente o aparelho Master pode corrigir o estoque.");
         }
 
         long now = System.currentTimeMillis();
+        int corrigidos = 0;
         db.beginTransaction();
         try {
-            for (Map.Entry<Long,Integer> e : selecoes.entrySet()) {
-                long id = e.getKey() == null ? 0 : e.getKey();
-                int mascara = e.getValue() == null ? 0 : e.getValue();
-                if (id <= 0 || mascara == 0) continue;
+            for (Long idObj : produtoIds) {
+                long id = idObj == null ? 0 : idObj;
+                if (id <= 0) continue;
 
                 Cursor c = db.rawQuery(
-                        "SELECT custo,preco_venda,preco_prazo FROM produtos WHERE id=?",
+                        "SELECT estoque,custo FROM produtos WHERE id=?",
                         new String[]{String.valueOf(id)});
-                double custo, venda, prazo;
+                double estoque, custo;
                 try {
                     if (!c.moveToFirst()) continue;
-                    custo = c.getDouble(0);
-                    venda = c.getDouble(1);
-                    prazo = c.getDouble(2);
+                    estoque = c.getDouble(0);
+                    custo = c.getDouble(1);
                 } finally {
                     c.close();
                 }
 
-                ContentValues v = new ContentValues();
-                int camposProduto = 0;
-                if ((mascara & VALOR_CAMPO_CUSTO) != 0 && custo > limite) {
-                    v.put("custo", 0);
-                    camposProduto++;
-                }
-                if ((mascara & VALOR_CAMPO_VENDA) != 0 && venda > limite) {
-                    v.put("preco_venda", 0);
-                    camposProduto++;
-                }
-                if ((mascara & VALOR_CAMPO_PRAZO) != 0 && prazo > limite) {
-                    v.put("preco_prazo", 0);
-                    camposProduto++;
-                }
-                if (camposProduto == 0) continue;
+                if ((estoque * custo) <= limite) continue;
 
+                ContentValues v = new ContentValues();
+                v.put("estoque", 0);
                 v.put("updated_at", now);
                 int alterados = db.update(
                         "produtos", v, "id=?", new String[]{String.valueOf(id)});
                 if (alterados > 0) {
-                    out.produtos++;
-                    out.campos += camposProduto;
+                    corrigidos++;
                     marcarAlteracao(db, "produtos", id);
                     registrarMudancaProduto(db, id, "UPSERT");
                 }
@@ -4119,7 +4104,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         } finally {
             db.endTransaction();
         }
-        return out;
+        return corrigidos;
     }
 
     public int countProdutosEstoqueAcima(double limite) {
