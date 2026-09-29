@@ -23,7 +23,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 24;
+    private static final int DB_VERSION = 25;
 
     public static class Produto {
         public long id;
@@ -410,6 +410,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public double faturamentoImportado;
     }
 
+    public static final int VALOR_CAMPO_CUSTO = 1;
+    public static final int VALOR_CAMPO_VENDA = 2;
+    public static final int VALOR_CAMPO_PRAZO = 4;
+
+    public static class CorrecaoValoresResult {
+        public int produtos;
+        public int campos;
+    }
+
     public static class ResetMigracaoResult {
         public int produtos;
         public int vendas;
@@ -584,6 +593,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         if (oldVersion < 24) {
             migrarParaV24(db);
         }
+
+        if (oldVersion < 25) {
+            migrarParaV25(db);
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -710,6 +723,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "serie_nfe TEXT NOT NULL DEFAULT '1'," +
                 "producao INTEGER NOT NULL DEFAULT 0," +
                 "smb_estoque_limite REAL NOT NULL DEFAULT 200," +
+                "smb_valor_limite REAL NOT NULL DEFAULT 1200," +
                 syncColumnsSqlSemVirgulaFinal() +
                 ")");
     }
@@ -3920,6 +3934,11 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         criarImportacaoSmb(db);
     }
 
+    private void migrarParaV25(SQLiteDatabase db) {
+        criarEmpresaConfig(db);
+        adicionarColunaSeAusente(db, "empresa_config", "smb_valor_limite", "REAL NOT NULL DEFAULT 1200");
+    }
+
     public double getLimiteEstoqueImportacaoSmb() {
         SQLiteDatabase db = getWritableDatabase();
         criarEmpresaConfig(db);
@@ -3958,6 +3977,150 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         marcarAlteracao(db, "empresa_config", 1);
     }
 
+
+
+    public double getLimiteValorSaneamento() {
+        SQLiteDatabase db = getWritableDatabase();
+        criarEmpresaConfig(db);
+        Cursor c = db.rawQuery(
+                "SELECT smb_valor_limite FROM empresa_config WHERE id=1 LIMIT 1", null);
+        try {
+            if (c.moveToFirst()) {
+                double v = c.getDouble(0);
+                return v >= 1 ? v : 1200;
+            }
+            return 1200;
+        } finally {
+            c.close();
+        }
+    }
+
+    public void setLimiteValorSaneamento(double limite) {
+        if (Double.isNaN(limite) || Double.isInfinite(limite) ||
+                limite < 1 || limite > 1000000000d) {
+            throw new IllegalArgumentException(
+                    "Informe um teto entre R$ 1 e R$ 1.000.000.000.");
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+        criarEmpresaConfig(db);
+        SyncContext ctx = lerSyncContext(db);
+        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            throw new IllegalStateException(
+                    "Somente o aparelho Master pode alterar o teto de valores.");
+        }
+
+        db.execSQL("INSERT OR IGNORE INTO empresa_config(id) VALUES(1)");
+        ContentValues v = new ContentValues();
+        v.put("smb_valor_limite", limite);
+        int alteradas = db.update("empresa_config", v, "id=1", null);
+        if (alteradas != 1) {
+            throw new IllegalStateException("Não foi possível salvar o teto de valores.");
+        }
+        marcarAlteracao(db, "empresa_config", 1);
+    }
+
+    public int countProdutosValorSuspeito(double limite) {
+        double l = Math.max(0, limite);
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM produtos " +
+                        "WHERE custo>? OR preco_venda>? OR preco_prazo>?",
+                new String[]{String.valueOf(l), String.valueOf(l), String.valueOf(l)});
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    public List<Produto> listProdutosValorSuspeito(
+            double limite, int offset, int maximo) {
+        List<Produto> out = new ArrayList<>();
+        double l = Math.max(0, limite);
+        int max = Math.max(1, Math.min(maximo, 100));
+        int off = Math.max(0, offset);
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM produtos " +
+                        "WHERE custo>? OR preco_venda>? OR preco_prazo>? " +
+                        "ORDER BY MAX(custo,preco_venda,preco_prazo) DESC," +
+                        "nome COLLATE NOCASE ASC LIMIT " + max + " OFFSET " + off,
+                new String[]{String.valueOf(l), String.valueOf(l), String.valueOf(l)});
+        try {
+            while (c.moveToNext()) out.add(fromCursor(c));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    public CorrecaoValoresResult corrigirValoresSelecionados(
+            Map<Long,Integer> selecoes, double limite) {
+        CorrecaoValoresResult out = new CorrecaoValoresResult();
+        if (selecoes == null || selecoes.isEmpty()) return out;
+        if (Double.isNaN(limite) || Double.isInfinite(limite) || limite < 0) {
+            throw new IllegalArgumentException("Teto monetário inválido.");
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+        SyncContext ctx = lerSyncContext(db);
+        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            throw new IllegalStateException(
+                    "Somente o aparelho Master pode corrigir valores de produtos.");
+        }
+
+        long now = System.currentTimeMillis();
+        db.beginTransaction();
+        try {
+            for (Map.Entry<Long,Integer> e : selecoes.entrySet()) {
+                long id = e.getKey() == null ? 0 : e.getKey();
+                int mascara = e.getValue() == null ? 0 : e.getValue();
+                if (id <= 0 || mascara == 0) continue;
+
+                Cursor c = db.rawQuery(
+                        "SELECT custo,preco_venda,preco_prazo FROM produtos WHERE id=?",
+                        new String[]{String.valueOf(id)});
+                double custo, venda, prazo;
+                try {
+                    if (!c.moveToFirst()) continue;
+                    custo = c.getDouble(0);
+                    venda = c.getDouble(1);
+                    prazo = c.getDouble(2);
+                } finally {
+                    c.close();
+                }
+
+                ContentValues v = new ContentValues();
+                int camposProduto = 0;
+                if ((mascara & VALOR_CAMPO_CUSTO) != 0 && custo > limite) {
+                    v.put("custo", 0);
+                    camposProduto++;
+                }
+                if ((mascara & VALOR_CAMPO_VENDA) != 0 && venda > limite) {
+                    v.put("preco_venda", 0);
+                    camposProduto++;
+                }
+                if ((mascara & VALOR_CAMPO_PRAZO) != 0 && prazo > limite) {
+                    v.put("preco_prazo", 0);
+                    camposProduto++;
+                }
+                if (camposProduto == 0) continue;
+
+                v.put("updated_at", now);
+                int alterados = db.update(
+                        "produtos", v, "id=?", new String[]{String.valueOf(id)});
+                if (alterados > 0) {
+                    out.produtos++;
+                    out.campos += camposProduto;
+                    marcarAlteracao(db, "produtos", id);
+                    registrarMudancaProduto(db, id, "UPSERT");
+                }
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return out;
+    }
 
     public int countProdutosEstoqueAcima(double limite) {
         double l = Math.max(0, limite);

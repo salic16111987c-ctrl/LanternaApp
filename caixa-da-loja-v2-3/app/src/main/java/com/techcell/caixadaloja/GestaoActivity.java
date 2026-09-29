@@ -92,6 +92,10 @@ public class GestaoActivity extends Activity {
         Button prep=moduleButton("✅  Homologação");prep.setOnClickListener(v->startActivity(new Intent(this,PreparacaoFiscalActivity.class)));Button smb=moduleButton("🗃️  Importação SMB");smb.setOnClickListener(v->startActivity(new Intent(this,ImportacaoSmbActivity.class)));addModuleRow(root,prep,smb);
         Button backup=moduleButton("💾  Backup / Restaurar");backup.setOnClickListener(v->startActivity(new Intent(this,BackupRestoreActivity.class)));
         LinearLayout.LayoutParams rpBackup=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rpBackup.setMargins(0,dp(8),0,0);root.addView(backup,rpBackup);
+        Button saneamento=moduleButton("⚠  Revisar valores suspeitos");
+        TechCellUi.stylePrimary(this,saneamento,TechCellUi.ORANGE);
+        saneamento.setOnClickListener(v->startActivity(new Intent(this,SaneamentoValoresActivity.class)));
+        LinearLayout.LayoutParams rpSaneamento=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rpSaneamento.setMargins(0,dp(8),0,0);root.addView(saneamento,rpSaneamento);
         GestaoDbHelper.SyncContext sync=db.getSyncContext();
         int pendentes=db.countSyncPendentes();
         String papel=sync.configurado ? sync.papelDispositivo : "NÃO CONFIGURADO";
