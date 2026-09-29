@@ -230,6 +230,21 @@ public class SaneamentoValoresActivity extends Activity {
         });
         card.addView(zerar);
 
+        Button zerarAgora=action("ZERAR ESTOQUE DESTE PRODUTO");
+        TechCellUi.styleDanger(this,zerarAgora);
+        zerarAgora.setEnabled(master);
+        zerarAgora.setAlpha(master?1f:0.55f);
+        zerarAgora.setOnClickListener(v->{
+            selecoes.clear();
+            selecoes.put(p.id,1);
+            atualizarResumo();
+            confirmarAplicacao();
+        });
+        LinearLayout.LayoutParams zp=new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,dp(44));
+        zp.setMargins(0,dp(6),0,0);
+        card.addView(zerarAgora,zp);
+
         Button editar=action("Editar produto sem zerar");
         TechCellUi.styleSecondary(this,editar);
         editar.setOnClickListener(v->{

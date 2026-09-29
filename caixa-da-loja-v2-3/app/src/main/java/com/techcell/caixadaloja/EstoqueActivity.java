@@ -163,6 +163,17 @@ public class EstoqueActivity extends Activity {
         bp.setMargins(0, dp(10), 0, dp(12));
         root.addView(produtos, bp);
 
+        Button revisarSuspeitos = new Button(this);
+        revisarSuspeitos.setText("⚠  Revisar custo total acima de R$ 1.200");
+        revisarSuspeitos.setTextSize(14);
+        TechCellUi.stylePrimary(this, revisarSuspeitos, TechCellUi.ORANGE);
+        revisarSuspeitos.setOnClickListener(v ->
+                startActivity(new Intent(this, SaneamentoValoresActivity.class)));
+        LinearLayout.LayoutParams rpSuspeitos = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+        rpSuspeitos.setMargins(0, 0, 0, dp(12));
+        root.addView(revisarSuspeitos, rpSuspeitos);
+
         LinearLayout cabLista = new LinearLayout(this);
         cabLista.setOrientation(LinearLayout.HORIZONTAL);
         cabLista.setGravity(Gravity.CENTER_VERTICAL);
