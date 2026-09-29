@@ -7,9 +7,11 @@ import android.database.sqlite.SQLiteDatabase;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -38,6 +40,7 @@ public class ImportacaoSmbActivity extends Activity {
     private Button importarCadastros;
     private Button importarVendas;
     private Button limparBase;
+    private Button limiteEstoque;
 
     private int dp(int v){ return TechCellUi.dp(this,v); }
 
@@ -122,6 +125,28 @@ public class ImportacaoSmbActivity extends Activity {
         resumoBox.setOrientation(LinearLayout.VERTICAL);
         root.addView(resumoBox);
 
+        LinearLayout filtroEstoque=TechCellUi.card(this);
+        filtroEstoque.setBackground(TechCellUi.solid(this,TechCellUi.PALE_BLUE,14));
+        filtroEstoque.setLayoutParams(TechCellUi.fullCardParams(this,12));
+
+        TextView filtroTitulo=txt("FILTRO DE SEGURANÇA DO ESTOQUE",12,true);
+        filtroTitulo.setTextColor(TechCellUi.NAVY);
+        filtroEstoque.addView(filtroTitulo);
+
+        TextView filtroTexto=txt(
+                "Na migração, quantidades acima do limite não entram automaticamente no estoque. O produto é importado com saldo 0 para evitar estoques artificiais do sistema antigo.",
+                12,false);
+        filtroTexto.setTextColor(Color.parseColor("#475467"));
+        filtroTexto.setPadding(0,dp(5),0,dp(8));
+        filtroEstoque.addView(filtroTexto);
+
+        limiteEstoque=action("Limite automático: 1.000 unidades");
+        TechCellUi.styleSecondary(this,limiteEstoque);
+        limiteEstoque.setOnClickListener(v->alterarLimiteEstoque());
+        filtroEstoque.addView(limiteEstoque,new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
+        root.addView(filtroEstoque);
+
         importarCadastros=action("✅  Importar cadastros e estoque");
         TechCellUi.stylePrimary(this,importarCadastros,TechCellUi.GREEN);
         importarCadastros.setEnabled(false);
@@ -133,7 +158,7 @@ public class ImportacaoSmbActivity extends Activity {
         root.addView(importarCadastros,ip);
 
         TextView etapaCad=txt(
-                "Esta etapa grava produtos, saldo atual de estoque, fornecedores e clientes. Grupos e fabricantes entram nos próprios produtos. O histórico de ajustes não é reaplicado.",
+                "Esta etapa grava produtos, estoque dentro do limite de segurança, fornecedores e clientes. Estoques acima do limite entram como 0 e ficam registrados no resumo da migração.",
                 11,false);
         etapaCad.setTextColor(TechCellUi.MUTED);
         etapaCad.setPadding(dp(4),dp(7),dp(4),0);
@@ -344,6 +369,7 @@ public class ImportacaoSmbActivity extends Activity {
     private void renderResumo(){
         resumoBox.removeAllViews();
         GestaoDbHelper db=new GestaoDbHelper(this);
+        atualizarLimiteEstoque(db);
         GestaoDbHelper.SmbImportResumo r=db.resumoImportacaoSmb();
         if(r==null){
             limpar.setEnabled(false);
@@ -443,6 +469,18 @@ public class ImportacaoSmbActivity extends Activity {
             aplicado.setTextColor(TechCellUi.GREEN);
             aplicado.setPadding(0,dp(8),0,0);
             card.addView(aplicado);
+
+            if(r.estoquesBloqueados>0){
+                TextView filtro=txt(
+                        "⚠ Filtro de estoque: "+
+                                String.format(new Locale("pt","BR"),"%,d",r.estoquesBloqueados)+
+                                " produto(s) acima de "+formatarQtd(r.limiteEstoqueAplicado)+
+                                " foram importados com estoque 0.",
+                        12,true);
+                filtro.setTextColor(Color.parseColor("#B54708"));
+                filtro.setPadding(0,dp(7),0,0);
+                card.addView(filtro);
+            }
         }
 
         if(historicoImportado){
@@ -493,9 +531,83 @@ public class ImportacaoSmbActivity extends Activity {
                 .show();
     }
 
+
+    private void atualizarLimiteEstoque(GestaoDbHelper db){
+        if(limiteEstoque==null)return;
+        double limite=db.getLimiteEstoqueImportacaoSmb();
+        GestaoDbHelper.SyncContext ctx=db.getSyncContext();
+        boolean master=ctx.configurado && "MASTER".equalsIgnoreCase(ctx.papelDispositivo);
+        limiteEstoque.setText(
+                "Limite automático: "+formatarQtd(limite)+" unidades"+
+                        (master?"  •  alterar":"  •  somente Master"));
+        limiteEstoque.setEnabled(master);
+        limiteEstoque.setAlpha(master?1f:0.65f);
+    }
+
+    private void alterarLimiteEstoque(){
+        GestaoDbHelper db=new GestaoDbHelper(this);
+        GestaoDbHelper.SyncContext ctx=db.getSyncContext();
+        double atual=db.getLimiteEstoqueImportacaoSmb();
+        db.close();
+
+        if(!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)){
+            Toast.makeText(this,
+                    "Somente o aparelho Master pode alterar esse limite.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        EditText campo=new EditText(this);
+        campo.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        campo.setText(Math.abs(atual-Math.rint(atual))<0.000001
+                ? String.valueOf((long)Math.rint(atual))
+                : String.valueOf(atual));
+        campo.setSelectAllOnFocus(true);
+        int pad=dp(20);
+        LinearLayout box=new LinearLayout(this);
+        box.setPadding(pad,0,pad,0);
+        box.addView(campo,new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        new AlertDialog.Builder(this)
+                .setTitle("Limite automático de estoque")
+                .setMessage(
+                        "Produtos acima desse valor não terão o saldo importado automaticamente. "+
+                        "O cadastro entra com estoque 0 para revisão.")
+                .setView(box)
+                .setPositiveButton("Salvar",(d,w)->{
+                    try{
+                        String s=campo.getText().toString().trim().replace(",",".");
+                        double valor=Double.parseDouble(s);
+                        GestaoDbHelper helper=new GestaoDbHelper(this);
+                        try{
+                            helper.setLimiteEstoqueImportacaoSmb(valor);
+                            atualizarLimiteEstoque(helper);
+                        }finally{
+                            helper.close();
+                        }
+                        Toast.makeText(this,
+                                "Limite alterado para "+formatarQtd(valor)+" unidades.",
+                                Toast.LENGTH_LONG).show();
+                    }catch(Throwable e){
+                        Toast.makeText(this,mensagem(e),Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("Cancelar",null)
+                .show();
+    }
+
+    private String formatarQtd(double v){
+        if(Math.abs(v-Math.rint(v))<0.000001)
+            return String.format(new Locale("pt","BR"),"%,d",(long)Math.rint(v));
+        return String.format(new Locale("pt","BR"),"%,.3f",v)
+                .replaceAll("0+$","").replaceAll("[,.]$","");
+    }
+
     private void confirmarImportacaoCadastros(){
         GestaoDbHelper db=new GestaoDbHelper(this);
         GestaoDbHelper.SmbImportResumo r=db.resumoImportacaoSmb();
+        double limite=db.getLimiteEstoqueImportacaoSmb();
         db.close();
         if(r==null){
             Toast.makeText(this,"Carregue primeiro a pré-importação SMB.",Toast.LENGTH_LONG).show();
@@ -504,12 +616,14 @@ public class ImportacaoSmbActivity extends Activity {
 
         String msg=
                 "Serão importados até:\n\n"+
-                "• "+String.format(new Locale("pt","BR"),"%,d",r.produtos)+" produtos com o saldo atual de estoque\n"+
+                "• "+String.format(new Locale("pt","BR"),"%,d",r.produtos)+" produtos\n"+
                 "• "+String.format(new Locale("pt","BR"),"%,d",r.fornecedores)+" fornecedores\n"+
                 "• "+String.format(new Locale("pt","BR"),"%,d",r.clientes)+" clientes\n\n"+
+                "Filtro de estoque: até "+formatarQtd(limite)+" unidades por produto entram automaticamente. "+
+                "Acima disso, o produto entra com estoque 0 para revisão.\n\n"+
                 "Produtos que já existirem por código ou código de barras serão preservados e ignorados.\n\n"+
                 "Os "+String.format(new Locale("pt","BR"),"%,d",r.ajustesEstoque)+
-                " ajustes antigos NÃO serão reaplicados, pois o saldo atual já está no cadastro dos produtos.\n\n"+
+                " ajustes antigos NÃO serão reaplicados.\n\n"+
                 "Vendas e caixa ainda NÃO serão importados nesta etapa.";
 
         new AlertDialog.Builder(this)
@@ -568,8 +682,10 @@ public class ImportacaoSmbActivity extends Activity {
                 "Fornecedores importados: "+String.format(new Locale("pt","BR"),"%,d",r.fornecedoresImportados)+"\n"+
                 "Clientes importados: "+String.format(new Locale("pt","BR"),"%,d",r.clientesImportados)+"\n"+
                 "Ignorados/duplicados: "+String.format(new Locale("pt","BR"),"%,d",r.ignorados)+"\n"+
-                "Conflitos de produtos preservados: "+String.format(new Locale("pt","BR"),"%,d",r.produtosConflitantes)+"\n\n"+
-                "O saldo de estoque veio diretamente do saldo atual do SMB.\n"+
+                "Conflitos de produtos preservados: "+String.format(new Locale("pt","BR"),"%,d",r.produtosConflitantes)+"\n"+
+                "Estoques bloqueados pelo filtro: "+String.format(new Locale("pt","BR"),"%,d",r.estoquesBloqueados)+"\n"+
+                "Limite aplicado: "+formatarQtd(r.limiteEstoqueAplicado)+" unidades por produto\n\n"+
+                "Quantidades dentro do limite foram importadas. Quantidades acima dele entraram como estoque 0.\n"+
                 "Agora você pode importar o histórico de vendas e caixa sem alterar novamente o estoque.";
 
         new AlertDialog.Builder(this)
@@ -861,6 +977,7 @@ public class ImportacaoSmbActivity extends Activity {
         selecionar.setEnabled(!ocupado);
         limpar.setEnabled(!ocupado);
         if(limparBase!=null)limparBase.setEnabled(!ocupado);
+        if(limiteEstoque!=null && ocupado)limiteEstoque.setEnabled(false);
         if(importarCadastros!=null)importarCadastros.setEnabled(!ocupado);
         if(importarVendas!=null)importarVendas.setEnabled(!ocupado);
         selecionar.setAlpha(ocupado?0.55f:1f);

@@ -17,7 +17,7 @@ import java.util.Locale;
 
 public class EstoqueActivity extends Activity {
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
-    private int ordem = 0;
+    private int ordem = 3;
     private boolean syncProdutosRodando;
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -99,7 +99,7 @@ public class EstoqueActivity extends Activity {
         List<GestaoDbHelper.Produto> ps;
         try {
             resumoGeral = db.resumoEstoqueGeral();
-            ps = db.listProdutosTela("", ordem == 0 ? 0 : 1, 80);
+            ps = db.listProdutosTela("", ordem, 80);
         } finally {
             db.close();
         }
@@ -172,24 +172,30 @@ public class EstoqueActivity extends Activity {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
         Button ordenar = new Button(this);
-        ordenar.setText(ordem == 0 ? "Ordenar: Nome" : "Ordenar: Estoque");
+        String ordemTexto = ordem == 3 ? "Maior → menor" :
+                ordem == 1 ? "Menor → maior" : "Nome A-Z";
+        ordenar.setText(ordemTexto);
         ordenar.setTextSize(11);
         TechCellUi.styleSecondary(this, ordenar);
         ordenar.setOnClickListener(v -> {
-            ordem = ordem == 0 ? 1 : 0;
+            if (ordem == 3) ordem = 1;
+            else if (ordem == 1) ordem = 0;
+            else ordem = 3;
             render();
         });
         cabLista.addView(ordenar, new LinearLayout.LayoutParams(dp(138), dp(40)));
         root.addView(cabLista);
 
         TextView limiteLista = txt(
-                "Exibindo " + ps.size() + " de " + resumoGeral.produtos +
+                (ordem == 3 ? "Ranking: " : "") +
+                        "exibindo " + ps.size() + " de " + resumoGeral.produtos +
                         " produtos. O resumo acima considera o estoque completo.",
                 11, false);
         limiteLista.setTextColor(TechCellUi.MUTED);
         limiteLista.setPadding(0, dp(5), 0, dp(4));
         root.addView(limiteLista);
 
+        int posicaoRanking = 1;
         for (GestaoDbHelper.Produto p : ps) {
             LinearLayout card = TechCellUi.card(this);
             card.setPadding(dp(12), dp(10), dp(10), dp(10));
@@ -199,9 +205,14 @@ public class EstoqueActivity extends Activity {
             top.setOrientation(LinearLayout.HORIZONTAL);
             top.setGravity(Gravity.CENTER_VERTICAL);
 
-            String inicial = p.nome == null || p.nome.trim().isEmpty()
-                    ? "P" : p.nome.trim().substring(0,1).toUpperCase(new Locale("pt","BR"));
-            TextView avatar = txt(inicial, 18, true);
+            String inicial;
+            if (ordem == 3) {
+                inicial = posicaoRanking + "º";
+            } else {
+                inicial = p.nome == null || p.nome.trim().isEmpty()
+                        ? "P" : p.nome.trim().substring(0,1).toUpperCase(new Locale("pt","BR"));
+            }
+            TextView avatar = txt(inicial, ordem == 3 ? 13 : 18, true);
             avatar.setGravity(Gravity.CENTER);
             avatar.setTextColor(TechCellUi.BLUE);
             avatar.setBackground(TechCellUi.solid(this, TechCellUi.PALE_BLUE, 12));
@@ -251,6 +262,7 @@ public class EstoqueActivity extends Activity {
 
             card.setOnClickListener(v -> startActivity(new Intent(this, ProdutosActivity.class)));
             root.addView(card);
+            posicaoRanking++;
         }
 
         setContentView(scroll);

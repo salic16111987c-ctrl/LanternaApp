@@ -31,7 +31,7 @@ public class BackupRestoreActivity extends Activity {
     private static final int REQ_CREATE_BACKUP = 7301;
     private static final int REQ_OPEN_BACKUP = 7302;
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 22;
+    private static final int DB_VERSION = 23;
 
     private final SimpleDateFormat nomeData =
             new SimpleDateFormat("yyyyMMdd_HHmmss", new Locale("pt","BR"));

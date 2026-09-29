@@ -23,7 +23,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 22;
+    private static final int DB_VERSION = 23;
 
     public static class Produto {
         public long id;
@@ -381,6 +381,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public int caixaPreservado;
         public int avisosHistorico;
         public long salesImportedAt;
+        public int estoquesBloqueados;
+        public double quantidadeEstoqueBloqueada;
+        public double limiteEstoqueAplicado;
     }
 
     public static class SmbImportResult {
@@ -389,6 +392,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         public int clientesImportados;
         public int ignorados;
         public int produtosConflitantes;
+        public int estoquesBloqueados;
+        public double quantidadeEstoqueBloqueada;
+        public double limiteEstoqueAplicado;
     }
 
     public static class SmbSalesImportResult {
@@ -570,6 +576,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         if (oldVersion < 22) {
             migrarParaV22(db);
         }
+
+        if (oldVersion < 23) {
+            migrarParaV23(db);
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -695,6 +705,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "serie_nfce TEXT NOT NULL DEFAULT '1'," +
                 "serie_nfe TEXT NOT NULL DEFAULT '1'," +
                 "producao INTEGER NOT NULL DEFAULT 0," +
+                "smb_estoque_limite REAL NOT NULL DEFAULT 1000," +
                 syncColumnsSqlSemVirgulaFinal() +
                 ")");
     }
@@ -2553,6 +2564,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         String orderBy;
         if (ordem == 1) orderBy = "estoque ASC, nome COLLATE NOCASE ASC";
         else if (ordem == 2) orderBy = "preco_venda DESC, nome COLLATE NOCASE ASC";
+        else if (ordem == 3) orderBy = "estoque DESC, nome COLLATE NOCASE ASC";
         else orderBy = "nome COLLATE NOCASE ASC";
 
         Cursor c;
@@ -3651,6 +3663,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "imported_cash_rows INTEGER NOT NULL DEFAULT 0," +
                 "sales_warnings INTEGER NOT NULL DEFAULT 0," +
                 "sales_imported_at INTEGER NOT NULL DEFAULT 0," +
+                "blocked_stock_products INTEGER NOT NULL DEFAULT 0," +
+                "blocked_stock_qty REAL NOT NULL DEFAULT 0," +
+                "stock_limit_applied REAL NOT NULL DEFAULT 1000," +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -3786,7 +3801,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         Cursor c = db.rawQuery(
                 "SELECT id,source_name,source_system,source_file,backup_date,status,staged_records,warnings,created_at," +
                         "imported_products,imported_suppliers,imported_clients,skipped_conflicts,imported_at," +
-                        "imported_sales,imported_sale_items,imported_cash_rows,sales_warnings,sales_imported_at " +
+                        "imported_sales,imported_sale_items,imported_cash_rows,sales_warnings,sales_imported_at," +
+                        "blocked_stock_products,blocked_stock_qty,stock_limit_applied " +
                         "FROM smb_import_sessions ORDER BY id DESC LIMIT 1", null);
         SmbImportResumo r = null;
         try {
@@ -3811,6 +3827,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 r.caixaPreservado = c.getInt(16);
                 r.avisosHistorico = c.getInt(17);
                 r.salesImportedAt = c.getLong(18);
+                r.estoquesBloqueados = c.getInt(19);
+                r.quantidadeEstoqueBloqueada = c.getDouble(20);
+                r.limiteEstoqueAplicado = c.getDouble(21);
             }
         } finally {
             c.close();
@@ -3879,6 +3898,53 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         adicionarColunaSeAusente(db, "smb_import_sessions", "sales_imported_at", "INTEGER NOT NULL DEFAULT 0");
     }
 
+    private void migrarParaV23(SQLiteDatabase db) {
+        criarEmpresaConfig(db);
+        adicionarColunaSeAusente(db, "empresa_config", "smb_estoque_limite", "REAL NOT NULL DEFAULT 1000");
+        criarImportacaoSmb(db);
+        adicionarColunaSeAusente(db, "smb_import_sessions", "blocked_stock_products", "INTEGER NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "blocked_stock_qty", "REAL NOT NULL DEFAULT 0");
+        adicionarColunaSeAusente(db, "smb_import_sessions", "stock_limit_applied", "REAL NOT NULL DEFAULT 1000");
+    }
+
+    public double getLimiteEstoqueImportacaoSmb() {
+        SQLiteDatabase db = getWritableDatabase();
+        criarEmpresaConfig(db);
+        Cursor c = db.rawQuery(
+                "SELECT smb_estoque_limite FROM empresa_config WHERE id=1 LIMIT 1", null);
+        try {
+            if (c.moveToFirst()) {
+                double v = c.getDouble(0);
+                return v >= 1 ? v : 1000;
+            }
+            return 1000;
+        } finally {
+            c.close();
+        }
+    }
+
+    public void setLimiteEstoqueImportacaoSmb(double limite) {
+        if (Double.isNaN(limite) || Double.isInfinite(limite) ||
+                limite < 1 || limite > 1000000000d) {
+            throw new IllegalArgumentException("Informe um limite entre 1 e 1.000.000.000.");
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+        criarEmpresaConfig(db);
+        SyncContext ctx = lerSyncContext(db);
+        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            throw new IllegalStateException(
+                    "Somente o aparelho Master pode alterar o limite de estoque da importação.");
+        }
+
+        db.execSQL("INSERT OR IGNORE INTO empresa_config(id) VALUES(1)");
+        ContentValues v = new ContentValues();
+        v.put("smb_estoque_limite", limite);
+        int alteradas = db.update("empresa_config", v, "id=1", null);
+        if (alteradas != 1) throw new IllegalStateException("Não foi possível salvar o limite.");
+        marcarAlteracao(db, "empresa_config", 1);
+    }
+
     public SmbImportResult importarCadastrosSmb() {
         SQLiteDatabase db = getWritableDatabase();
         criarImportacaoSmb(db);
@@ -3910,6 +3976,8 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
 
         SmbImportResult out = new SmbImportResult();
         long now = System.currentTimeMillis();
+        double limiteEstoque = getLimiteEstoqueImportacaoSmb();
+        out.limiteEstoqueAplicado = limiteEstoque;
 
         db.beginTransaction();
         try {
@@ -4041,7 +4109,14 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                     v.put("custo", custo);
                     v.put("preco_venda", venda);
                     v.put("preco_prazo", prazo);
-                    v.put("estoque", smbDecimal(j, "QTDESTATU"));
+                    double estoqueOriginal = smbDecimal(j, "QTDESTATU");
+                    double estoqueImportado = estoqueOriginal;
+                    if (estoqueOriginal < 0 || estoqueOriginal > limiteEstoque) {
+                        estoqueImportado = 0;
+                        out.estoquesBloqueados++;
+                        out.quantidadeEstoqueBloqueada += Math.max(0, estoqueOriginal);
+                    }
+                    v.put("estoque", estoqueImportado);
                     v.put("estoque_minimo", smbDecimal(j, "QTDESTMIN"));
                     v.put("ncm", "");
                     v.put("cest", "");
@@ -4073,6 +4148,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
             s.put("imported_clients", out.clientesImportados);
             s.put("skipped_conflicts", out.ignorados);
             s.put("imported_at", now);
+            s.put("blocked_stock_products", out.estoquesBloqueados);
+            s.put("blocked_stock_qty", out.quantidadeEstoqueBloqueada);
+            s.put("stock_limit_applied", out.limiteEstoqueAplicado);
             s.put("updated_at", now);
             db.update("smb_import_sessions", s, "id=?",
                     new String[]{String.valueOf(sessionId)});
