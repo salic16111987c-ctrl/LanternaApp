@@ -4024,7 +4024,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         double l = Math.max(0, limite);
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT COUNT(*) FROM produtos " +
-                        "WHERE (estoque * custo)>?",
+                        "WHERE (estoque * custo)>CAST(? AS REAL)",
                 new String[]{String.valueOf(l)});
         try {
             return c.moveToFirst() ? c.getInt(0) : 0;
@@ -4041,7 +4041,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         int off = Math.max(0, offset);
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT * FROM produtos " +
-                        "WHERE (estoque * custo)>? " +
+                        "WHERE (estoque * custo)>CAST(? AS REAL) " +
                         "ORDER BY (estoque * custo) DESC," +
                         "nome COLLATE NOCASE ASC LIMIT " + max + " OFFSET " + off,
                 new String[]{String.valueOf(l)});
