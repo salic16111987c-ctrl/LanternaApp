@@ -260,7 +260,12 @@ public class EstoqueActivity extends Activity {
                 card.addView(baixo, alp);
             }
 
-            card.setOnClickListener(v -> startActivity(new Intent(this, ProdutosActivity.class)));
+            card.setOnClickListener(v -> {
+                Intent i = new Intent(this, ProdutosActivity.class);
+                i.putExtra(ProdutosActivity.EXTRA_PRODUTO_ID, p.id);
+                i.putExtra(ProdutosActivity.EXTRA_FECHAR_APOS_SALVAR, true);
+                startActivity(i);
+            });
             root.addView(card);
             posicaoRanking++;
         }

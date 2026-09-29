@@ -31,6 +31,9 @@ import java.util.List;
 import java.util.Locale;
 
 public class ProdutosActivity extends Activity {
+    public static final String EXTRA_PRODUTO_ID = "produto_id_editar";
+    public static final String EXTRA_FECHAR_APOS_SALVAR = "fechar_apos_salvar";
+
     private static final List<String> UNIDADES = Arrays.asList(
             "UN", "PC", "CX", "PCT", "KIT", "PAR", "ROLO",
             "KG", "G", "M", "CM", "L", "ML", "SERVIÇO", "OUTRA"
@@ -46,6 +49,7 @@ public class ProdutosActivity extends Activity {
     private final Handler buscaHandler = new Handler(Looper.getMainLooper());
     private final Runnable buscaRunnable = this::carregar;
     private Button limparBusca;
+    private boolean fecharAposSalvar;
     private final NumberFormat moeda = NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
 
     private int dp(int v){ return Math.round(v * getResources().getDisplayMetrics().density); }
@@ -209,6 +213,18 @@ public class ProdutosActivity extends Activity {
         setContentView(tela);
         atualizarRotuloOrdenacao();
         carregar();
+
+        long produtoIdDireto = getIntent().getLongExtra(EXTRA_PRODUTO_ID, -1);
+        fecharAposSalvar = getIntent().getBooleanExtra(EXTRA_FECHAR_APOS_SALVAR, false);
+        if (produtoIdDireto > 0) {
+            GestaoDbHelper.Produto direto = db.get(produtoIdDireto);
+            if (direto != null) {
+                abrirFormulario(direto);
+            } else {
+                Toast.makeText(this, "Produto não encontrado.", Toast.LENGTH_LONG).show();
+                if (fecharAposSalvar) finish();
+            }
+        }
     }
 
     @Override protected void onResume() {
@@ -667,7 +683,8 @@ public class ProdutosActivity extends Activity {
                     .setMessage(original.nome)
                     .setPositiveButton("Excluir", (dd,ww) -> {
                         db.delete(original.id);
-                        carregar();
+                        if (fecharAposSalvar) finish();
+                        else carregar();
                     })
                     .setNegativeButton("Cancelar", null)
                     .show());
@@ -767,8 +784,9 @@ public class ProdutosActivity extends Activity {
 
             db.save(p);
             dialog.dismiss();
-            carregar();
             Toast.makeText(this, "Produto salvo.", Toast.LENGTH_SHORT).show();
+            if (fecharAposSalvar) finish();
+            else carregar();
         }));
         dialog.show();
     }
