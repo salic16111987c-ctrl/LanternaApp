@@ -41,6 +41,7 @@ public class ImportacaoSmbActivity extends Activity {
     private Button importarVendas;
     private Button limparBase;
     private Button limiteEstoque;
+    private Button corrigirEstoqueAtual;
 
     private int dp(int v){ return TechCellUi.dp(this,v); }
 
@@ -140,11 +141,20 @@ public class ImportacaoSmbActivity extends Activity {
         filtroTexto.setPadding(0,dp(5),0,dp(8));
         filtroEstoque.addView(filtroTexto);
 
-        limiteEstoque=action("Limite automático: 1.000 unidades");
+        limiteEstoque=action("Limite automático: 200 unidades");
         TechCellUi.styleSecondary(this,limiteEstoque);
         limiteEstoque.setOnClickListener(v->alterarLimiteEstoque());
         filtroEstoque.addView(limiteEstoque,new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
+
+        corrigirEstoqueAtual=action("🛠  Corrigir estoque atual acima do limite");
+        TechCellUi.stylePrimary(this,corrigirEstoqueAtual,TechCellUi.ORANGE);
+        corrigirEstoqueAtual.setOnClickListener(v->confirmarCorrecaoEstoqueAtual());
+        LinearLayout.LayoutParams corrLp=new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,dp(50));
+        corrLp.setMargins(0,dp(8),0,0);
+        filtroEstoque.addView(corrigirEstoqueAtual,corrLp);
+
         root.addView(filtroEstoque);
 
         importarCadastros=action("✅  Importar cadastros e estoque");
@@ -542,6 +552,141 @@ public class ImportacaoSmbActivity extends Activity {
                         (master?"  •  alterar":"  •  somente Master"));
         limiteEstoque.setEnabled(master);
         limiteEstoque.setAlpha(master?1f:0.65f);
+        if(corrigirEstoqueAtual!=null){
+            corrigirEstoqueAtual.setEnabled(master);
+            corrigirEstoqueAtual.setAlpha(master?1f:0.65f);
+        }
+    }
+
+
+    private void confirmarCorrecaoEstoqueAtual(){
+        GestaoDbHelper db=new GestaoDbHelper(this);
+        try{
+            GestaoDbHelper.SyncContext ctx=db.getSyncContext();
+            if(!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)){
+                Toast.makeText(this,
+                        "Somente o aparelho Master pode corrigir o estoque atual.",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            double limite=db.getLimiteEstoqueImportacaoSmb();
+            int quantidade=db.countProdutosEstoqueAcima(limite);
+            double soma=db.somaQuantidadeEstoqueAcima(limite);
+            java.util.List<GestaoDbHelper.Produto> maiores=
+                    db.listProdutosEstoqueAcima(limite,12);
+
+            if(quantidade<=0){
+                new AlertDialog.Builder(this)
+                        .setTitle("Estoque dentro do limite")
+                        .setMessage("Nenhum produto está acima de "+formatarQtd(limite)+" unidades.")
+                        .setPositiveButton("OK",null)
+                        .show();
+                return;
+            }
+
+            StringBuilder msg=new StringBuilder();
+            msg.append("Foram encontrados ")
+                    .append(String.format(new Locale("pt","BR"),"%,d",quantidade))
+                    .append(" produto(s) acima de ")
+                    .append(formatarQtd(limite))
+                    .append(" unidades.\n\n");
+            msg.append("Soma das quantidades suspeitas: ")
+                    .append(formatarQtd(soma)).append("\n\n");
+            msg.append("Maiores saldos encontrados:\n");
+            for(GestaoDbHelper.Produto p:maiores){
+                msg.append("• ").append(p.nome)
+                        .append(" — ").append(formatarQtd(p.estoque))
+                        .append("\n");
+            }
+            if(quantidade>maiores.size())
+                msg.append("• … e mais ")
+                        .append(quantidade-maiores.size())
+                        .append(" produto(s).\n");
+
+            msg.append("\nAo confirmar, SOMENTE esses estoques acima do limite serão alterados para 0. ")
+                    .append("Produto, preço, custo, código e histórico de vendas serão preservados. ")
+                    .append("Antes da correção será criada uma cópia interna de segurança.");
+
+            final double limiteFinal=limite;
+            new AlertDialog.Builder(this)
+                    .setTitle("Corrigir estoque acima de "+formatarQtd(limite)+"?")
+                    .setMessage(msg.toString())
+                    .setPositiveButton("Corrigir estoque",(d,w)->executarCorrecaoEstoqueAtual(limiteFinal))
+                    .setNegativeButton("Cancelar",null)
+                    .show();
+        }finally{
+            db.close();
+        }
+    }
+
+    private void executarCorrecaoEstoqueAtual(double limite){
+        setOcupado(true,"Criando cópia de segurança e corrigindo estoques…");
+        new Thread(()->{
+            boolean lock=TechCellSyncCoordinator.iniciarManutencao();
+            if(!lock){
+                runOnUiThread(()->setOcupado(false,
+                        "Sincronização ocupada. Tente novamente em alguns segundos."));
+                return;
+            }
+
+            File copia=null;
+            try{
+                TechCellBackgroundSync.parar(getApplicationContext());
+
+                GestaoDbHelper checkpoint=new GestaoDbHelper(getApplicationContext());
+                try{
+                    SQLiteDatabase sql=checkpoint.getWritableDatabase();
+                    android.database.Cursor ck=sql.rawQuery("PRAGMA wal_checkpoint(FULL)",null);
+                    try{ while(ck.moveToNext()){} }finally{ ck.close(); }
+                }finally{
+                    checkpoint.close();
+                }
+
+                copia=criarCopiaSegurancaInterna();
+
+                GestaoDbHelper helper=new GestaoDbHelper(getApplicationContext());
+                int corrigidos;
+                try{
+                    corrigidos=helper.corrigirEstoquesAcimaDoLimite(limite);
+                }finally{
+                    helper.close();
+                }
+
+                final File copiaFinal=copia;
+                final int totalCorrigido=corrigidos;
+                runOnUiThread(()->{
+                    setOcupado(false,
+                            "Correção concluída: "+totalCorrigido+" produto(s) ajustado(s).");
+                    renderResumo();
+                    new AlertDialog.Builder(this)
+                            .setTitle("Estoque corrigido")
+                            .setMessage(
+                                    totalCorrigido+" produto(s) acima de "+formatarQtd(limite)+
+                                    " unidades tiveram o estoque alterado para 0.\n\n"+
+                                    "Produto, preços e histórico foram preservados.\n"+
+                                    "Cópia interna de segurança: "+
+                                    (copiaFinal==null?"não disponível":copiaFinal.getName()))
+                            .setPositiveButton("OK",null)
+                            .show();
+                });
+            }catch(Throwable e){
+                final File copiaFinal=copia;
+                runOnUiThread(()->{
+                    setOcupado(false,"Correção não concluída: "+mensagem(e));
+                    new AlertDialog.Builder(this)
+                            .setTitle("Correção não concluída")
+                            .setMessage(
+                                    mensagem(e)+
+                                    (copiaFinal==null?"":"\n\nA cópia interna de segurança foi criada antes da tentativa."))
+                            .setPositiveButton("OK",null)
+                            .show();
+                });
+            }finally{
+                TechCellSyncCoordinator.finalizarManutencao();
+                TechCellBackgroundSync.garantir(getApplicationContext());
+            }
+        },"TechCell-Estoque-Correcao").start();
     }
 
     private void alterarLimiteEstoque(){
@@ -977,7 +1122,32 @@ public class ImportacaoSmbActivity extends Activity {
         selecionar.setEnabled(!ocupado);
         limpar.setEnabled(!ocupado);
         if(limparBase!=null)limparBase.setEnabled(!ocupado);
-        if(limiteEstoque!=null && ocupado)limiteEstoque.setEnabled(false);
+        if(ocupado){
+            if(limiteEstoque!=null){
+                limiteEstoque.setEnabled(false);
+                limiteEstoque.setAlpha(0.55f);
+            }
+            if(corrigirEstoqueAtual!=null){
+                corrigirEstoqueAtual.setEnabled(false);
+                corrigirEstoqueAtual.setAlpha(0.55f);
+            }
+        }else if(limiteEstoque!=null || corrigirEstoqueAtual!=null){
+            GestaoDbHelper helperPermissao=new GestaoDbHelper(this);
+            try{
+                GestaoDbHelper.SyncContext ctx=helperPermissao.getSyncContext();
+                boolean master=ctx.configurado && "MASTER".equalsIgnoreCase(ctx.papelDispositivo);
+                if(limiteEstoque!=null){
+                    limiteEstoque.setEnabled(master);
+                    limiteEstoque.setAlpha(master?1f:0.65f);
+                }
+                if(corrigirEstoqueAtual!=null){
+                    corrigirEstoqueAtual.setEnabled(master);
+                    corrigirEstoqueAtual.setAlpha(master?1f:0.65f);
+                }
+            }finally{
+                helperPermissao.close();
+            }
+        }
         if(importarCadastros!=null)importarCadastros.setEnabled(!ocupado);
         if(importarVendas!=null)importarVendas.setEnabled(!ocupado);
         selecionar.setAlpha(ocupado?0.55f:1f);

@@ -23,7 +23,7 @@ import org.json.JSONObject;
 
 public class GestaoDbHelper extends SQLiteOpenHelper {
     private static final String DB_NAME = "gestao_techcell.db";
-    private static final int DB_VERSION = 23;
+    private static final int DB_VERSION = 24;
 
     public static class Produto {
         public long id;
@@ -580,6 +580,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         if (oldVersion < 23) {
             migrarParaV23(db);
         }
+
+        if (oldVersion < 24) {
+            migrarParaV24(db);
+        }
     }
 
     private void criarProdutos(SQLiteDatabase db) {
@@ -705,7 +709,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "serie_nfce TEXT NOT NULL DEFAULT '1'," +
                 "serie_nfe TEXT NOT NULL DEFAULT '1'," +
                 "producao INTEGER NOT NULL DEFAULT 0," +
-                "smb_estoque_limite REAL NOT NULL DEFAULT 1000," +
+                "smb_estoque_limite REAL NOT NULL DEFAULT 200," +
                 syncColumnsSqlSemVirgulaFinal() +
                 ")");
     }
@@ -3665,7 +3669,7 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 "sales_imported_at INTEGER NOT NULL DEFAULT 0," +
                 "blocked_stock_products INTEGER NOT NULL DEFAULT 0," +
                 "blocked_stock_qty REAL NOT NULL DEFAULT 0," +
-                "stock_limit_applied REAL NOT NULL DEFAULT 1000," +
+                "stock_limit_applied REAL NOT NULL DEFAULT 200," +
                 "created_at INTEGER NOT NULL," +
                 "updated_at INTEGER NOT NULL" +
                 ")");
@@ -3907,6 +3911,15 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         adicionarColunaSeAusente(db, "smb_import_sessions", "stock_limit_applied", "REAL NOT NULL DEFAULT 1000");
     }
 
+    private void migrarParaV24(SQLiteDatabase db) {
+        criarEmpresaConfig(db);
+        adicionarColunaSeAusente(db, "empresa_config", "smb_estoque_limite", "REAL NOT NULL DEFAULT 200");
+        db.execSQL(
+                "UPDATE empresa_config SET smb_estoque_limite=200 " +
+                        "WHERE id=1 AND ABS(COALESCE(smb_estoque_limite,1000)-1000)<0.000001");
+        criarImportacaoSmb(db);
+    }
+
     public double getLimiteEstoqueImportacaoSmb() {
         SQLiteDatabase db = getWritableDatabase();
         criarEmpresaConfig(db);
@@ -3915,9 +3928,9 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         try {
             if (c.moveToFirst()) {
                 double v = c.getDouble(0);
-                return v >= 1 ? v : 1000;
+                return v >= 1 ? v : 200;
             }
-            return 1000;
+            return 200;
         } finally {
             c.close();
         }
@@ -3943,6 +3956,92 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         int alteradas = db.update("empresa_config", v, "id=1", null);
         if (alteradas != 1) throw new IllegalStateException("Não foi possível salvar o limite.");
         marcarAlteracao(db, "empresa_config", 1);
+    }
+
+
+    public int countProdutosEstoqueAcima(double limite) {
+        double l = Math.max(0, limite);
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM produtos WHERE estoque>?",
+                new String[]{String.valueOf(l)});
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    public double somaQuantidadeEstoqueAcima(double limite) {
+        double l = Math.max(0, limite);
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT COALESCE(SUM(estoque),0) FROM produtos WHERE estoque>?",
+                new String[]{String.valueOf(l)});
+        try {
+            return c.moveToFirst() ? c.getDouble(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    public List<Produto> listProdutosEstoqueAcima(double limite, int maximo) {
+        List<Produto> out = new ArrayList<>();
+        double l = Math.max(0, limite);
+        int max = Math.max(1, Math.min(maximo, 100));
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT * FROM produtos WHERE estoque>? " +
+                        "ORDER BY estoque DESC,nome COLLATE NOCASE ASC LIMIT " + max,
+                new String[]{String.valueOf(l)});
+        try {
+            while (c.moveToNext()) out.add(fromCursor(c));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    public int corrigirEstoquesAcimaDoLimite(double limite) {
+        if (Double.isNaN(limite) || Double.isInfinite(limite) || limite < 0) {
+            throw new IllegalArgumentException("Limite de estoque inválido.");
+        }
+
+        SQLiteDatabase db = getWritableDatabase();
+        SyncContext ctx = lerSyncContext(db);
+        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            throw new IllegalStateException(
+                    "Somente o aparelho Master pode executar a correção de estoque.");
+        }
+
+        ArrayList<Long> ids = new ArrayList<>();
+        Cursor c = db.rawQuery(
+                "SELECT id FROM produtos WHERE estoque>? ORDER BY id",
+                new String[]{String.valueOf(limite)});
+        try {
+            while (c.moveToNext()) ids.add(c.getLong(0));
+        } finally {
+            c.close();
+        }
+        if (ids.isEmpty()) return 0;
+
+        long now = System.currentTimeMillis();
+        db.beginTransaction();
+        try {
+            for (Long id : ids) {
+                ContentValues v = new ContentValues();
+                v.put("estoque", 0);
+                v.put("updated_at", now);
+                int alterados = db.update(
+                        "produtos", v, "id=? AND estoque>?",
+                        new String[]{String.valueOf(id), String.valueOf(limite)});
+                if (alterados > 0) {
+                    marcarAlteracao(db, "produtos", id);
+                    registrarMudancaProduto(db, id, "UPSERT");
+                }
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+        return ids.size();
     }
 
     public SmbImportResult importarCadastrosSmb() {
