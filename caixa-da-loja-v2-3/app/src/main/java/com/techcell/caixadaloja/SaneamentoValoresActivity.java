@@ -102,12 +102,12 @@ public class SaneamentoValoresActivity extends Activity {
         tela.addView(voltar,new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,dp(44)));
 
-        TextView titulo=txt("Revisão do custo do estoque",25,true);
+        TextView titulo=txt("Revisão de estoque suspeito",25,true);
         titulo.setPadding(0,dp(14),0,dp(2));
         tela.addView(titulo);
 
         TextView sub=txt(
-                "Saneamento temporário da base antiga • quantidade × custo unitário",
+                "Saneamento temporário da base antiga • quantidade, custo e venda",
                 12,false);
         sub.setTextColor(TechCellUi.MUTED);
         tela.addView(sub);
@@ -121,7 +121,7 @@ public class SaneamentoValoresActivity extends Activity {
         aviso.addView(at);
 
         TextView av=txt(
-                "O relatório mostra produtos cujo CUSTO TOTAL DO ESTOQUE (quantidade × custo unitário) passa do teto. "+
+                "O relatório mostra produtos quando ocorrer pelo menos um destes sinais: quantidade ≥ 90, CUSTO TOTAL acima do teto ou VENDA POTENCIAL acima do teto. "+
                 "Nada é corrigido sozinho. Marque somente os produtos cujo saldo de estoque antigo estiver errado.",
                 12,false);
         av.setTextColor(Color.parseColor("#475467"));
@@ -208,11 +208,23 @@ public class SaneamentoValoresActivity extends Activity {
         double custoTotal=p.estoque*p.custo;
         double vendaPotencial=p.estoque*p.precoVenda;
 
+        StringBuilder motivos=new StringBuilder();
+        if(p.estoque>=90)motivos.append("Qtd ≥ 90");
+        if(custoTotal>limite){
+            if(motivos.length()>0)motivos.append(" • ");
+            motivos.append("Custo total alto");
+        }
+        if(vendaPotencial>limite){
+            if(motivos.length()>0)motivos.append(" • ");
+            motivos.append("Venda potencial alta");
+        }
+
         TextView valores=txt(
                 "Qtd. "+formatarQtd(p.estoque)+" "+(p.unidade==null?"":p.unidade)+
                         "   •   Custo unit. "+moeda.format(p.custo)+
                         "\nCUSTO TOTAL "+moeda.format(custoTotal)+
-                        "   •   Venda potencial "+moeda.format(vendaPotencial),
+                        "   •   Venda potencial "+moeda.format(vendaPotencial)+
+                        "\n⚠ "+motivos,
                 11,false);
         valores.setTextColor(TechCellUi.MUTED);
         valores.setPadding(0,dp(4),0,dp(6));
@@ -265,8 +277,8 @@ public class SaneamentoValoresActivity extends Activity {
         int produtos=selecoes.size();
 
         resumo.setText(
-                total+" produto(s) com CUSTO TOTAL acima de "+moeda.format(limite)+
-                        "  •  exibidos "+Math.min(carregados,total)+"/"+total+
+                total+" produto(s) suspeito(s)  •  exibidos "+Math.min(carregados,total)+"/"+total+
+                        "\nCritérios: Qtd ≥ 90 ou custo/venda total > "+moeda.format(limite)+
                         "\nSelecionados para zerar estoque: "+produtos);
 
         boolean pode=master && !ocupado && produtos>0;
@@ -297,10 +309,10 @@ public class SaneamentoValoresActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
         new AlertDialog.Builder(this)
-                .setTitle("Alterar teto do custo total")
+                .setTitle("Alterar teto de custo/venda total")
                 .setMessage(
-                        "O teto é aplicado sobre quantidade × custo unitário. "+
-                        "Nada será zerado sem você marcar o produto.")
+                        "O teto é aplicado sobre custo total e venda potencial. "+
+                        "Produtos com quantidade ≥ 90 também aparecem para revisão. Nada será zerado sem você marcar o produto.")
                 .setView(box)
                 .setPositiveButton("Aplicar teto",(d,w)->{
                     try{
@@ -323,7 +335,7 @@ public class SaneamentoValoresActivity extends Activity {
                 .setTitle("Zerar estoque dos selecionados?")
                 .setMessage(
                         "Você selecionou "+selecoes.size()+" produto(s).\n\n"+
-                                "Somente o ESTOQUE desses produtos será alterado para 0, desde que o custo total ainda esteja acima de "+
+                                "Somente o ESTOQUE desses produtos será alterado para 0, desde que ainda atendam a algum critério de suspeita: quantidade ≥ 90, custo total ou venda potencial acima de "+
                                 moeda.format(limite)+".\n\n"+
                                 "O produto, custo unitário, preços e histórico de vendas serão preservados. "+
                                 "Antes da alteração será criada uma cópia interna de segurança.")

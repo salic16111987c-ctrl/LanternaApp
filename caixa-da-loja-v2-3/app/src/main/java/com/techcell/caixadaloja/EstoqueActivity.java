@@ -164,7 +164,7 @@ public class EstoqueActivity extends Activity {
         root.addView(produtos, bp);
 
         Button revisarSuspeitos = new Button(this);
-        revisarSuspeitos.setText("⚠  Revisar custo total acima de R$ 1.200");
+        revisarSuspeitos.setText("⚠  Revisar estoque suspeito");
         revisarSuspeitos.setTextSize(14);
         TechCellUi.stylePrimary(this, revisarSuspeitos, TechCellUi.ORANGE);
         revisarSuspeitos.setOnClickListener(v ->

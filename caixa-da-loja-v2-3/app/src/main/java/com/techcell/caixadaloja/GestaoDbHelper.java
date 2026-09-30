@@ -4024,8 +4024,10 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         double l = Math.max(0, limite);
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT COUNT(*) FROM produtos " +
-                        "WHERE (estoque * custo)>CAST(? AS REAL)",
-                new String[]{String.valueOf(l)});
+                        "WHERE estoque>=90 OR " +
+                        "(estoque * custo)>CAST(? AS REAL) OR " +
+                        "(estoque * preco_venda)>CAST(? AS REAL)",
+                new String[]{String.valueOf(l), String.valueOf(l)});
         try {
             return c.moveToFirst() ? c.getInt(0) : 0;
         } finally {
@@ -4041,10 +4043,12 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
         int off = Math.max(0, offset);
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT * FROM produtos " +
-                        "WHERE (estoque * custo)>CAST(? AS REAL) " +
-                        "ORDER BY (estoque * custo) DESC," +
+                        "WHERE estoque>=90 OR " +
+                        "(estoque * custo)>CAST(? AS REAL) OR " +
+                        "(estoque * preco_venda)>CAST(? AS REAL) " +
+                        "ORDER BY MAX(estoque, (estoque * custo)/10.0, (estoque * preco_venda)/10.0) DESC," +
                         "nome COLLATE NOCASE ASC LIMIT " + max + " OFFSET " + off,
-                new String[]{String.valueOf(l)});
+                new String[]{String.valueOf(l), String.valueOf(l)});
         try {
             while (c.moveToNext()) out.add(fromCursor(c));
         } finally {
@@ -4076,18 +4080,23 @@ public class GestaoDbHelper extends SQLiteOpenHelper {
                 if (id <= 0) continue;
 
                 Cursor c = db.rawQuery(
-                        "SELECT estoque,custo FROM produtos WHERE id=?",
+                        "SELECT estoque,custo,preco_venda FROM produtos WHERE id=?",
                         new String[]{String.valueOf(id)});
-                double estoque, custo;
+                double estoque, custo, venda;
                 try {
                     if (!c.moveToFirst()) continue;
                     estoque = c.getDouble(0);
                     custo = c.getDouble(1);
+                    venda = c.getDouble(2);
                 } finally {
                     c.close();
                 }
 
-                if ((estoque * custo) <= limite) continue;
+                boolean aindaSuspeito =
+                        estoque >= 90 ||
+                        (estoque * custo) > limite ||
+                        (estoque * venda) > limite;
+                if (!aindaSuspeito) continue;
 
                 ContentValues v = new ContentValues();
                 v.put("estoque", 0);
