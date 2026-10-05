@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(empresaId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/techcell_empresas/$(empresaId)).data.owner_uid == request.auth.uid;
+    }
+
+    match /techcell_empresas/{empresaId} {
+      allow create: if signedIn()
+                    && request.resource.data.owner_uid == request.auth.uid;
+      allow read: if isOwner(empresaId);
+      allow update: if isOwner(empresaId)
+                    && request.resource.data.owner_uid == request.auth.uid;
+      allow delete: if isOwner(empresaId);
+
+      // O proprietário administra as contas da própria empresa. Cada usuário
+      // pode consultar somente o seu próprio perfil para validar vínculo/estado.
+      match /usuarios/{userId} {
+        allow read: if isOwner(empresaId)
+                    || (signedIn()
+                        && request.auth.uid == userId
+                        && resource.data.ativo == true);
+        allow create, update, delete: if isOwner(empresaId);
+      }
+
+      // Nesta fase a escrita operacional da nuvem continua exclusiva do Master
+      // proprietário. Perfis Gerente/Caixa receberão permissões específicas
+      // quando a sincronização operacional multiusuário for habilitada.
+      match /{document=**} {
+        allow read, write: if isOwner(empresaId);
+      }
+    }
+  }
+}
