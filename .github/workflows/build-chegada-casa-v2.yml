@@ -67,7 +67,9 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Aplicar áudio prioritário de chegada
-        run: python3 chegada-casa/tools/apply_priority_audio_v27.py
+        run: |
+          python3 chegada-casa/tools/apply_priority_audio_v27.py
+          sed -i 's/RuntimeException | SecurityException/RuntimeException/g' chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/SpeechEngine.java
 
       - name: Validar invariantes de segurança, teste, chegada e áudio
         run: python3 chegada-casa/tools/check_arrival_invariants.py
