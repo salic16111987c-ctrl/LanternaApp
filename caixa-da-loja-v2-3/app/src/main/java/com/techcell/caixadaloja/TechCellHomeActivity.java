@@ -32,6 +32,8 @@ public class TechCellHomeActivity extends Activity {
         TextView sub=text("Operação da loja em um só lugar",14,false);sub.setTextColor(TechCellUi.MUTED);sub.setGravity(Gravity.CENTER);sub.setPadding(0,dp(4),0,dp(12));root.addView(sub);
         LinearLayout gestao=modulo("🏪","Gestão Tech Cell","PDV, produtos, estoque, clientes, financeiro e relatórios.",true);
         Button abrirGestao=(Button)gestao.getTag();abrirGestao.setOnClickListener(v->startActivity(new Intent(this,GestaoActivity.class)));gestao.setOnClickListener(v->abrirGestao.performClick());root.addView(gestao);
+        LinearLayout nuvem=modulo("☁","Nuvem Tech Cell","Configurar empresa, Master e carga inicial no Firebase.",false);
+        Button abrirNuvem=(Button)nuvem.getTag();abrirNuvem.setOnClickListener(v->startActivity(new Intent(this,TechCellCloudActivity.class)));nuvem.setOnClickListener(v->abrirNuvem.performClick());root.addView(nuvem);
         LinearLayout caixa=modulo("💵","Caixa da Loja","Caixa atual preservado para lançamentos e fechamento.",false);
         Button abrirCaixa=(Button)caixa.getTag();abrirCaixa.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));caixa.setOnClickListener(v->abrirCaixa.performClick());root.addView(caixa);
         TextView safe=text("Ambiente de teste da Gestão • o Caixa da Loja continua separado e preservado.",12,true);

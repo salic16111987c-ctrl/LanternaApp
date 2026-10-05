@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Estrutura nova da Gestão Tech Cell. Estas regras não alteram as
+    // permissões das coleções legadas do projeto Firebase.
+    match /techcell_empresas/{empresaId} {
+      allow create: if request.auth != null
+                    && request.resource.data.owner_uid == request.auth.uid;
+      allow read: if request.auth != null
+                  && resource.data.owner_uid == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.owner_uid == request.auth.uid
+                    && request.resource.data.owner_uid == request.auth.uid;
+      allow delete: if request.auth != null
+                    && resource.data.owner_uid == request.auth.uid;
+
+      match /{document=**} {
+        allow read, write: if request.auth != null
+          && get(/databases/$(database)/documents/techcell_empresas/$(empresaId)).data.owner_uid == request.auth.uid;
+      }
+    }
+  }
+}
