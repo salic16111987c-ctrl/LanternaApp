@@ -86,12 +86,15 @@ check('Voice needs an explicit microphone tap, exact yes, and fails closed',
       'startActivityForResult(recognize, VOICE_REQUEST)' in voice)
 check('Voice activity is internal',
       'android:name=".GateVoiceActivity" android:exported="false"' in manifest)
-check('Volume changed only through explicit user action',
-      'volumeButton.setOnClickListener' in diagnostic and
-      'audio.adjustStreamVolume(AudioManager.STREAM_MUSIC' in diagnostic and
-      'SpeechEngine.mediaVolumePercent(this)' in diagnostic and
-      'TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f' in speech and
-      'AudioAttributes.USAGE_MEDIA' in speech)
+check('Arrival voice gets transient priority, ducks other audio, boosts then restores volume',
+      all(text in speech for text in ['USAGE_ASSISTANCE_NAVIGATION_GUIDANCE',
+                                      'AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK',
+                                      'TARGET_MEDIA_PERCENT = 85',
+                                      'setStreamVolume(AudioManager.STREAM_MUSIC',
+                                      'previousMediaVolume', 'restoreMediaVolume()',
+                                      'abandonAudioFocusRequest', 'SAFETY_RELEASE_MS'])
+      and 'TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f' in speech
+      and 'android.permission.MODIFY_AUDIO_SETTINGS' in manifest)
 check('2km motion-based adaptive GPS independently of time schedule',
       all(x in monitor for x in ['FAR_INTERVAL_MS = 60000L', 'NEAR_INTERVAL_MS = 20000L',
                                 'HOME_INTERVAL_MS = 30000L', 'INTERVAL_MS = 5000L',
@@ -156,7 +159,7 @@ check('Manifest contains required permissions and services',
                                        'androidx.car.app.category.IOT']))
 check('APK version and package stay update-compatible',
       "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and
-      "versionName '2.6-antifalsas-chegadas'" in gradle and 'versionCode 11' in gradle and
+      "versionName '2.7-audio-prioritario'" in gradle and 'versionCode 12' in gradle and
       "implementation 'androidx.core:core:1.15.0'" in gradle)
 check('Fence exit alone cannot rearm arrival',
       'ArrivalController.handleExit(context)' not in receiver
