@@ -66,16 +66,10 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Preservar modo seguro do teste GPS anterior
-        run: python3 chegada-casa/tools/apply_fake_gps_gate_test.py
+      - name: Aplicar áudio prioritário de chegada
+        run: python3 chegada-casa/tools/apply_priority_audio_v27.py
 
-      - name: Corrigir falsas saídas, chegadas e confirmações antigas
-        run: python3 chegada-casa/tools/apply_false_arrival_fix.py
-
-      - name: Atualizar expectativas dos testes para saídas confirmadas
-        run: python3 chegada-casa/tools/fix_v26_invariant_expectations.py
-
-      - name: Validar invariantes de segurança, teste e chegada
+      - name: Validar invariantes de segurança, teste, chegada e áudio
         run: python3 chegada-casa/tools/check_arrival_invariants.py
 
       - name: Compilar APK
@@ -91,20 +85,17 @@ jobs:
           name: Chegada-Casa-Rapida-APK
           path: ChegadaCasa-Rapida.apk
 
-      - name: Persistir somente fontes verificadas (nunca arquivos de build)
+      - name: Persistir fontes verificadas do áudio prioritário
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalMonitorService.java \
-                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalController.java \
-                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GeofenceReceiver.java \
-                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GateVoiceActivity.java \
-                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GateCarNotification.java \
+          git add chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/SpeechEngine.java \
                   chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalDiagnosticActivity.java \
-                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/GateTestMode.java \
-                  chegada-casa/app/build.gradle chegada-casa/tools/check_arrival_invariants.py
+                  chegada-casa/app/src/main/AndroidManifest.xml \
+                  chegada-casa/app/build.gradle \
+                  chegada-casa/tools/check_arrival_invariants.py
           if ! git diff --cached --quiet; then
-            git commit -m "Persist verified v2.6 sustained departure and gate prompt expiry"
+            git commit -m "Persist verified v2.7 priority arrival audio"
             git restore --worktree chegada-casa/app/build
             git pull --rebase origin main
             git push origin HEAD:main
@@ -115,4 +106,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="chegada-casa-rapida-${{ github.run_number }}"
-          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.6 — ANTI-FALSAS CHEGADAS" --notes "v2.6: geofence de saída não rearma sem monitor confirmar afastamento por pelo menos 90 s e 3 posições; histerese conforme raio, 2 leituras de retorno, notificações do portão expiram em 5 min. Mantém GPS adaptativo, teste fake GPS por autorização única e confirmação física obrigatória. NÃO testado em veículo nem em portão real; testar supervisionado." || true
+          gh release create "$TAG" ChegadaCasa-Rapida.apk --title "Chegada Casa Rápido 2.7 — ÁUDIO PRIORITÁRIO" --notes "v2.7: a voz de chegada passa a usar prioridade temporária de áudio, reduz outros áudios enquanto fala, reforça o volume de mídia até 85% quando necessário e restaura o volume anterior ao terminar. Se o usuário mudar o volume durante o aviso, a escolha manual é respeitada. Mantém as correções de falsas chegadas e a confirmação obrigatória do portão. Testar supervisionado antes do uso no veículo/portão." || true
