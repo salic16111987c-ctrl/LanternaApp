@@ -52,7 +52,11 @@
             android:launchMode="singleTop" android:screenOrientation="portrait" />
         <activity android:name=".PremiumArrivalActivity" android:exported="false"
             android:launchMode="singleTop" android:screenOrientation="portrait" />
-        <activity android:name=".CompactHomeActivity" android:exported="true"
+        <activity android:name=".CompactHomeActivity" android:exported="false"
+            android:launchMode="singleTop" android:screenOrientation="portrait" />
+        <activity android:name=".CommercialSetupActivity" android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity android:name=".CommercialHomeActivity" android:exported="true"
             android:launchMode="singleTop" android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
