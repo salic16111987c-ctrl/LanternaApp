@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+def releaseKeystorePath = System.getenv('CHEGADA_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('CHEGADA_STORE_PASSWORD')
+def releaseKeyAlias = System.getenv('CHEGADA_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('CHEGADA_KEY_PASSWORD')
+
 android {
     namespace 'com.cilassouza.chegadacasa'
     compileSdk 35
@@ -10,11 +15,10 @@ android {
         applicationId 'com.cilassouza.chegadacasa.fast'
         minSdk 26
         targetSdk 35
-        versionCode 15
-        versionName '2.10-painel-compacto'
+        versionCode 16
+        versionName '3.0-rc1-comercial'
     }
 
-    // Private key is restored through Actions; never commit it to this repository.
     signingConfigs {
         debug {
             storeFile file(System.getenv('HOME') + '/.android/debug.keystore')
@@ -22,11 +26,25 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        release {
+            if (releaseKeystorePath) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled false
+            if (releaseKeystorePath) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
