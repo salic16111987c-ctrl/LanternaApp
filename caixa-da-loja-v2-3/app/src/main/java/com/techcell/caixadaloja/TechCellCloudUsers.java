@@ -28,7 +28,7 @@ import java.util.UUID;
 /** Gerenciamento das contas da empresa feito pelo Master proprietário. */
 public final class TechCellCloudUsers {
     private static final String PROJECT_ID = "caixa-da-loja-5dd34";
-    private static final String API_KEY = "AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbst6iY2k";
+    private static final String API_KEY = "AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbSt6iY2k";
     private static final String APPLICATION_ID = "1:243340178302:web:09e0bc0265edc2d2cab92f";
     private static final String STORAGE_BUCKET = "caixa-da-loja-5dd34.firebasestorage.app";
     private static final String ROOT = "techcell_empresas";
@@ -42,8 +42,8 @@ public final class TechCellCloudUsers {
         public boolean proprietario;
 
         public String perfilExibicao() {
-            if (proprietario) return "PROPRIETÁRIO";
-            if ("ADMINISTRADOR".equalsIgnoreCase(perfil)) return "Administrador";
+            if (proprietario) return "Master proprietário";
+            if ("MASTER".equalsIgnoreCase(perfil) || "ADMINISTRADOR".equalsIgnoreCase(perfil)) return "Master";
             if ("GERENTE".equalsIgnoreCase(perfil)) return "Gerente";
             return "Caixa";
         }
@@ -129,17 +129,33 @@ public final class TechCellCloudUsers {
         }
     }
 
+    public static void alterarPerfil(Context context, Usuario alvo, String perfil) throws Exception {
+        if (alvo == null || alvo.uid == null || alvo.uid.trim().isEmpty()) throw new IllegalArgumentException("Usuário inválido.");
+        Sessao s = sessaoOwner(context.getApplicationContext());
+        if (alvo.uid.equals(s.user.getUid()) || alvo.proprietario) {
+            throw new IllegalStateException("O nível da conta Master proprietária não pode ser alterado.");
+        }
+        String p = normalizarPerfil(perfil);
+        Map<String,Object> v = new HashMap<>();
+        v.put("perfil", p);
+        v.put("updated_at", FieldValue.serverTimestamp());
+        v.put("updated_by_uid", s.user.getUid());
+        Tasks.await(s.empresa.collection("usuarios").document(alvo.uid).set(v, SetOptions.merge()));
+        alvo.perfil = p;
+    }
+
     public static void alterarAtivo(Context context, Usuario alvo, boolean ativo) throws Exception {
         if (alvo == null || alvo.uid == null || alvo.uid.trim().isEmpty()) throw new IllegalArgumentException("Usuário inválido.");
         Sessao s = sessaoOwner(context.getApplicationContext());
         if (alvo.uid.equals(s.user.getUid()) || alvo.proprietario) {
-            throw new IllegalStateException("A conta proprietária não pode ser bloqueada pelo próprio Master.");
+            throw new IllegalStateException("A conta Master proprietária não pode ser bloqueada pelo próprio Master.");
         }
         Map<String,Object> v = new HashMap<>();
         v.put("ativo", ativo);
         v.put("updated_at", FieldValue.serverTimestamp());
         v.put("updated_by_uid", s.user.getUid());
         Tasks.await(s.empresa.collection("usuarios").document(alvo.uid).set(v, SetOptions.merge()));
+        alvo.ativo = ativo;
     }
 
     public static void enviarRedefinicaoSenha(Context context, String email) throws Exception {
@@ -161,13 +177,11 @@ public final class TechCellCloudUsers {
         v.put("empresa_uuid", s.ctx.empresaUuid);
         v.put("filial_uuid", s.ctx.filialUuid);
         v.put("email", s.user.getEmail() == null ? "" : s.user.getEmail());
-        v.put("perfil", "ADMINISTRADOR");
+        v.put("perfil", "MASTER");
         v.put("ativo", true);
         v.put("proprietario", true);
         if (!atual.exists()) {
-            String nome = s.ctx.nomeDispositivo == null || s.ctx.nomeDispositivo.trim().isEmpty()
-                    ? "Administrador" : "Administrador da loja";
-            v.put("nome", nome);
+            v.put("nome", "Master");
             v.put("created_at", FieldValue.serverTimestamp());
         }
         v.put("updated_at", FieldValue.serverTimestamp());
@@ -185,13 +199,14 @@ public final class TechCellCloudUsers {
         u.ativo = !(ativo instanceof Boolean) || (Boolean) ativo;
         Object prop = d.get("proprietario");
         u.proprietario = (prop instanceof Boolean && (Boolean) prop) || u.uid.equals(ownerUid);
+        if (u.proprietario) u.perfil = "MASTER";
         if (u.nome.isEmpty()) u.nome = u.email.isEmpty() ? "Usuário" : u.email;
         return u;
     }
 
     private static String normalizarPerfil(String perfil) {
         String p = perfil == null ? "" : perfil.trim().toUpperCase(Locale.ROOT);
-        if ("ADMINISTRADOR".equals(p)) return "ADMINISTRADOR";
+        if ("MASTER".equals(p) || "ADMINISTRADOR".equals(p)) return "MASTER";
         if ("GERENTE".equals(p)) return "GERENTE";
         return "CAIXA";
     }
@@ -210,10 +225,10 @@ public final class TechCellCloudUsers {
         try { ctx = db.getSyncContext(); }
         finally { db.close(); }
         if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
-            throw new IllegalStateException("Usuários da nuvem só podem ser administrados pelo Master.");
+            throw new IllegalStateException("Usuários da nuvem só podem ser administrados pelo aparelho Master.");
         }
         FirebaseUser user = TechCellCloudSync.auth(context).getCurrentUser();
-        if (user == null) throw new IllegalStateException("Entre na conta Administrador da nuvem.");
+        if (user == null) throw new IllegalStateException("Entre na conta Master da nuvem.");
 
         DocumentReference empresa = TechCellCloudSync.firestore(context)
                 .collection(ROOT).document(ctx.empresaUuid);
@@ -221,7 +236,7 @@ public final class TechCellCloudUsers {
         if (!d.exists()) throw new IllegalStateException("Primeiro registre esta empresa na Nuvem Tech Cell.");
         String owner = d.getString("owner_uid");
         if (owner == null || !owner.equals(user.getUid())) {
-            throw new IllegalStateException("Somente a conta proprietária desta empresa pode administrar usuários.");
+            throw new IllegalStateException("Somente a conta Master proprietária desta empresa pode administrar usuários.");
         }
 
         Sessao s = new Sessao();
@@ -243,14 +258,17 @@ public final class TechCellCloudUsers {
     public static String mensagem(Throwable e) {
         String base = TechCellCloudSync.mensagemCloud(e);
         String lower = base == null ? "" : base.toLowerCase(Locale.ROOT);
-        if (lower.contains("email address is already in use") || lower.contains("email-already-in-use")) {
-            return "Este e-mail já possui uma conta cadastrada.";
+        if (lower.contains("email address is already in use") || lower.contains("email-already-in-use") || lower.contains("already in use")) {
+            return "Este e-mail já possui uma conta cadastrada. Use Entrar na conta existente.";
         }
         if (lower.contains("password") && lower.contains("6")) {
             return "A senha inicial deve ter pelo menos 6 caracteres.";
         }
         if (lower.contains("badly formatted") || lower.contains("invalid-email")) {
             return "O e-mail informado não é válido.";
+        }
+        if (lower.contains("api key not valid")) {
+            return "A configuração do Firebase deste APK está inválida. Instale a versão mais recente do Tech Cell.";
         }
         return base == null || base.trim().isEmpty() ? "Erro desconhecido." : base;
     }

@@ -11,6 +11,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 public class TechCellHomeActivity extends Activity {
+    private boolean abrindoLogin;
+    private static final int REQ_LOGIN=701;
     private int dp(int v){return TechCellUi.dp(this,v);}
     private TextView text(String v,int s,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t;}
     private LinearLayout modulo(String icon,String titulo,String detalhe,boolean destaque){
@@ -23,26 +25,54 @@ public class TechCellHomeActivity extends Activity {
         Button abrir=new Button(this);abrir.setText("Abrir  →");abrir.setTextSize(14);if(destaque)TechCellUi.stylePrimary(this,abrir);else TechCellUi.styleSecondary(this,abrir);
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));bp.setMargins(0,dp(12),0,0);card.addView(abrir,bp);card.setTag(abrir);return card;
     }
+
     @Override protected void onCreate(Bundle savedInstanceState){
-        super.onCreate(savedInstanceState);TechCellUi.applyWindowChrome(this);
-        TechCellBackgroundSync.garantir(this);
+        super.onCreate(savedInstanceState);TechCellUi.applyWindowChrome(this);TechCellBackgroundSync.garantir(this);abrirOuRenderizar();
+    }
+    @Override protected void onResume(){super.onResume();TechCellBackgroundSync.garantir(this);abrirOuRenderizar();}
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data){super.onActivityResult(requestCode,resultCode,data);if(requestCode==REQ_LOGIN){abrindoLogin=false;abrirOuRenderizar();}}
+
+    private void abrirOuRenderizar(){
+        if(TechCellAccess.controleAtivo(this)&&!TechCellAccess.temSessaoValida(this)){
+            if(!abrindoLogin){abrindoLogin=true;startActivityForResult(new Intent(this,TechCellUserLoginActivity.class),REQ_LOGIN);}return;
+        }
+        abrindoLogin=false;render();
+    }
+
+    private void render(){
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(28),dp(18),dp(30));scroll.addView(root);
         TextView brand=text("TECH CELL ACS",29,true);brand.setGravity(Gravity.CENTER);root.addView(brand);
         TextView sub=text("Operação da loja em um só lugar",14,false);sub.setTextColor(TechCellUi.MUTED);sub.setGravity(Gravity.CENTER);sub.setPadding(0,dp(4),0,dp(12));root.addView(sub);
-        LinearLayout gestao=modulo("🏪","Gestão Tech Cell","PDV, produtos, estoque, clientes, financeiro e relatórios.",true);
+
+        boolean cloud=TechCellAccess.controleAtivo(this);
+        TechCellAccess.Sessao sessao=TechCellAccess.sessao(this);
+        if(cloud&&sessao.valida){
+            LinearLayout user=TechCellUi.card(this);user.setLayoutParams(TechCellUi.fullCardParams(this,8));
+            TextView ut=text("👤  "+sessao.nome,14,true);user.addView(ut);
+            TextView ud=text(sessao.email+"  •  "+TechCellAccess.perfilExibicao(sessao.perfil),11,false);ud.setTextColor(TechCellUi.MUTED);ud.setPadding(0,dp(3),0,dp(7));user.addView(ud);
+            Button trocar=new Button(this);trocar.setText("Trocar usuário");trocar.setTextSize(13);TechCellUi.styleSecondary(this,trocar);trocar.setOnClickListener(v->{TechCellAccess.encerrar(this);abrindoLogin=false;abrirOuRenderizar();});
+            user.addView(trocar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(42)));root.addView(user);
+        }
+
+        LinearLayout gestao=modulo("🏪","Gestão Tech Cell","PDV e módulos liberados para o nível do usuário.",true);
         Button abrirGestao=(Button)gestao.getTag();abrirGestao.setOnClickListener(v->startActivity(new Intent(this,GestaoActivity.class)));gestao.setOnClickListener(v->abrirGestao.performClick());root.addView(gestao);
-        LinearLayout nuvem=modulo("☁","Nuvem Tech Cell","Configurar empresa, Master e carga inicial no Firebase.",false);
-        Button abrirNuvem=(Button)nuvem.getTag();abrirNuvem.setOnClickListener(v->startActivity(new Intent(this,TechCellCloudActivity.class)));nuvem.setOnClickListener(v->abrirNuvem.performClick());root.addView(nuvem);
+
+        if(!cloud||TechCellAccess.podeAdministrar(this)){
+            LinearLayout nuvem=modulo("☁","Nuvem Tech Cell","Empresa, sincronização e configuração da nuvem.",false);
+            Button abrirNuvem=(Button)nuvem.getTag();abrirNuvem.setOnClickListener(v->startActivity(new Intent(this,TechCellCloudActivity.class)));nuvem.setOnClickListener(v->abrirNuvem.performClick());root.addView(nuvem);
+        }
+
+        if(cloud&&TechCellAccess.podeAdministrar(this)){
+            LinearLayout usuarios=modulo("👥","Usuários / Acessos","Cadastrar, bloquear e mudar Master, Gerente ou Caixa.",false);
+            Button abrir=(Button)usuarios.getTag();abrir.setOnClickListener(v->startActivity(new Intent(this,TechCellUsuariosActivity.class)));usuarios.setOnClickListener(v->abrir.performClick());root.addView(usuarios);
+        }
+
         LinearLayout caixa=modulo("💵","Caixa da Loja","Caixa atual preservado para lançamentos e fechamento.",false);
         Button abrirCaixa=(Button)caixa.getTag();abrirCaixa.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));caixa.setOnClickListener(v->abrirCaixa.performClick());root.addView(caixa);
-        TextView safe=text("Ambiente de teste da Gestão • o Caixa da Loja continua separado e preservado.",12,true);
+
+        TextView safe=text(cloud?"Controle de acesso ativo • operação local continua disponível sem internet":"Ambiente de teste • ative a nuvem para ligar o controle de usuários",12,true);
         safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(11),dp(12),dp(11));
         root.addView(safe,TechCellUi.fullCardParams(this,16));setContentView(scroll);
-    }
-
-    @Override protected void onResume(){
-        super.onResume();
-        TechCellBackgroundSync.garantir(this);
     }
 }

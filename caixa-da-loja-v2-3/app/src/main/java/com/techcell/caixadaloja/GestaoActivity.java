@@ -10,7 +10,6 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 import java.text.NumberFormat;
 import java.util.Locale;
 
@@ -35,92 +34,91 @@ public class GestaoActivity extends Activity {
         LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(0,dp(56),1);ap.setMargins(0,0,dp(4),0);row.addView(a,ap);
         LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,dp(56),1);bp.setMargins(dp(4),0,0,0);row.addView(b,bp);root.addView(row);
     }
-    private String curto(String id){
-        if(id==null||id.trim().isEmpty())return "—";
-        String x=id.replace("-","");
-        return x.substring(0,Math.min(8,x.length())).toUpperCase(Locale.ROOT);
-    }
-    private void garantirMasterLocal(){
-        TechCellBackgroundSync.garantir(this);
-    }
+    private void addFull(LinearLayout root,Button b){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));p.setMargins(0,dp(8),0,0);root.addView(b,p);}
+    private String curto(String id){if(id==null||id.trim().isEmpty())return "—";String x=id.replace("-","");return x.substring(0,Math.min(8,x.length())).toUpperCase(Locale.ROOT);}
+    private void garantirMasterLocal(){TechCellBackgroundSync.garantir(this);}
+
     @Override protected void onCreate(Bundle b){super.onCreate(b);render();}
-    @Override protected void onResume(){
-        super.onResume();
-        garantirMasterLocal();
-        render();
-        sincronizarTerminal();
-    }
+    @Override protected void onResume(){super.onResume();garantirMasterLocal();if(TechCellAccess.controleAtivo(this)&&!TechCellAccess.temSessaoValida(this)){finish();return;}render();sincronizarTerminal();}
 
     private void sincronizarTerminal(){
         if(syncProdutosRodando)return;
-        GestaoDbHelper db=new GestaoDbHelper(this);
-        GestaoDbHelper.SyncContext ctx=db.getSyncContext();
+        GestaoDbHelper db=new GestaoDbHelper(this);GestaoDbHelper.SyncContext ctx=db.getSyncContext();db.close();
         if(!ctx.configurado||"MASTER".equalsIgnoreCase(ctx.papelDispositivo))return;
         if(ctx.masterHost==null||ctx.masterHost.trim().isEmpty())return;
         if(ctx.masterAuthToken==null||ctx.masterAuthToken.trim().isEmpty())return;
-
         syncProdutosRodando=true;
         new Thread(()->{
-            TechCellSyncCoordinator.Resultado r=
-                    TechCellSyncCoordinator.sincronizar(getApplicationContext());
-            runOnUiThread(()->{
-                syncProdutosRodando=false;
-                if(!r.ocupado && (r.vendasEnviadas>0||r.vendasRecebidas>0||r.produtosAlterados>0))render();
-            });
+            TechCellSyncCoordinator.Resultado r=TechCellSyncCoordinator.sincronizar(getApplicationContext());
+            runOnUiThread(()->{syncProdutosRodando=false;if(!r.ocupado&&(r.vendasEnviadas>0||r.vendasRecebidas>0||r.produtosAlterados>0))render();});
         },"TechCell-Gestao-Sync").start();
     }
+
     private void render(){
-        TechCellUi.applyWindowChrome(this);GestaoDbHelper db=new GestaoDbHelper(this);GestaoDbHelper.ResumoVendas hoje=db.resumoHoje();
+        TechCellUi.applyWindowChrome(this);
+        if(TechCellAccess.controleAtivo(this)&&!TechCellAccess.temSessaoValida(this)){return;}
+        TechCellAccess.Sessao sessao=TechCellAccess.sessao(this);
+        boolean master=TechCellAccess.podeAdministrar(this);
+        boolean gerente=TechCellAccess.perfilAtual(this)==TechCellAccess.Perfil.GERENTE;
+        boolean caixa=TechCellAccess.perfilAtual(this)==TechCellAccess.Perfil.CAIXA;
+
+        GestaoDbHelper db=new GestaoDbHelper(this);GestaoDbHelper.ResumoVendas hoje=db.resumoHoje();
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(18),dp(16),dp(30));scroll.addView(root);
         Button back=new Button(this);back.setText("←  Voltar");TechCellUi.styleSecondary(this,back);back.setOnClickListener(v->finish());root.addView(back,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
-        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);TextView sub=text("Painel principal • Alpha 42",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
-        TextView ht=text("Hoje",17,true);ht.setPadding(0,dp(16),0,0);root.addView(ht);
-        addMetricRow(root,metric("TOTAL VENDIDO",moeda.format(hoje.total),TechCellUi.GREEN),metric("LUCRO BRUTO",moeda.format(hoje.lucro),TechCellUi.GREEN));
-        addMetricRow(root,metric("VENDAS",String.valueOf(hoje.quantidadeVendas),TechCellUi.BLUE),metric("CUSTO",moeda.format(hoje.custo),TechCellUi.TEXT));
-        LinearLayout rec=TechCellUi.card(this);rec.setLayoutParams(TechCellUi.fullCardParams(this,8));TextView rt=text("Recebimentos",12,true);rt.setTextColor(TechCellUi.MUTED);rec.addView(rt);
-        TextView rv=text("Dinheiro "+moeda.format(hoje.dinheiro)+"   •   PIX "+moeda.format(hoje.pix)+"   •   Cartão "+moeda.format(hoje.cartao),13,true);rv.setPadding(0,dp(5),0,0);rec.addView(rv);root.addView(rec);
+        TextView title=text("Gestão Tech Cell",27,true);title.setPadding(0,dp(16),0,0);root.addView(title);
+        TextView sub=text("Perfil: "+TechCellAccess.perfilExibicao(sessao.perfil)+(sessao.nome==null||sessao.nome.isEmpty()?"":" • "+sessao.nome),13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
+
+        if(TechCellAccess.podeResumoFinanceiro(this)){
+            TextView ht=text("Hoje",17,true);ht.setPadding(0,dp(16),0,0);root.addView(ht);
+            addMetricRow(root,metric("TOTAL VENDIDO",moeda.format(hoje.total),TechCellUi.GREEN),metric("LUCRO BRUTO",moeda.format(hoje.lucro),TechCellUi.GREEN));
+            addMetricRow(root,metric("VENDAS",String.valueOf(hoje.quantidadeVendas),TechCellUi.BLUE),metric("CUSTO",moeda.format(hoje.custo),TechCellUi.TEXT));
+            LinearLayout rec=TechCellUi.card(this);rec.setLayoutParams(TechCellUi.fullCardParams(this,8));TextView rt=text("Recebimentos",12,true);rt.setTextColor(TechCellUi.MUTED);rec.addView(rt);
+            TextView rv=text("Dinheiro "+moeda.format(hoje.dinheiro)+"   •   PIX "+moeda.format(hoje.pix)+"   •   Cartão "+moeda.format(hoje.cartao),13,true);rv.setPadding(0,dp(5),0,0);rec.addView(rv);root.addView(rec);
+        }else{
+            LinearLayout aviso=TechCellUi.card(this);aviso.setLayoutParams(TechCellUi.fullCardParams(this,12));
+            TextView at=text("MODO CAIXA",13,true);at.setTextColor(TechCellUi.BLUE);aviso.addView(at);
+            TextView av=text("Acesso focado em atendimento: vendas e clientes. Custos, lucro, estoque administrativo e configurações ficam ocultos.",12,false);av.setTextColor(TechCellUi.MUTED);av.setPadding(0,dp(4),0,0);aviso.addView(av);root.addView(aviso);
+        }
+
         TextView menu=text("Acesso rápido",17,true);menu.setPadding(0,dp(18),0,0);root.addView(menu);
         Button pdv=new Button(this);pdv.setText("🛒  ABRIR PDV / VENDER");pdv.setTextSize(16);TechCellUi.stylePrimary(this,pdv,TechCellUi.GREEN);
         pdv.setOnClickListener(v->{try{startActivity(new Intent(this,PdvActivity.class));}catch(Throwable e){String d=e.getClass().getSimpleName();if(e.getMessage()!=null&&!e.getMessage().trim().isEmpty())d+="\n"+e.getMessage();new AlertDialog.Builder(this).setTitle("Não foi possível abrir o PDV").setMessage(d).setPositiveButton("OK",null).show();}});
         LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(60));pp.setMargins(0,dp(8),0,0);root.addView(pdv,pp);
-        Button prod=moduleButton("📦  Produtos");prod.setOnClickListener(v->startActivity(new Intent(this,ProdutosActivity.class)));Button est=moduleButton("🧮  Estoque");est.setOnClickListener(v->startActivity(new Intent(this,EstoqueActivity.class)));addModuleRow(root,prod,est);
-        Button fin=moduleButton("💰  Financeiro");fin.setOnClickListener(v->startActivity(new Intent(this,FinanceiroActivity.class)));Button rel=moduleButton("📊  Relatórios");rel.setOnClickListener(v->startActivity(new Intent(this,RelatoriosActivity.class)));addModuleRow(root,fin,rel);
-        Button cli=moduleButton("👤  Clientes");cli.setOnClickListener(v->startActivity(new Intent(this,ClientesActivity.class)));Button forn=moduleButton("🚚  Fornecedores");forn.setOnClickListener(v->startActivity(new Intent(this,FornecedoresActivity.class)));addModuleRow(root,cli,forn);
-        Button hist=moduleButton("🧾  Vendas");hist.setOnClickListener(v->startActivity(new Intent(this,HistoricoVendasActivity.class)));Button fiscal=moduleButton("⚙  Fiscal");fiscal.setOnClickListener(v->startActivity(new Intent(this,ConfiguracoesFiscaisActivity.class)));addModuleRow(root,hist,fiscal);
-        Button rede=moduleButton("📡  Dispositivo / Rede");rede.setOnClickListener(v->startActivity(new Intent(this,ConfiguracaoDispositivoActivity.class)));
-        LinearLayout.LayoutParams rpRede=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rpRede.setMargins(0,dp(8),0,0);root.addView(rede,rpRede);
-        Button prep=moduleButton("✅  Homologação");prep.setOnClickListener(v->startActivity(new Intent(this,PreparacaoFiscalActivity.class)));Button smb=moduleButton("🗃️  Importação SMB");smb.setOnClickListener(v->startActivity(new Intent(this,ImportacaoSmbActivity.class)));addModuleRow(root,prep,smb);
-        Button backup=moduleButton("💾  Backup / Restaurar");backup.setOnClickListener(v->startActivity(new Intent(this,BackupRestoreActivity.class)));
-        LinearLayout.LayoutParams rpBackup=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rpBackup.setMargins(0,dp(8),0,0);root.addView(backup,rpBackup);
-        Button saneamento=moduleButton("⚠  Revisar valores suspeitos");
-        TechCellUi.stylePrimary(this,saneamento,TechCellUi.ORANGE);
-        saneamento.setOnClickListener(v->startActivity(new Intent(this,SaneamentoValoresActivity.class)));
-        LinearLayout.LayoutParams rpSaneamento=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));rpSaneamento.setMargins(0,dp(8),0,0);root.addView(saneamento,rpSaneamento);
-        GestaoDbHelper.SyncContext sync=db.getSyncContext();
-        int pendentes=db.countSyncPendentes();
-        String papel=sync.configurado ? sync.papelDispositivo : "NÃO CONFIGURADO";
-        TextView infra=text(
-                "Estrutura local v19 • multiempresa e rede preparada\n"+
-                "Empresa "+curto(sync.empresaUuid)+"  •  Filial "+curto(sync.filialUuid)+"  •  Dispositivo "+curto(sync.dispositivoUuid)+
-                "\n"+(sync.configurado ? sync.nomeDispositivo+"  •  Função: "+papel : "Função do aparelho: "+papel)+
-                "\nRede local: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo) ? "Master ativo/configurado" :
-                        (sync.masterHost==null||sync.masterHost.trim().isEmpty() ? "Master não vinculado" : "Master "+sync.masterHost))+
-                "\nProdutos/estoque: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo) ? "fonte principal" :
-                        (sync.masterAuthToken==null||sync.masterAuthToken.trim().isEmpty() ? "aguardando autorização" :
-                                "segundo plano ativo • cursor "+sync.lastProductPullSeq))+
-                "\nVendas: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo) ? "histórico consolidado" :
-                        (sync.masterAuthToken==null||sync.masterAuthToken.trim().isEmpty() ? "aguardando autorização" :
-                                "bidirecional • cursor "+sync.lastSalePullSeq))+
-                "\n"+TechCellSyncCoordinator.resumo(this)+
-                "\nTela bloqueada: "+(TechCellBatteryGuard.liberado(this) ? "proteção liberada ✓" : "revisar bateria")+
-                "\nNuvem: "+(sync.cloudAtiva ? "ativa" : "ainda não configurada")+
-                "  •  Alterações locais pendentes: "+pendentes,
-                11,true);
-        infra.setTextColor(TechCellUi.NAVY);infra.setGravity(Gravity.CENTER);
-        infra.setBackground(TechCellUi.pillBackground(this));infra.setPadding(dp(12),dp(10),dp(12),dp(10));
-        root.addView(infra,TechCellUi.fullCardParams(this,16));
 
-        TextView safe=text("Base local preservada • "+db.count()+" produtos cadastrados",12,true);safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(10),dp(12),dp(10));root.addView(safe,TechCellUi.fullCardParams(this,8));
-        setContentView(scroll);
+        if(TechCellAccess.podeProdutos(this)){
+            Button prod=moduleButton("📦  Produtos");prod.setOnClickListener(v->startActivity(new Intent(this,ProdutosActivity.class)));
+            Button est=moduleButton("🧮  Estoque");est.setOnClickListener(v->startActivity(new Intent(this,EstoqueActivity.class)));addModuleRow(root,prod,est);
+            Button fin=moduleButton("💰  Financeiro");fin.setOnClickListener(v->startActivity(new Intent(this,FinanceiroActivity.class)));
+            Button rel=moduleButton("📊  Relatórios");rel.setOnClickListener(v->startActivity(new Intent(this,RelatoriosActivity.class)));addModuleRow(root,fin,rel);
+            Button cli=moduleButton("👤  Clientes");cli.setOnClickListener(v->startActivity(new Intent(this,ClientesActivity.class)));
+            Button forn=moduleButton("🚚  Fornecedores");forn.setOnClickListener(v->startActivity(new Intent(this,FornecedoresActivity.class)));addModuleRow(root,cli,forn);
+            Button hist=moduleButton("🧾  Vendas");hist.setOnClickListener(v->startActivity(new Intent(this,HistoricoVendasActivity.class)));addFull(root,hist);
+        }else if(TechCellAccess.podeClientes(this)){
+            Button cli=moduleButton("👤  Clientes");cli.setOnClickListener(v->startActivity(new Intent(this,ClientesActivity.class)));addFull(root,cli);
+        }
+
+        if(master){
+            Button fiscal=moduleButton("⚙  Fiscal");fiscal.setOnClickListener(v->startActivity(new Intent(this,ConfiguracoesFiscaisActivity.class)));
+            Button rede=moduleButton("📡  Dispositivo / Rede");rede.setOnClickListener(v->startActivity(new Intent(this,ConfiguracaoDispositivoActivity.class)));addModuleRow(root,fiscal,rede);
+            Button prep=moduleButton("✅  Homologação");prep.setOnClickListener(v->startActivity(new Intent(this,PreparacaoFiscalActivity.class)));
+            Button smb=moduleButton("🗃️  Importação SMB");smb.setOnClickListener(v->startActivity(new Intent(this,ImportacaoSmbActivity.class)));addModuleRow(root,prep,smb);
+            Button backup=moduleButton("💾  Backup / Restaurar");backup.setOnClickListener(v->startActivity(new Intent(this,BackupRestoreActivity.class)));addFull(root,backup);
+            Button saneamento=moduleButton("⚠  Revisar valores suspeitos");TechCellUi.stylePrimary(this,saneamento,TechCellUi.ORANGE);saneamento.setOnClickListener(v->startActivity(new Intent(this,SaneamentoValoresActivity.class)));addFull(root,saneamento);
+            Button usuarios=moduleButton("👥  Usuários / Acessos");TechCellUi.stylePrimary(this,usuarios,TechCellUi.BLUE);usuarios.setOnClickListener(v->startActivity(new Intent(this,TechCellUsuariosActivity.class)));addFull(root,usuarios);
+        }
+
+        GestaoDbHelper.SyncContext sync=db.getSyncContext();int pendentes=db.countSyncPendentes();
+        if(master){
+            String papel=sync.configurado?sync.papelDispositivo:"NÃO CONFIGURADO";
+            TextView infra=text("Empresa "+curto(sync.empresaUuid)+"  •  Filial "+curto(sync.filialUuid)+"  •  Dispositivo "+curto(sync.dispositivoUuid)+
+                    "\n"+(sync.configurado?sync.nomeDispositivo+"  •  Função do aparelho: "+papel:"Função do aparelho: "+papel)+
+                    "\nRede local: "+("MASTER".equalsIgnoreCase(sync.papelDispositivo)?"Master ativo/configurado":(sync.masterHost==null||sync.masterHost.trim().isEmpty()?"Master não vinculado":"Master "+sync.masterHost))+
+                    "\n"+TechCellSyncCoordinator.resumo(this)+"\nNuvem: "+(sync.cloudAtiva?"ativa":"ainda não configurada")+"  •  Pendências: "+pendentes,11,true);
+            infra.setTextColor(TechCellUi.NAVY);infra.setGravity(Gravity.CENTER);infra.setBackground(TechCellUi.pillBackground(this));infra.setPadding(dp(12),dp(10),dp(12),dp(10));root.addView(infra,TechCellUi.fullCardParams(this,16));
+        }
+
+        String rodape=caixa?"Modo Caixa • dados financeiros protegidos":(gerente?"Modo Gerente • operação e gestão liberadas":"Modo Master • acesso total");
+        TextView safe=text(rodape+" • "+db.count()+" produtos",12,true);safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(10),dp(12),dp(10));root.addView(safe,TechCellUi.fullCardParams(this,8));
+        db.close();setContentView(scroll);
     }
 }
