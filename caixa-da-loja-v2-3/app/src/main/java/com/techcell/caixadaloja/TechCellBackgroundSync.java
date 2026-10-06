@@ -9,7 +9,10 @@ public final class TechCellBackgroundSync {
 
     public static void garantir(Context context) {
         Context app = context.getApplicationContext();
-        GestaoDbHelper.SyncContext ctx = new GestaoDbHelper(app).getSyncContext();
+        GestaoDbHelper helper = new GestaoDbHelper(app);
+        GestaoDbHelper.SyncContext ctx;
+        try { ctx = helper.getSyncContext(); }
+        finally { helper.close(); }
 
         if (!ctx.configurado) {
             parar(app);
@@ -19,9 +22,11 @@ public final class TechCellBackgroundSync {
         if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
             try { app.stopService(new Intent(app, TechCellTerminalSyncService.class)); } catch (Throwable ignored) {}
             iniciar(app, new Intent(app, TechCellMasterService.class));
+            TechCellCloudAutoSync.garantir(app);
             return;
         }
 
+        TechCellCloudAutoSync.parar();
         try { app.stopService(new Intent(app, TechCellMasterService.class)); } catch (Throwable ignored) {}
 
         boolean pronto = ctx.masterHost != null && !ctx.masterHost.trim().isEmpty() &&
@@ -35,6 +40,7 @@ public final class TechCellBackgroundSync {
 
     public static void parar(Context context) {
         Context app = context.getApplicationContext();
+        TechCellCloudAutoSync.parar();
         try { app.stopService(new Intent(app, TechCellMasterService.class)); } catch (Throwable ignored) {}
         try { app.stopService(new Intent(app, TechCellTerminalSyncService.class)); } catch (Throwable ignored) {}
     }
