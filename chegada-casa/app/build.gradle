@@ -10,8 +10,8 @@ android {
         applicationId 'com.cilassouza.chegadacasa.fast'
         minSdk 26
         targetSdk 35
-        versionCode 13
-        versionName '2.8-interface-profissional'
+        versionCode 14
+        versionName '2.9-interface-premium'
     }
 
     // Private key is restored through Actions; never commit it to this repository.
