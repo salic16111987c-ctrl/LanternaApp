@@ -28,7 +28,7 @@ import java.util.UUID;
 /** Gerenciamento das contas da empresa feito pelo Master proprietário. */
 public final class TechCellCloudUsers {
     private static final String PROJECT_ID = "caixa-da-loja-5dd34";
-    private static final String API_KEY = "AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbSt6iY2k";
+    private static final String API_KEY = "AIzaSyAcMqWWeaEKfdjIST0NSwkXWWsbst6iY2k";
     private static final String APPLICATION_ID = "1:243340178302:web:09e0bc0265edc2d2cab92f";
     private static final String STORAGE_BUCKET = "caixa-da-loja-5dd34.firebasestorage.app";
     private static final String ROOT = "techcell_empresas";
