@@ -1,0 +1,579 @@
+name: Build Chegada Casa 2.8 Interface
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/build-chegada-casa-v28-interface.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restaurar chave de assinatura atual
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: chegada-casa-fast-signing-key-v2
+
+      - name: Garantir chave de assinatura
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -dname "CN=Chegada Casa Test,O=Chegada Casa,C=BR" \
+              -keyalg RSA -keysize 3072 -validity 10000 >/dev/null 2>&1
+          fi
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Instalar SDK Android 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Aplicar interface profissional v2.8
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('chegada-casa')
+          src = root / 'app/src/main/java/com/cilassouza/chegadacasa'
+
+          main = src / 'MainActivity.java'
+          text = main.read_text(encoding='utf-8')
+          new_ui = r'''    private void montarTela() {
+              ScrollView scroll = new ScrollView(this);
+              scroll.setFillViewport(true);
+
+              LinearLayout root = new LinearLayout(this);
+              root.setOrientation(LinearLayout.VERTICAL);
+              root.setPadding(dp(16), dp(18), dp(16), dp(34));
+              root.setBackgroundColor(Color.rgb(244, 247, 251));
+              scroll.addView(root);
+
+              TextView titulo = uiText("Chegada Casa Rápido", 27, Color.rgb(20, 32, 52), true);
+              titulo.setGravity(Gravity.CENTER);
+              root.addView(titulo);
+
+              TextView sub = uiText("Automação de chegada • GPS inteligente • eWeLink", 14,
+                      Color.rgb(92, 105, 126), false);
+              sub.setGravity(Gravity.CENTER);
+              LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+              subParams.setMargins(0, dp(5), 0, dp(18));
+              root.addView(sub, subParams);
+
+              LinearLayout casaCard = uiCard("Residência", "Defina o ponto usado para calcular sua chegada.");
+              endereco = new EditText(this);
+              endereco.setHint("Rua, número, bairro, cidade - MG");
+              endereco.setText(prefs.getString("endereco", ""));
+              endereco.setTextSize(16);
+              endereco.setMinLines(2);
+              endereco.setPadding(dp(14), dp(11), dp(14), dp(11));
+              endereco.setBackground(uiBackground(Color.WHITE, Color.rgb(208, 215, 226), 12));
+              LinearLayout.LayoutParams addressParams = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+              addressParams.setMargins(0, dp(10), 0, 0);
+              casaCard.addView(endereco, addressParams);
+
+              Button buscar = uiButton("Buscar endereço", true);
+              buscar.setOnClickListener(v -> buscarEndereco());
+              Button mapa = uiButton("Ajustar no mapa", false);
+              mapa.setOnClickListener(v -> startActivity(new Intent(this, MapActivity.class)));
+              addButtonRow(casaCard, buscar, mapa);
+
+              Button atual = uiButton("Usar localização atual", false);
+              atual.setOnClickListener(v -> usarLocalizacaoAtual());
+              addWideButton(casaCard, atual);
+              root.addView(casaCard, cardParams());
+
+              LinearLayout raioCard = uiCard("Raio e horário", "Ajuste a distância de chegada e quando as lâmpadas podem ligar.");
+              TextView raioLabel = uiText("Raio de chegada", 13, Color.rgb(76, 91, 112), true);
+              raioCard.addView(raioLabel);
+              raio = new Spinner(this);
+              String[] opcoes = {"100 metros", "200 metros", "300 metros"};
+              raio.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, opcoes));
+              int salvo = prefs.getInt("raio", 100);
+              raio.setSelection(salvo == 200 ? 1 : salvo == 300 ? 2 : 0);
+              raio.setPadding(dp(10), dp(5), dp(10), dp(5));
+              raio.setBackground(uiBackground(Color.WHITE, Color.rgb(208, 215, 226), 12));
+              LinearLayout.LayoutParams raioParams = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+              raioParams.setMargins(0, dp(7), 0, dp(7));
+              raioCard.addView(raio, raioParams);
+
+              soNoite = new CheckBox(this);
+              soNoite.setText("Somente lâmpadas à noite (18h às 6h) — portão continua 24 horas");
+              soNoite.setTextSize(14);
+              soNoite.setTextColor(Color.rgb(48, 60, 78));
+              soNoite.setChecked(prefs.getBoolean("so_noite", false));
+              raioCard.addView(soNoite);
+              TextView gpsNote = uiText("GPS inteligente economiza bateria longe de casa e aumenta a precisão na aproximação. O portão só abre após confirmação explícita.",
+                      12, Color.rgb(102, 114, 132), false);
+              gpsNote.setPadding(0, dp(4), 0, 0);
+              raioCard.addView(gpsNote);
+              root.addView(raioCard, cardParams());
+
+              LinearLayout ewCard = uiCard("eWeLink", "Conecte sua conta e escolha separadamente luzes e portão.");
+              ewStatus = uiInfo("");
+              ewCard.addView(ewStatus);
+
+              Button conectar = uiButton("Conectar ao eWeLink", true);
+              conectar.setOnClickListener(v -> mostrarEtapaOAuth());
+              addWideButton(ewCard, conectar);
+
+              Button escolher = uiButton("Escolher lâmpadas", false);
+              escolher.setOnClickListener(v -> carregarDispositivos());
+              Button portao = uiButton("Escolher portão", false);
+              portao.setOnClickListener(v -> carregarPortao());
+              addButtonRow(ewCard, escolher, portao);
+
+              Button testarEw = uiButton("Testar lâmpadas eWeLink", false);
+              testarEw.setOnClickListener(v -> testarEwelink());
+              addWideButton(ewCard, testarEw);
+              root.addView(ewCard, cardParams());
+
+              LinearLayout autoCard = uiCard("Automação", "Ative o monitoramento e confira o funcionamento em segundo plano.");
+              status = uiInfo("");
+              autoCard.addView(status);
+
+              Button ativar = uiButton("Ativar automação", true);
+              ativar.setOnClickListener(v -> ativarGeofence());
+              addWideButton(autoCard, ativar);
+
+              Button bateria = uiButton("Segundo plano / bateria", false);
+              bateria.setOnClickListener(v -> abrirConfiguracaoBateria());
+              Button testar = uiButton("Testar notificação", false);
+              testar.setOnClickListener(v -> GeofenceReceiver.mostrarNotificacao(this,
+                      "Teste aprovado", "O aplicativo está pronto para detectar sua chegada."));
+              addButtonRow(autoCard, bateria, testar);
+              root.addView(autoCard, cardParams());
+
+              TextView autor = uiText("Cilas Souza • Chegada Casa Rápido v2.8", 12,
+                      Color.rgb(125, 137, 154), false);
+              autor.setGravity(Gravity.CENTER);
+              LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+              ap.setMargins(0, dp(10), 0, 0);
+              root.addView(autor, ap);
+
+              setContentView(scroll);
+              atualizarStatus();
+              atualizarEwelinkStatus();
+          }
+
+          private TextView uiText(String value, int size, int color, boolean bold) {
+              TextView view = new TextView(this);
+              view.setText(value);
+              view.setTextSize(size);
+              view.setTextColor(color);
+              if (bold) view.setTypeface(Typeface.DEFAULT_BOLD);
+              return view;
+          }
+
+          private LinearLayout uiCard(String title, String subtitle) {
+              LinearLayout card = new LinearLayout(this);
+              card.setOrientation(LinearLayout.VERTICAL);
+              card.setPadding(dp(16), dp(15), dp(16), dp(16));
+              card.setBackground(uiBackground(Color.WHITE, Color.rgb(226, 231, 239), 18));
+              card.setElevation(dp(2));
+
+              TextView heading = uiText(title, 19, Color.rgb(28, 39, 58), true);
+              card.addView(heading);
+              TextView description = uiText(subtitle, 13, Color.rgb(100, 112, 130), false);
+              description.setPadding(0, dp(3), 0, dp(8));
+              card.addView(description);
+              return card;
+          }
+
+          private TextView uiInfo(String value) {
+              TextView info = uiText(value, 14, Color.rgb(54, 67, 87), false);
+              info.setPadding(dp(12), dp(11), dp(12), dp(11));
+              info.setBackground(uiBackground(Color.rgb(248, 250, 253), Color.rgb(227, 232, 240), 12));
+              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+              p.setMargins(0, dp(2), 0, dp(2));
+              info.setLayoutParams(p);
+              return info;
+          }
+
+          private Button uiButton(String label, boolean primary) {
+              Button button = new Button(this);
+              button.setText(label);
+              button.setAllCaps(false);
+              button.setTextSize(14);
+              button.setTypeface(Typeface.DEFAULT_BOLD);
+              button.setGravity(Gravity.CENTER);
+              button.setPadding(dp(10), 0, dp(10), 0);
+              if (primary) {
+                  button.setTextColor(Color.WHITE);
+                  button.setBackground(uiBackground(Color.rgb(27, 91, 198), Color.rgb(27, 91, 198), 12));
+              } else {
+                  button.setTextColor(Color.rgb(35, 58, 93));
+                  button.setBackground(uiBackground(Color.rgb(246, 249, 253), Color.rgb(207, 216, 229), 12));
+              }
+              button.setMinHeight(0);
+              button.setMinimumHeight(0);
+              return button;
+          }
+
+          private void addWideButton(LinearLayout parent, Button button) {
+              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+              p.setMargins(0, dp(9), 0, 0);
+              parent.addView(button, p);
+          }
+
+          private void addButtonRow(LinearLayout parent, Button left, Button right) {
+              LinearLayout row = new LinearLayout(this);
+              row.setOrientation(LinearLayout.HORIZONTAL);
+              LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+              rp.setMargins(0, dp(9), 0, 0);
+
+              LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                      ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+              lp.setMargins(0, 0, dp(4), 0);
+              LinearLayout.LayoutParams rr = new LinearLayout.LayoutParams(0,
+                      ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+              rr.setMargins(dp(4), 0, 0, 0);
+              row.addView(left, lp);
+              row.addView(right, rr);
+              parent.addView(row, rp);
+          }
+
+          private LinearLayout.LayoutParams cardParams() {
+              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+              p.setMargins(0, 0, 0, dp(12));
+              return p;
+          }
+
+          private android.graphics.drawable.GradientDrawable uiBackground(int fill, int stroke, int radiusDp) {
+              android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
+              drawable.setColor(fill);
+              drawable.setCornerRadius(dp(radiusDp));
+              drawable.setStroke(dp(1), stroke);
+              return drawable;
+          }'''
+
+          pattern = r'    private void montarTela\(\) \{.*?\n    \}\n\n    private void mostrarEtapaOAuth\(\)'
+          replacement = new_ui + '\n\n    private void mostrarEtapaOAuth()'
+          text, n = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          if n != 1:
+              raise AssertionError('MainActivity montarTela anchor not found')
+          main.write_text(text, encoding='utf-8')
+
+          fixed = src / 'FixedMainActivity.java'
+          text = fixed.read_text(encoding='utf-8')
+          text = text.replace('findButton(getWindow().getDecorView(), "CONECTAR AO EWELINK")',
+                              'findButton(getWindow().getDecorView(), "Conectar ao eWeLink")')
+          fixed.write_text(text, encoding='utf-8')
+
+          diag = src / 'ArrivalDiagnosticActivity.java'
+          text = diag.read_text(encoding='utf-8')
+          new_diag = r'''    @Override protected void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              ViewGroup content = findViewById(android.R.id.content);
+              if (content == null || content.getChildCount() == 0
+                      || !(content.getChildAt(0) instanceof ScrollView)) return;
+              ScrollView scroll = (ScrollView) content.getChildAt(0);
+              if (scroll.getChildCount() == 0 || !(scroll.getChildAt(0) instanceof LinearLayout)) return;
+              LinearLayout root = (LinearLayout) scroll.getChildAt(0);
+
+              TextView title = new TextView(this);
+              title.setText("DIAGNÓSTICO E VOZ — v2.8");
+              title.setTextSize(19);
+              title.setTextColor(Color.rgb(25, 60, 110));
+              title.setPadding(0, 10, 0, 8);
+              root.addView(title, 0);
+
+              diagnostics = new TextView(this);
+              diagnostics.setTextColor(Color.BLACK);
+              diagnostics.setTextSize(14);
+              diagnostics.setPadding(12, 12, 12, 12);
+              diagnostics.setBackgroundColor(Color.rgb(225, 239, 250));
+              root.addView(diagnostics, 1, new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+              LinearLayout tools = new LinearLayout(this);
+              tools.setOrientation(LinearLayout.VERTICAL);
+              tools.setPadding(0, uiDp(12), 0, uiDp(2));
+
+              LinearLayout quick = diagnosticCard("Ações rápidas",
+                      "Atualize o painel e teste GPS ou áudio sem acionar as luzes.");
+              Button refreshButton = diagnosticButton("Atualizar diagnóstico", 0);
+              refreshButton.setOnClickListener(v -> updateDiagnostics());
+              Button gpsButton = diagnosticButton("Testar GPS", 0);
+              gpsButton.setOnClickListener(v -> testGps());
+              addDiagnosticRow(quick, refreshButton, gpsButton);
+
+              Button speechButton = diagnosticButton("Testar áudio", 1);
+              speechButton.setOnClickListener(v -> {
+                  SpeechEngine.speak(this, "Teste de áudio do Chegada Casa. O aviso de chegada está funcionando.");
+                  handler.postDelayed(this::updateDiagnostics, 1500L);
+              });
+              Button volumeButton = diagnosticButton("Aumentar volume", 0);
+              volumeButton.setOnClickListener(v -> {
+                  AudioManager audio = (AudioManager) getSystemService(AUDIO_SERVICE);
+                  if (audio != null) {
+                      try {
+                          audio.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                                  AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI);
+                      } catch (SecurityException e) {
+                          Toast.makeText(this, "Ajuste o volume de mídia nas configurações do celular.",
+                                  Toast.LENGTH_LONG).show();
+                      }
+                  }
+                  Toast.makeText(this, "Volume de mídia: " + SpeechEngine.mediaVolumePercent(this)
+                          + "%. Toque novamente para aumentar.", Toast.LENGTH_SHORT).show();
+                  updateDiagnostics();
+              });
+              addDiagnosticRow(quick, speechButton, volumeButton);
+              tools.addView(quick, diagnosticCardParams());
+
+              LinearLayout arrival = diagnosticCard("Teste de chegada",
+                      "Teste real das lâmpadas. O portão não é acionado nesta simulação.");
+              Button simulateButton = diagnosticButton("SIMULAR CHEGADA E ACENDER LUZES", 1);
+              simulateButton.setOnClickListener(v -> confirmSimulation(simulateButton));
+              addDiagnosticWide(arrival, simulateButton);
+              tools.addView(arrival, diagnosticCardParams());
+
+              LinearLayout gate = diagnosticCard("Portão • Fake GPS",
+                      "Modo temporário e controlado para validar a pergunta SIM/NÃO do portão.");
+              Button gateTestButton = diagnosticButton("Armar teste do portão com Fake GPS", 2);
+              gateTestButton.setOnClickListener(v -> armFakeGpsGateTest());
+              addDiagnosticWide(gate, gateTestButton);
+              Button cancelGateTestButton = diagnosticButton("Cancelar teste do portão", 3);
+              cancelGateTestButton.setOnClickListener(v -> {
+                  GateTestMode.cancel(this);
+                  updateDiagnostics();
+                  Toast.makeText(this, "Teste do portão cancelado.", Toast.LENGTH_LONG).show();
+              });
+              addDiagnosticWide(gate, cancelGateTestButton);
+              tools.addView(gate, diagnosticCardParams());
+
+              LinearLayout system = diagnosticCard("Sistema",
+                      "Use somente quando quiser reiniciar manualmente o monitor de chegada.");
+              Button startButton = diagnosticButton("Reiniciar monitor de chegada", 0);
+              startButton.setOnClickListener(v -> {
+                  SharedPreferences p = getSharedPreferences("config", Context.MODE_PRIVATE);
+                  if (!p.getBoolean("ativa", false)) {
+                      Toast.makeText(this, "Configure a casa e toque ATIVAR AUTOMAÇÃO primeiro.", Toast.LENGTH_LONG).show();
+                      return;
+                  }
+                  ArrivalMonitorService.start(this);
+                  Toast.makeText(this, "Monitor solicitado. Confira o estado do GPS acima.", Toast.LENGTH_LONG).show();
+                  handler.postDelayed(this::updateDiagnostics, 1600L);
+              });
+              addDiagnosticWide(system, startButton);
+              tools.addView(system, diagnosticCardParams());
+
+              root.addView(tools, 2);
+              updateDiagnostics();
+          }
+
+          private LinearLayout diagnosticCard(String title, String subtitle) {
+              LinearLayout card = new LinearLayout(this);
+              card.setOrientation(LinearLayout.VERTICAL);
+              card.setPadding(uiDp(14), uiDp(13), uiDp(14), uiDp(14));
+              card.setBackground(diagnosticBackground(Color.WHITE, Color.rgb(224, 230, 239), 16));
+              card.setElevation(uiDp(2));
+
+              TextView heading = new TextView(this);
+              heading.setText(title);
+              heading.setTextSize(17);
+              heading.setTextColor(Color.rgb(31, 43, 61));
+              heading.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+              card.addView(heading);
+
+              TextView description = new TextView(this);
+              description.setText(subtitle);
+              description.setTextSize(12);
+              description.setTextColor(Color.rgb(103, 115, 133));
+              description.setPadding(0, uiDp(3), 0, uiDp(5));
+              card.addView(description);
+              return card;
+          }
+
+          private Button diagnosticButton(String text, int kind) {
+              Button button = new Button(this);
+              button.setText(text);
+              button.setAllCaps(false);
+              button.setTextSize(13);
+              button.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+              button.setMinHeight(0);
+              button.setMinimumHeight(0);
+              button.setPadding(uiDp(8), 0, uiDp(8), 0);
+              if (kind == 1) {
+                  button.setTextColor(Color.WHITE);
+                  button.setBackground(diagnosticBackground(Color.rgb(27, 91, 198), Color.rgb(27, 91, 198), 12));
+              } else if (kind == 2) {
+                  button.setTextColor(Color.rgb(98, 61, 0));
+                  button.setBackground(diagnosticBackground(Color.rgb(255, 246, 219), Color.rgb(235, 196, 91), 12));
+              } else if (kind == 3) {
+                  button.setTextColor(Color.rgb(162, 34, 34));
+                  button.setBackground(diagnosticBackground(Color.rgb(255, 242, 242), Color.rgb(235, 185, 185), 12));
+              } else {
+                  button.setTextColor(Color.rgb(37, 59, 92));
+                  button.setBackground(diagnosticBackground(Color.rgb(246, 249, 253), Color.rgb(207, 216, 229), 12));
+              }
+              return button;
+          }
+
+          private void addDiagnosticWide(LinearLayout parent, Button button) {
+              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, uiDp(48));
+              p.setMargins(0, uiDp(8), 0, 0);
+              parent.addView(button, p);
+          }
+
+          private void addDiagnosticRow(LinearLayout parent, Button left, Button right) {
+              LinearLayout row = new LinearLayout(this);
+              row.setOrientation(LinearLayout.HORIZONTAL);
+              LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, uiDp(48));
+              rp.setMargins(0, uiDp(8), 0, 0);
+              LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                      ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+              lp.setMargins(0, 0, uiDp(4), 0);
+              LinearLayout.LayoutParams rr = new LinearLayout.LayoutParams(0,
+                      ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+              rr.setMargins(uiDp(4), 0, 0, 0);
+              row.addView(left, lp);
+              row.addView(right, rr);
+              parent.addView(row, rp);
+          }
+
+          private LinearLayout.LayoutParams diagnosticCardParams() {
+              LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                      ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+              p.setMargins(0, 0, 0, uiDp(10));
+              return p;
+          }
+
+          private android.graphics.drawable.GradientDrawable diagnosticBackground(int fill, int stroke, int radiusDp) {
+              android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
+              drawable.setColor(fill);
+              drawable.setCornerRadius(uiDp(radiusDp));
+              drawable.setStroke(uiDp(1), stroke);
+              return drawable;
+          }
+
+          private int uiDp(int value) {
+              return Math.round(value * getResources().getDisplayMetrics().density);
+          }'''
+
+          pattern = r'    @Override protected void onCreate\(Bundle savedInstanceState\) \{.*?\n    \}\n\n    private void armFakeGpsGateTest\(\)'
+          replacement = new_diag + '\n\n    private void armFakeGpsGateTest()'
+          text, n = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          if n != 1:
+              raise AssertionError('ArrivalDiagnosticActivity onCreate anchor not found')
+          diag.write_text(text, encoding='utf-8')
+
+          gradle = root / 'app/build.gradle'
+          text = gradle.read_text(encoding='utf-8')
+          text = re.sub(r'versionCode\s+\d+', 'versionCode 13', text, count=1)
+          text = re.sub(r"versionName\s+'[^']+'", "versionName '2.8-interface-profissional'", text, count=1)
+          gradle.write_text(text, encoding='utf-8')
+
+          tool = root / 'tools/apply_priority_audio_v27.py'
+          text = tool.read_text(encoding='utf-8')
+          old = '''replace_once(root / 'app/build.gradle',\n''' + "'''        versionCode 11\n        versionName '2.6-antifalsas-chegadas'\n'''" + ''',\n''' + "'''        versionCode 12\n        versionName '2.7-audio-prioritario'\n'''" + ''')\n\nreplace_once(src / 'ArrivalDiagnosticActivity.java',\n             'title.setText("DIAGNÓSTICO E VOZ — v2.6");',\n             'title.setText("DIAGNÓSTICO E VOZ — v2.7");')'''
+          newer = '''gradle_path = root / 'app/build.gradle'\ngradle_text = gradle_path.read_text(encoding='utf-8')\nif "versionName '2.6-antifalsas-chegadas'" in gradle_text:\n    replace_once(gradle_path,\n''' + "'''        versionCode 11\n        versionName '2.6-antifalsas-chegadas'\n'''" + ''',\n''' + "'''        versionCode 12\n        versionName '2.7-audio-prioritario'\n'''" + ''')\nelif "versionName '2.7-audio-prioritario'" in gradle_text or "versionName '2.8-interface-profissional'" in gradle_text:\n    print('VERSION ALREADY v2.7 OR NEWER')\nelse:\n    raise AssertionError('Unexpected Chegada Casa version while applying priority audio')\n\ndiagnostic_path = src / 'ArrivalDiagnosticActivity.java'\ndiagnostic_text = diagnostic_path.read_text(encoding='utf-8')\nif 'title.setText("DIAGNÓSTICO E VOZ — v2.6");' in diagnostic_text:\n    replace_once(diagnostic_path,\n                 'title.setText("DIAGNÓSTICO E VOZ — v2.6");',\n                 'title.setText("DIAGNÓSTICO E VOZ — v2.7");')\nelif 'DIAGNÓSTICO E VOZ — v2.7' in diagnostic_text or 'DIAGNÓSTICO E VOZ — v2.8' in diagnostic_text:\n    print('DIAGNOSTIC TITLE ALREADY v2.7 OR NEWER')\nelse:\n    raise AssertionError('Unexpected diagnostic version while applying priority audio')'''
+          if old in text:
+              text = text.replace(old, newer, 1)
+          tool.write_text(text, encoding='utf-8')
+
+          checks = root / 'tools/check_arrival_invariants.py'
+          text = checks.read_text(encoding='utf-8')
+          old = '''      "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and\n      "versionName '2.7-audio-prioritario'" in gradle and 'versionCode 12' in gradle and\n      "implementation 'androidx.core:core:1.15.0'" in gradle)'''
+          new = '''      "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and\n      (("versionName '2.7-audio-prioritario'" in gradle and 'versionCode 12' in gradle) or\n       ("versionName '2.8-interface-profissional'" in gradle and 'versionCode 13' in gradle)) and\n      "implementation 'androidx.core:core:1.15.0'" in gradle)'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          checks.write_text(text, encoding='utf-8')
+
+          print('SUCCESS: professional v2.8 interface patched')
+          PY
+
+      - name: Validar interface e invariantes
+        run: |
+          grep -q "Chegada Casa Rápido" chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/MainActivity.java
+          grep -q "Ações rápidas" chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalDiagnosticActivity.java
+          grep -q "DIAGNÓSTICO E VOZ — v2.8" chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalDiagnosticActivity.java
+          grep -q "versionName '2.8-interface-profissional'" chegada-casa/app/build.gradle
+          python3 chegada-casa/tools/check_arrival_invariants.py
+
+      - name: Compilar fonte principal v2.8
+        working-directory: chegada-casa
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Persistir interface v2.8
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/MainActivity.java \
+                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/FixedMainActivity.java \
+                  chegada-casa/app/src/main/java/com/cilassouza/chegadacasa/ArrivalDiagnosticActivity.java \
+                  chegada-casa/app/build.gradle \
+                  chegada-casa/tools/apply_priority_audio_v27.py \
+                  chegada-casa/tools/check_arrival_invariants.py
+          if ! git diff --cached --quiet; then
+            git commit -m "Chegada Casa v2.8 professional interface"
+            git restore --worktree chegada-casa/app/build || true
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+      - name: Preparar variante de teste sem conflito
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          g = Path('chegada-casa/app/build.gradle')
+          s = g.read_text(encoding='utf-8')
+          s = s.replace("applicationId 'com.cilassouza.chegadacasa.fast'",
+                        "applicationId 'com.cilassouza.chegadacasa.fast27test'")
+          s = s.replace("versionName '2.8-interface-profissional'",
+                        "versionName '2.8-interface-profissional-teste'")
+          g.write_text(s, encoding='utf-8')
+          m = Path('chegada-casa/app/src/main/AndroidManifest.xml')
+          s = m.read_text(encoding='utf-8')
+          s = s.replace('android:label="Chegada Casa Rápido"',
+                        'android:label="Chegada Casa 2.8 TESTE"')
+          m.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Compilar APK 2.8 lado a lado
+        working-directory: chegada-casa
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Preparar APK
+        run: cp chegada-casa/app/build/outputs/apk/debug/app-debug.apk ChegadaCasa-Rapida-v2.8-Interface.apk
+
+      - name: Salvar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chegada-Casa-Rapida-v2.8-Interface
+          path: ChegadaCasa-Rapida-v2.8-Interface.apk
