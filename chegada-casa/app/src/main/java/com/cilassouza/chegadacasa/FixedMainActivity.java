@@ -81,7 +81,7 @@ public class FixedMainActivity extends MainActivity {
     }
 
     private void wireOAuthButton() {
-        Button button = findButton(getWindow().getDecorView(), "CONECTAR AO EWELINK");
+        Button button = findButton(getWindow().getDecorView(), "Conectar ao eWeLink");
         if (button != null) button.setOnClickListener(v -> connectEwelink());
     }
 

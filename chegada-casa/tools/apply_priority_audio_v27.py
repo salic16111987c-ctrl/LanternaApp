@@ -265,17 +265,31 @@ if 'android.permission.MODIFY_AUDIO_SETTINGS' not in text:
 else:
     print('ALREADY PATCHED AndroidManifest.xml')
 
-replace_once(root / 'app/build.gradle',
+gradle_path = root / 'app/build.gradle'
+gradle_text = gradle_path.read_text(encoding='utf-8')
+if "versionName '2.6-antifalsas-chegadas'" in gradle_text:
+    replace_once(gradle_path,
 '''        versionCode 11
         versionName '2.6-antifalsas-chegadas'
 ''',
 '''        versionCode 12
         versionName '2.7-audio-prioritario'
 ''')
+elif "versionName '2.7-audio-prioritario'" in gradle_text or "versionName '2.8-interface-profissional'" in gradle_text:
+    print('VERSION ALREADY v2.7 OR NEWER')
+else:
+    raise AssertionError('Unexpected Chegada Casa version while applying priority audio')
 
-replace_once(src / 'ArrivalDiagnosticActivity.java',
-             'title.setText("DIAGNÓSTICO E VOZ — v2.6");',
-             'title.setText("DIAGNÓSTICO E VOZ — v2.7");')
+diagnostic_path = src / 'ArrivalDiagnosticActivity.java'
+diagnostic_text = diagnostic_path.read_text(encoding='utf-8')
+if 'title.setText("DIAGNÓSTICO E VOZ — v2.6");' in diagnostic_text:
+    replace_once(diagnostic_path,
+                 'title.setText("DIAGNÓSTICO E VOZ — v2.6");',
+                 'title.setText("DIAGNÓSTICO E VOZ — v2.7");')
+elif 'DIAGNÓSTICO E VOZ — v2.7' in diagnostic_text or 'DIAGNÓSTICO E VOZ — v2.8' in diagnostic_text:
+    print('DIAGNOSTIC TITLE ALREADY v2.7 OR NEWER')
+else:
+    raise AssertionError('Unexpected diagnostic version while applying priority audio')
 
 checks = root / 'tools/check_arrival_invariants.py'
 replace_once(checks,

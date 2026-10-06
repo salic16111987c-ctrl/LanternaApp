@@ -61,113 +61,220 @@ public class MainActivity extends Activity {
     }
 
     private void montarTela() {
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(22), dp(20), dp(32));
-        root.setBackgroundColor(Color.rgb(246, 246, 246));
-        scroll.addView(root);
+    ScrollView scroll = new ScrollView(this);
+    scroll.setFillViewport(true);
 
-        TextView titulo = texto("🏠 CHEGADA CASA", 29, true);
-        titulo.setGravity(Gravity.CENTER);
-        root.addView(titulo);
+    LinearLayout root = new LinearLayout(this);
+    root.setOrientation(LinearLayout.VERTICAL);
+    root.setPadding(dp(16), dp(18), dp(16), dp(34));
+    root.setBackgroundColor(Color.rgb(244, 247, 251));
+    scroll.addView(root);
 
-        TextView sub = texto("Automação de chegada por localização + eWeLink", 15, false);
-        sub.setTextColor(Color.DKGRAY);
-        sub.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        subParams.setMargins(0, dp(6), 0, dp(20));
-        root.addView(sub, subParams);
+    TextView titulo = uiText("Chegada Casa Rápido", 27, Color.rgb(20, 32, 52), true);
+    titulo.setGravity(Gravity.CENTER);
+    root.addView(titulo);
 
-        root.addView(texto("1. Residência", 20, true));
-        endereco = new EditText(this);
-        endereco.setHint("Rua, número, bairro, cidade - MG");
-        endereco.setText(prefs.getString("endereco", ""));
-        endereco.setMinLines(2);
-        root.addView(endereco);
+    TextView sub = uiText("Automação de chegada • GPS inteligente • eWeLink", 14,
+            Color.rgb(92, 105, 126), false);
+    sub.setGravity(Gravity.CENTER);
+    LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    subParams.setMargins(0, dp(5), 0, dp(18));
+    root.addView(sub, subParams);
 
-        Button buscar = botao("BUSCAR ENDEREÇO");
-        buscar.setOnClickListener(v -> buscarEndereco());
-        root.addView(buscar, paramsBotao());
+    LinearLayout casaCard = uiCard("Residência", "Defina o ponto usado para calcular sua chegada.");
+    endereco = new EditText(this);
+    endereco.setHint("Rua, número, bairro, cidade - MG");
+    endereco.setText(prefs.getString("endereco", ""));
+    endereco.setTextSize(16);
+    endereco.setMinLines(2);
+    endereco.setPadding(dp(14), dp(11), dp(14), dp(11));
+    endereco.setBackground(uiBackground(Color.WHITE, Color.rgb(208, 215, 226), 12));
+    LinearLayout.LayoutParams addressParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    addressParams.setMargins(0, dp(10), 0, 0);
+    casaCard.addView(endereco, addressParams);
 
-        Button mapa = botao("MARCAR / AJUSTAR NO MAPA");
-        mapa.setOnClickListener(v -> startActivity(new Intent(this, MapActivity.class)));
-        root.addView(mapa, paramsBotao());
+    Button buscar = uiButton("Buscar endereço", true);
+    buscar.setOnClickListener(v -> buscarEndereco());
+    Button mapa = uiButton("Ajustar no mapa", false);
+    mapa.setOnClickListener(v -> startActivity(new Intent(this, MapActivity.class)));
+    addButtonRow(casaCard, buscar, mapa);
 
-        Button atual = botao("USAR LOCALIZAÇÃO ATUAL");
-        atual.setOnClickListener(v -> usarLocalizacaoAtual());
-        root.addView(atual, paramsBotao());
+    Button atual = uiButton("Usar localização atual", false);
+    atual.setOnClickListener(v -> usarLocalizacaoAtual());
+    addWideButton(casaCard, atual);
+    root.addView(casaCard, cardParams());
 
-        LinearLayout.LayoutParams sec = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        sec.setMargins(0, dp(22), 0, dp(8));
-        root.addView(texto("2. Raio de chegada", 20, true), sec);
+    LinearLayout raioCard = uiCard("Raio e horário", "Ajuste a distância de chegada e quando as lâmpadas podem ligar.");
+    TextView raioLabel = uiText("Raio de chegada", 13, Color.rgb(76, 91, 112), true);
+    raioCard.addView(raioLabel);
+    raio = new Spinner(this);
+    String[] opcoes = {"100 metros", "200 metros", "300 metros"};
+    raio.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, opcoes));
+    int salvo = prefs.getInt("raio", 100);
+    raio.setSelection(salvo == 200 ? 1 : salvo == 300 ? 2 : 0);
+    raio.setPadding(dp(10), dp(5), dp(10), dp(5));
+    raio.setBackground(uiBackground(Color.WHITE, Color.rgb(208, 215, 226), 12));
+    LinearLayout.LayoutParams raioParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(52));
+    raioParams.setMargins(0, dp(7), 0, dp(7));
+    raioCard.addView(raio, raioParams);
 
-        raio = new Spinner(this);
-        String[] opcoes = {"100 metros", "200 metros", "300 metros"};
-        raio.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, opcoes));
-        int salvo = prefs.getInt("raio", 100);
-        raio.setSelection(salvo == 200 ? 1 : salvo == 300 ? 2 : 0);
-        root.addView(raio);
+    soNoite = new CheckBox(this);
+    soNoite.setText("Somente lâmpadas à noite (18h às 6h) — portão continua 24 horas");
+    soNoite.setTextSize(14);
+    soNoite.setTextColor(Color.rgb(48, 60, 78));
+    soNoite.setChecked(prefs.getBoolean("so_noite", false));
+    raioCard.addView(soNoite);
+    TextView gpsNote = uiText("GPS inteligente economiza bateria longe de casa e aumenta a precisão na aproximação. O portão só abre após confirmação explícita.",
+            12, Color.rgb(102, 114, 132), false);
+    gpsNote.setPadding(0, dp(4), 0, 0);
+    raioCard.addView(gpsNote);
+    root.addView(raioCard, cardParams());
 
-        soNoite = new CheckBox(this);
-        soNoite.setText("Somente LÂMPADAS à noite (18h às 6h) — portão 24 horas");
-        soNoite.setTextSize(17);
-        soNoite.setChecked(prefs.getBoolean("so_noite", false));
-        root.addView(soNoite);
-        root.addView(texto("GPS inteligente: econômico em casa e longe; precisão durante o movimento na aproximação de 2 km. Portão somente com SIM explícito.", 13, false));
+    LinearLayout ewCard = uiCard("eWeLink", "Conecte sua conta e escolha separadamente luzes e portão.");
+    ewStatus = uiInfo("");
+    ewCard.addView(ewStatus);
 
-        root.addView(texto("3. eWeLink", 20, true), sec);
-        ewStatus = texto("", 16, false);
-        ewStatus.setTextColor(Color.DKGRAY);
-        root.addView(ewStatus);
+    Button conectar = uiButton("Conectar ao eWeLink", true);
+    conectar.setOnClickListener(v -> mostrarEtapaOAuth());
+    addWideButton(ewCard, conectar);
 
-        Button conectar = botao("CONECTAR AO EWELINK");
-        conectar.setOnClickListener(v -> mostrarEtapaOAuth());
-        root.addView(conectar, paramsBotao());
+    Button escolher = uiButton("Escolher lâmpadas", false);
+    escolher.setOnClickListener(v -> carregarDispositivos());
+    Button portao = uiButton("Escolher portão", false);
+    portao.setOnClickListener(v -> carregarPortao());
+    addButtonRow(ewCard, escolher, portao);
 
-        Button escolher = botao("ESCOLHER LÂMPADAS");
-        escolher.setOnClickListener(v -> carregarDispositivos());
-        root.addView(escolher, paramsBotao());
+    Button testarEw = uiButton("Testar lâmpadas eWeLink", false);
+    testarEw.setOnClickListener(v -> testarEwelink());
+    addWideButton(ewCard, testarEw);
+    root.addView(ewCard, cardParams());
 
-        Button portao = botao("ESCOLHER PORTÃO");
-        portao.setOnClickListener(v -> carregarPortao());
-        root.addView(portao, paramsBotao());
+    LinearLayout autoCard = uiCard("Automação", "Ative o monitoramento e confira o funcionamento em segundo plano.");
+    status = uiInfo("");
+    autoCard.addView(status);
 
-        Button testarEw = botao("TESTAR LÂMPADAS EWELINK");
-        testarEw.setOnClickListener(v -> testarEwelink());
-        root.addView(testarEw, paramsBotao());
+    Button ativar = uiButton("Ativar automação", true);
+    ativar.setOnClickListener(v -> ativarGeofence());
+    addWideButton(autoCard, ativar);
 
-        root.addView(texto("4. Automação", 20, true), sec);
-        Button ativar = botao("ATIVAR AUTOMAÇÃO");
-        ativar.setOnClickListener(v -> ativarGeofence());
-        root.addView(ativar, paramsBotao());
+    Button bateria = uiButton("Segundo plano / bateria", false);
+    bateria.setOnClickListener(v -> abrirConfiguracaoBateria());
+    Button testar = uiButton("Testar notificação", false);
+    testar.setOnClickListener(v -> GeofenceReceiver.mostrarNotificacao(this,
+            "Teste aprovado", "O aplicativo está pronto para detectar sua chegada."));
+    addButtonRow(autoCard, bateria, testar);
+    root.addView(autoCard, cardParams());
 
-        Button bateria = botao("CONFIGURAR SEGUNDO PLANO / BATERIA");
-        bateria.setOnClickListener(v -> abrirConfiguracaoBateria());
-        root.addView(bateria, paramsBotao());
+    TextView autor = uiText("Cilas Souza • Chegada Casa Rápido v2.8", 12,
+            Color.rgb(125, 137, 154), false);
+    autor.setGravity(Gravity.CENTER);
+    LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    ap.setMargins(0, dp(10), 0, 0);
+    root.addView(autor, ap);
 
-        Button testar = botao("TESTAR ALERTA AGORA");
-        testar.setOnClickListener(v -> GeofenceReceiver.mostrarNotificacao(this,
-                "Teste aprovado",
-                "O aplicativo está pronto para detectar sua chegada."));
-        root.addView(testar, paramsBotao());
+    setContentView(scroll);
+    atualizarStatus();
+    atualizarEwelinkStatus();
+}
 
-        status = texto("", 16, false);
-        status.setTextColor(Color.DKGRAY);
-        status.setPadding(0, dp(18), 0, 0);
-        root.addView(status);
+private TextView uiText(String value, int size, int color, boolean bold) {
+    TextView view = new TextView(this);
+    view.setText(value);
+    view.setTextSize(size);
+    view.setTextColor(color);
+    if (bold) view.setTypeface(Typeface.DEFAULT_BOLD);
+    return view;
+}
 
-        TextView autor = texto("Cilas Souza — Chegada Casa v1.4", 12, false);
-        autor.setTextColor(Color.GRAY);
-        autor.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams ap = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        ap.setMargins(0, dp(24), 0, 0);
-        root.addView(autor, ap);
+private LinearLayout uiCard(String title, String subtitle) {
+    LinearLayout card = new LinearLayout(this);
+    card.setOrientation(LinearLayout.VERTICAL);
+    card.setPadding(dp(16), dp(15), dp(16), dp(16));
+    card.setBackground(uiBackground(Color.WHITE, Color.rgb(226, 231, 239), 18));
+    card.setElevation(dp(2));
 
-        setContentView(scroll);
-        atualizarStatus();
-        atualizarEwelinkStatus();
+    TextView heading = uiText(title, 19, Color.rgb(28, 39, 58), true);
+    card.addView(heading);
+    TextView description = uiText(subtitle, 13, Color.rgb(100, 112, 130), false);
+    description.setPadding(0, dp(3), 0, dp(8));
+    card.addView(description);
+    return card;
+}
+
+private TextView uiInfo(String value) {
+    TextView info = uiText(value, 14, Color.rgb(54, 67, 87), false);
+    info.setPadding(dp(12), dp(11), dp(12), dp(11));
+    info.setBackground(uiBackground(Color.rgb(248, 250, 253), Color.rgb(227, 232, 240), 12));
+    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    p.setMargins(0, dp(2), 0, dp(2));
+    info.setLayoutParams(p);
+    return info;
+}
+
+private Button uiButton(String label, boolean primary) {
+    Button button = new Button(this);
+    button.setText(label);
+    button.setAllCaps(false);
+    button.setTextSize(14);
+    button.setTypeface(Typeface.DEFAULT_BOLD);
+    button.setGravity(Gravity.CENTER);
+    button.setPadding(dp(10), 0, dp(10), 0);
+    if (primary) {
+        button.setTextColor(Color.WHITE);
+        button.setBackground(uiBackground(Color.rgb(27, 91, 198), Color.rgb(27, 91, 198), 12));
+    } else {
+        button.setTextColor(Color.rgb(35, 58, 93));
+        button.setBackground(uiBackground(Color.rgb(246, 249, 253), Color.rgb(207, 216, 229), 12));
     }
+    button.setMinHeight(0);
+    button.setMinimumHeight(0);
+    return button;
+}
+
+private void addWideButton(LinearLayout parent, Button button) {
+    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+    p.setMargins(0, dp(9), 0, 0);
+    parent.addView(button, p);
+}
+
+private void addButtonRow(LinearLayout parent, Button left, Button right) {
+    LinearLayout row = new LinearLayout(this);
+    row.setOrientation(LinearLayout.HORIZONTAL);
+    LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
+    rp.setMargins(0, dp(9), 0, 0);
+
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+    lp.setMargins(0, 0, dp(4), 0);
+    LinearLayout.LayoutParams rr = new LinearLayout.LayoutParams(0,
+            ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+    rr.setMargins(dp(4), 0, 0, 0);
+    row.addView(left, lp);
+    row.addView(right, rr);
+    parent.addView(row, rp);
+}
+
+private LinearLayout.LayoutParams cardParams() {
+    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+    p.setMargins(0, 0, 0, dp(12));
+    return p;
+}
+
+private android.graphics.drawable.GradientDrawable uiBackground(int fill, int stroke, int radiusDp) {
+    android.graphics.drawable.GradientDrawable drawable = new android.graphics.drawable.GradientDrawable();
+    drawable.setColor(fill);
+    drawable.setCornerRadius(dp(radiusDp));
+    drawable.setStroke(dp(1), stroke);
+    return drawable;
+}
 
     private void mostrarEtapaOAuth() {
         if (EwelinkApi.hasSession(this)) {

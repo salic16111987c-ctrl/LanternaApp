@@ -159,7 +159,8 @@ check('Manifest contains required permissions and services',
                                        'androidx.car.app.category.IOT']))
 check('APK version and package stay update-compatible',
       "applicationId 'com.cilassouza.chegadacasa.fast'" in gradle and
-      "versionName '2.7-audio-prioritario'" in gradle and 'versionCode 12' in gradle and
+      (("versionName '2.7-audio-prioritario'" in gradle and 'versionCode 12' in gradle) or
+       ("versionName '2.8-interface-profissional'" in gradle and 'versionCode 13' in gradle)) and
       "implementation 'androidx.core:core:1.15.0'" in gradle)
 check('Fence exit alone cannot rearm arrival',
       'ArrivalController.handleExit(context)' not in receiver
