@@ -41,7 +41,9 @@
             android:launchMode="singleTop" android:screenOrientation="portrait" />
         <activity android:name=".GateVoiceActivity" android:exported="false"
             android:screenOrientation="portrait" />
-        <activity android:name=".ArrivalDiagnosticActivity" android:exported="true"
+        <activity android:name=".ArrivalDiagnosticActivity" android:exported="false"
+            android:launchMode="singleTop" android:screenOrientation="portrait" />
+        <activity android:name=".PremiumArrivalActivity" android:exported="true"
             android:launchMode="singleTop" android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
