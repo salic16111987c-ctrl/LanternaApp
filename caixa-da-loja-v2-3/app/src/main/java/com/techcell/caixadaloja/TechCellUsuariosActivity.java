@@ -79,7 +79,7 @@ public class TechCellUsuariosActivity extends Activity {
             String status=u.ativo?"ATIVO":"BLOQUEADO";
             card.addView(txt((u.proprietario?"👑  ":"👤  ")+u.nome,16,true));
             TextView d=txt(u.email+"\nNível: "+u.perfilExibicao()+"  •  "+status,12,false);d.setTextColor(u.ativo?TechCellUi.NAVY:TechCellUi.RED);d.setPadding(0,dp(4),0,dp(8));card.addView(d);
-            Button acao=botao(u.proprietario?"Gerenciar conta Master":"Editar usuário / acesso");TechCellUi.styleSecondary(this,acao);acao.setOnClickListener(v->acoes(u));card.addView(acao,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46)));
+            Button acao=botao(u.proprietario?"Gerenciar conta Master":"Editar / bloquear / excluir");TechCellUi.styleSecondary(this,acao);acao.setOnClickListener(v->acoes(u));card.addView(acao,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46)));
             lista.addView(card);
         }
     }
@@ -134,15 +134,34 @@ public class TechCellUsuariosActivity extends Activity {
     private void acoes(TechCellCloudUsers.Usuario u){
         if(u.proprietario){
             new AlertDialog.Builder(this).setTitle(u.nome).setMessage(u.email+"\nNível: Master proprietário\nStatus: ativo")
-                    .setItems(new String[]{"Enviar redefinição de senha"},(d,w)->reset(u))
+                    .setItems(new String[]{"Editar nome do Master","Enviar redefinição de senha"},(d,w)->{
+                        if(w==0)editarMaster(u);else reset(u);
+                    })
                     .setNegativeButton("Fechar",null).show();
             return;
         }
         String alternar=u.ativo?"Bloquear usuário":"Reativar usuário";
         new AlertDialog.Builder(this).setTitle(u.nome).setMessage(u.email+"\nNível atual: "+u.perfilExibicao())
-                .setItems(new String[]{"Editar nome / nível / status",alternar,"Enviar redefinição de senha"},(d,w)->{
-                    if(w==0)editarUsuario(u);else if(w==1)alterarAtivo(u,!u.ativo);else reset(u);
+                .setItems(new String[]{"Editar nome / nível / status",alternar,"Enviar redefinição de senha","Excluir usuário da loja"},(d,w)->{
+                    if(w==0)editarUsuario(u);
+                    else if(w==1)alterarAtivo(u,!u.ativo);
+                    else if(w==2)reset(u);
+                    else confirmarExcluir(u);
                 }).setNegativeButton("Fechar",null).show();
+    }
+
+    private void editarMaster(TechCellCloudUsers.Usuario u){
+        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(20),dp(4),dp(20),0);
+        EditText nome=new EditText(this);nome.setHint("Nome do Master");nome.setSingleLine(true);nome.setText(u.nome);form.addView(nome);
+        TextView info=txt("O nível Master, o status ativo e o e-mail de login são protegidos.",11,false);info.setTextColor(TechCellUi.MUTED);info.setPadding(0,dp(4),0,0);form.addView(info);
+        new AlertDialog.Builder(this).setTitle("Editar conta Master").setView(form)
+                .setPositiveButton("Salvar",(d,w)->executar("Master atualizado",()->{
+                    String novoNome=nome.getText().toString();
+                    TechCellCloudUsers.editarNomeProprietario(getApplicationContext(),novoNome);
+                    u.nome=novoNome.trim();
+                    return "Nome: "+u.nome+"\nNível: Master proprietário\nStatus: ATIVO";
+                }))
+                .setNegativeButton("Cancelar",null).show();
     }
 
     private void editarUsuario(TechCellCloudUsers.Usuario u){
@@ -157,6 +176,22 @@ public class TechCellUsuariosActivity extends Activity {
                     return "Nome: "+u.nome+"\nNível: "+u.perfilExibicao()+"\nStatus: "+(u.ativo?"ATIVO":"BLOQUEADO");
                 }))
                 .setNegativeButton("Cancelar",null).show();
+    }
+
+    private void confirmarExcluir(TechCellCloudUsers.Usuario u){
+        new AlertDialog.Builder(this)
+                .setTitle("Excluir "+u.nome+"?")
+                .setMessage("Este usuário perderá o acesso a esta loja. A credencial de login do Firebase será preservada e poderá ser vinculada novamente no futuro.\n\nDeseja continuar?")
+                .setPositiveButton("Excluir",(d,w)->excluirUsuario(u))
+                .setNegativeButton("Cancelar",null)
+                .show();
+    }
+
+    private void excluirUsuario(TechCellCloudUsers.Usuario u){
+        executar("Usuário excluído",()->{
+            TechCellCloudUsers.excluirDaEmpresa(getApplicationContext(),u);
+            return u.nome+" foi removido desta empresa e não poderá validar acesso novamente enquanto não for vinculado.";
+        });
     }
 
     private void alterarAtivo(TechCellCloudUsers.Usuario u,boolean ativo){
