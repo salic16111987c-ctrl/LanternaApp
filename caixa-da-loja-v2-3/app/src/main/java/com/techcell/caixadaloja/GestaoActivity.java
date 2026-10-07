@@ -4,25 +4,52 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+
 import java.text.NumberFormat;
 import java.util.Locale;
 
 public class GestaoActivity extends Activity {
     private final NumberFormat moeda=NumberFormat.getCurrencyInstance(new Locale("pt","BR"));
+    private final Handler liveHandler=new Handler(Looper.getMainLooper());
     private boolean syncProdutosRodando;
+    private boolean liveAtivo;
+    private TextView totalVendidoView;
+    private TextView lucroView;
+    private TextView vendasView;
+    private TextView custoView;
+    private TextView recebimentosView;
+
+    private final Runnable liveRefresh=new Runnable(){
+        @Override public void run(){
+            if(!liveAtivo)return;
+            atualizarResumoAoVivo();
+            liveHandler.postDelayed(this,1000);
+        }
+    };
+
     private int dp(int v){return TechCellUi.dp(this,v);}
     private TextView text(String v,int s,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t;}
     private Button moduleButton(String label){Button b=new Button(this);b.setText(label);b.setTextSize(14);TechCellUi.styleSecondary(this,b);return b;}
-    private LinearLayout metric(String label,String value,int color){
+
+    private LinearLayout metric(String label,String value,int color,int tipo){
         LinearLayout c=TechCellUi.card(this);c.setPadding(dp(12),dp(10),dp(12),dp(10));
-        TextView l=text(label,11,true);l.setTextColor(TechCellUi.MUTED);c.addView(l);TextView v=text(value,18,true);v.setTextColor(color);v.setPadding(0,dp(3),0,0);c.addView(v);return c;
+        TextView l=text(label,11,true);l.setTextColor(TechCellUi.MUTED);c.addView(l);
+        TextView v=text(value,18,true);v.setTextColor(color);v.setPadding(0,dp(3),0,0);c.addView(v);
+        if(tipo==1)totalVendidoView=v;
+        else if(tipo==2)lucroView=v;
+        else if(tipo==3)vendasView=v;
+        else if(tipo==4)custoView=v;
+        return c;
     }
+
     private void addMetricRow(LinearLayout root,LinearLayout a,LinearLayout b){
         LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setLayoutParams(TechCellUi.fullCardParams(this,8));
         LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1);ap.setMargins(0,0,dp(4),0);row.addView(a,ap);
@@ -39,7 +66,53 @@ public class GestaoActivity extends Activity {
     private void garantirMasterLocal(){TechCellBackgroundSync.garantir(this);}
 
     @Override protected void onCreate(Bundle b){super.onCreate(b);render();}
-    @Override protected void onResume(){super.onResume();garantirMasterLocal();if(TechCellAccess.controleAtivo(this)&&!TechCellAccess.temSessaoValida(this)){finish();return;}render();sincronizarTerminal();}
+
+    @Override protected void onResume(){
+        super.onResume();
+        garantirMasterLocal();
+        if(TechCellAccess.controleAtivo(this)&&!TechCellAccess.temSessaoValida(this)){finish();return;}
+        render();
+        liveAtivo=true;
+        liveHandler.removeCallbacks(liveRefresh);
+        liveHandler.postDelayed(liveRefresh,500);
+        sincronizarTerminal();
+    }
+
+    @Override protected void onPause(){
+        liveAtivo=false;
+        liveHandler.removeCallbacks(liveRefresh);
+        super.onPause();
+    }
+
+    @Override protected void onDestroy(){
+        liveAtivo=false;
+        liveHandler.removeCallbacksAndMessages(null);
+        super.onDestroy();
+    }
+
+    private void atualizarTexto(TextView view,String novo){
+        if(view==null||novo==null)return;
+        String atual=String.valueOf(view.getText());
+        if(novo.equals(atual))return;
+        view.setText(novo);
+        view.animate().cancel();
+        view.setScaleX(1f);view.setScaleY(1f);
+        view.animate().scaleX(1.08f).scaleY(1.08f).setDuration(120).withEndAction(()->
+                view.animate().scaleX(1f).scaleY(1f).setDuration(180).start()).start();
+    }
+
+    private void atualizarResumoAoVivo(){
+        if(!liveAtivo||!TechCellAccess.podeResumoFinanceiro(this)||totalVendidoView==null)return;
+        GestaoDbHelper db=new GestaoDbHelper(this);
+        try{
+            GestaoDbHelper.ResumoVendas hoje=db.resumoHoje();
+            atualizarTexto(totalVendidoView,moeda.format(hoje.total));
+            atualizarTexto(lucroView,moeda.format(hoje.lucro));
+            atualizarTexto(vendasView,String.valueOf(hoje.quantidadeVendas));
+            atualizarTexto(custoView,moeda.format(hoje.custo));
+            atualizarTexto(recebimentosView,"Dinheiro "+moeda.format(hoje.dinheiro)+"   •   PIX "+moeda.format(hoje.pix)+"   •   Cartão "+moeda.format(hoje.cartao));
+        }finally{db.close();}
+    }
 
     private void sincronizarTerminal(){
         if(syncProdutosRodando)return;
@@ -50,7 +123,10 @@ public class GestaoActivity extends Activity {
         syncProdutosRodando=true;
         new Thread(()->{
             TechCellSyncCoordinator.Resultado r=TechCellSyncCoordinator.sincronizar(getApplicationContext());
-            runOnUiThread(()->{syncProdutosRodando=false;if(!r.ocupado&&(r.vendasEnviadas>0||r.vendasRecebidas>0||r.produtosAlterados>0))render();});
+            runOnUiThread(()->{
+                syncProdutosRodando=false;
+                if(!r.ocupado&&(r.vendasEnviadas>0||r.vendasRecebidas>0))atualizarResumoAoVivo();
+            });
         },"TechCell-Gestao-Sync").start();
     }
 
@@ -62,6 +138,7 @@ public class GestaoActivity extends Activity {
         boolean gerente=TechCellAccess.perfilAtual(this)==TechCellAccess.Perfil.GERENTE;
         boolean caixa=TechCellAccess.perfilAtual(this)==TechCellAccess.Perfil.CAIXA;
 
+        totalVendidoView=null;lucroView=null;vendasView=null;custoView=null;recebimentosView=null;
         GestaoDbHelper db=new GestaoDbHelper(this);GestaoDbHelper.ResumoVendas hoje=db.resumoHoje();
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(18),dp(16),dp(30));scroll.addView(root);
         Button back=new Button(this);back.setText("←  Voltar");TechCellUi.styleSecondary(this,back);back.setOnClickListener(v->finish());root.addView(back,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
@@ -70,10 +147,10 @@ public class GestaoActivity extends Activity {
 
         if(TechCellAccess.podeResumoFinanceiro(this)){
             TextView ht=text("Hoje",17,true);ht.setPadding(0,dp(16),0,0);root.addView(ht);
-            addMetricRow(root,metric("TOTAL VENDIDO",moeda.format(hoje.total),TechCellUi.GREEN),metric("LUCRO BRUTO",moeda.format(hoje.lucro),TechCellUi.GREEN));
-            addMetricRow(root,metric("VENDAS",String.valueOf(hoje.quantidadeVendas),TechCellUi.BLUE),metric("CUSTO",moeda.format(hoje.custo),TechCellUi.TEXT));
+            addMetricRow(root,metric("TOTAL VENDIDO",moeda.format(hoje.total),TechCellUi.GREEN,1),metric("LUCRO BRUTO",moeda.format(hoje.lucro),TechCellUi.GREEN,2));
+            addMetricRow(root,metric("VENDAS",String.valueOf(hoje.quantidadeVendas),TechCellUi.BLUE,3),metric("CUSTO",moeda.format(hoje.custo),TechCellUi.TEXT,4));
             LinearLayout rec=TechCellUi.card(this);rec.setLayoutParams(TechCellUi.fullCardParams(this,8));TextView rt=text("Recebimentos",12,true);rt.setTextColor(TechCellUi.MUTED);rec.addView(rt);
-            TextView rv=text("Dinheiro "+moeda.format(hoje.dinheiro)+"   •   PIX "+moeda.format(hoje.pix)+"   •   Cartão "+moeda.format(hoje.cartao),13,true);rv.setPadding(0,dp(5),0,0);rec.addView(rv);root.addView(rec);
+            recebimentosView=text("Dinheiro "+moeda.format(hoje.dinheiro)+"   •   PIX "+moeda.format(hoje.pix)+"   •   Cartão "+moeda.format(hoje.cartao),13,true);recebimentosView.setPadding(0,dp(5),0,0);rec.addView(recebimentosView);root.addView(rec);
         }else{
             LinearLayout aviso=TechCellUi.card(this);aviso.setLayoutParams(TechCellUi.fullCardParams(this,12));
             TextView at=text("MODO CAIXA",13,true);at.setTextColor(TechCellUi.BLUE);aviso.addView(at);
