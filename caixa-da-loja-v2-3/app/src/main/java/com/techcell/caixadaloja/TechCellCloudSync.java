@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Primeira camada de nuvem nativa do Gestão Tech Cell.
@@ -45,6 +46,8 @@ public final class TechCellCloudSync {
     private static final String ROOT = "techcell_empresas";
     private static final String PREF = "techcell_cloud_v1";
     private static final int BATCH_MAX = 350;
+    private static final long READ_TIMEOUT_SECONDS = 6L;
+    private static final long WRITE_TIMEOUT_SECONDS = 20L;
 
     public static class Resultado {
         public boolean ok;
@@ -127,7 +130,7 @@ public final class TechCellCloudSync {
             FirebaseFirestore fs = firestore(context);
             DocumentReference empresa = fs.collection(ROOT).document(ctx.empresaUuid);
 
-            DocumentSnapshot atual = Tasks.await(empresa.get(Source.SERVER));
+            DocumentSnapshot atual = lerDocumentoComCache(empresa);
             if (atual.exists()) {
                 String owner = atual.getString("owner_uid");
                 if (owner != null && !owner.trim().isEmpty() && !owner.equals(user.getUid())) {
@@ -143,7 +146,7 @@ public final class TechCellCloudSync {
             dados.put("owner_email", user.getEmail() == null ? "" : user.getEmail());
             dados.put("source", "TECHCELL_PDV");
             dados.put("updated_at", FieldValue.serverTimestamp());
-            Tasks.await(empresa.set(dados, SetOptions.merge()));
+            Tasks.await(empresa.set(dados, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             Map<String,Object> dispositivo = new HashMap<>();
             dispositivo.put("dispositivo_uuid", ctx.dispositivoUuid);
@@ -153,10 +156,10 @@ public final class TechCellCloudSync {
             dispositivo.put("app", "Tech Cell PDV TESTE");
             dispositivo.put("last_seen", FieldValue.serverTimestamp());
             Tasks.await(empresa.collection("dispositivos").document(ctx.dispositivoUuid)
-                    .set(dispositivo, SetOptions.merge()));
+                    .set(dispositivo, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-            DocumentSnapshot confirmado = Tasks.await(empresa.get(Source.SERVER));
-            if (!confirmado.exists()) throw new IllegalStateException("A empresa não foi confirmada pelo servidor.");
+            DocumentSnapshot confirmado = lerDocumentoComCache(empresa);
+            if (!confirmado.exists()) throw new IllegalStateException("A empresa não foi confirmada pela nuvem.");
             String ownerConfirmado = confirmado.getString("owner_uid");
             if (ownerConfirmado == null || !ownerConfirmado.equals(user.getUid())) {
                 throw new IllegalStateException("A confirmação de propriedade da empresa falhou.");
@@ -198,7 +201,7 @@ public final class TechCellCloudSync {
             meta.put("cadastros_carga_inicial_em", FieldValue.serverTimestamp());
             meta.put("cadastros_carga_inicial_total", out.total);
             meta.put("updated_at", FieldValue.serverTimestamp());
-            Tasks.await(empresa.set(meta, SetOptions.merge()));
+            Tasks.await(empresa.set(meta, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             ContentValues ativa = new ContentValues();
             ativa.put("cloud_ativa", 1);
@@ -244,7 +247,7 @@ public final class TechCellCloudSync {
             dispositivo.put("papel", ctx.papelDispositivo);
             dispositivo.put("nome", ctx.nomeDispositivo);
             Tasks.await(empresa.collection("dispositivos").document(ctx.dispositivoUuid)
-                    .set(dispositivo, SetOptions.merge()));
+                    .set(dispositivo, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             out.ok = true;
             out.finalizadoEm = System.currentTimeMillis();
@@ -278,12 +281,27 @@ public final class TechCellCloudSync {
     }
 
     private static void validarEmpresaServidor(DocumentReference empresa, FirebaseUser user) throws Exception {
-        DocumentSnapshot d = Tasks.await(empresa.get(Source.SERVER));
+        DocumentSnapshot d = lerDocumentoComCache(empresa);
         if (!d.exists()) throw new IllegalStateException("Registre a empresa na nuvem antes da carga inicial.");
         String owner = d.getString("owner_uid");
         if (owner == null || !owner.equals(user.getUid())) {
             throw new IllegalStateException("A conta atual não é proprietária desta empresa na nuvem.");
         }
+    }
+
+    private static DocumentSnapshot lerDocumentoComCache(DocumentReference ref) throws Exception {
+        Throwable servidor = null;
+        try {
+            return Tasks.await(ref.get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (Throwable e) {
+            servidor = e;
+        }
+        try {
+            DocumentSnapshot cache = Tasks.await(ref.get(Source.CACHE), 2L, TimeUnit.SECONDS);
+            if (cache != null && cache.exists()) return cache;
+        } catch (Throwable ignored) {}
+        if (servidor instanceof Exception) throw (Exception) servidor;
+        throw new IllegalStateException("Não foi possível consultar a nuvem.", servidor);
     }
 
     private static void enviarConfigEmpresa(SQLiteDatabase db, DocumentReference empresa) throws Exception {
@@ -294,7 +312,7 @@ public final class TechCellCloudSync {
             Map<String,Object> update = new HashMap<>();
             update.put("config", config);
             update.put("updated_at", FieldValue.serverTimestamp());
-            Tasks.await(empresa.set(update, SetOptions.merge()));
+            Tasks.await(empresa.set(update, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             marcarLinhaSincronizada(db, "empresa_config", c.getLong(c.getColumnIndexOrThrow("id")),
                     colunaLong(c, "sync_version", 0));
         } finally { c.close(); }
@@ -322,7 +340,7 @@ public final class TechCellCloudSync {
                 noBatch++;
 
                 if (noBatch >= BATCH_MAX) {
-                    Tasks.await(batch.commit());
+                    Tasks.await(batch.commit(), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                     for (RefLinha r : refs) marcarLinhaSincronizada(db, tabela, r.id, r.versao);
                     enviados += refs.size();
                     batch = null;
@@ -331,7 +349,7 @@ public final class TechCellCloudSync {
                 }
             }
             if (batch != null && !refs.isEmpty()) {
-                Tasks.await(batch.commit());
+                Tasks.await(batch.commit(), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 for (RefLinha r : refs) marcarLinhaSincronizada(db, tabela, r.id, r.versao);
                 enviados += refs.size();
             }
@@ -362,7 +380,7 @@ public final class TechCellCloudSync {
             }
         } finally { c.close(); }
         if (n == 0) return;
-        Tasks.await(batch.commit());
+        Tasks.await(batch.commit(), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         ContentValues v = new ContentValues();
         v.put("sync_status", "CLOUD_SYNCED");
         for (Long id : ids) db.update("sync_tombstones", v, "id=?", new String[]{String.valueOf(id)});
@@ -443,8 +461,9 @@ public final class TechCellCloudSync {
                 lower.contains("missing or insufficient permissions")) {
             return "O Firebase bloqueou a nova estrutura Tech Cell. Precisamos publicar as regras da nuvem antes de continuar.";
         }
-        if (lower.contains("network") || lower.contains("unavailable") || lower.contains("timeout")) {
-            return "Não foi possível confirmar a nuvem agora. Verifique a internet e tente novamente. Detalhe: " + m;
+        if (lower.contains("network") || lower.contains("unavailable") || lower.contains("timeout") ||
+                lower.contains("failed to get document from server")) {
+            return "A nuvem demorou para responder. O app continua funcionando localmente. Verifique a internet e tente novamente. Detalhe: " + m;
         }
         return m.trim();
     }
