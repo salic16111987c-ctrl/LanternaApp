@@ -132,22 +132,48 @@ public class TechCellUsuariosActivity extends Activity {
     }
 
     private void acoes(TechCellCloudUsers.Usuario u){
+        LinearLayout menu=new LinearLayout(this);
+        menu.setOrientation(LinearLayout.VERTICAL);
+        menu.setPadding(dp(18),dp(4),dp(18),dp(4));
+
+        String status=u.ativo?"ATIVO":"BLOQUEADO";
+        TextView resumo=txt(u.email+"\nNível: "+u.perfilExibicao()+"  •  "+status,12,false);
+        resumo.setTextColor(TechCellUi.MUTED);
+        resumo.setPadding(0,0,0,dp(10));
+        menu.addView(resumo);
+
+        AlertDialog dialog=new AlertDialog.Builder(this)
+                .setTitle(u.nome)
+                .setView(menu)
+                .setNegativeButton("Fechar",null)
+                .create();
+
         if(u.proprietario){
-            new AlertDialog.Builder(this).setTitle(u.nome).setMessage(u.email+"\nNível: Master proprietário\nStatus: ativo")
-                    .setItems(new String[]{"Editar nome do Master","Enviar redefinição de senha"},(d,w)->{
-                        if(w==0)editarMaster(u);else reset(u);
-                    })
-                    .setNegativeButton("Fechar",null).show();
-            return;
+            Button editar=botao("✎  Editar nome do Master");TechCellUi.styleSecondary(this,editar);
+            editar.setOnClickListener(v->{dialog.dismiss();editarMaster(u);});
+            menu.addView(editar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
+
+            Button senha=botao("✉  Enviar redefinição de senha");TechCellUi.styleSecondary(this,senha);
+            senha.setOnClickListener(v->{dialog.dismiss();reset(u);});
+            LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));sp.setMargins(0,dp(8),0,0);menu.addView(senha,sp);
+        }else{
+            Button editar=botao("✎  Editar nome / nível / status");TechCellUi.stylePrimary(this,editar,TechCellUi.GREEN);
+            editar.setOnClickListener(v->{dialog.dismiss();editarUsuario(u);});
+            menu.addView(editar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+
+            Button bloquear=botao(u.ativo?"⛔  Bloquear usuário":"✓  Reativar usuário");TechCellUi.styleSecondary(this,bloquear);
+            bloquear.setOnClickListener(v->{dialog.dismiss();alterarAtivo(u,!u.ativo);});
+            LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));bp.setMargins(0,dp(8),0,0);menu.addView(bloquear,bp);
+
+            Button senha=botao("✉  Enviar redefinição de senha");TechCellUi.styleSecondary(this,senha);
+            senha.setOnClickListener(v->{dialog.dismiss();reset(u);});
+            LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));sp.setMargins(0,dp(8),0,0);menu.addView(senha,sp);
+
+            Button excluir=botao("🗑  Excluir usuário da loja");TechCellUi.stylePrimary(this,excluir,TechCellUi.RED);
+            excluir.setOnClickListener(v->{dialog.dismiss();confirmarExcluir(u);});
+            LinearLayout.LayoutParams ep=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));ep.setMargins(0,dp(12),0,0);menu.addView(excluir,ep);
         }
-        String alternar=u.ativo?"Bloquear usuário":"Reativar usuário";
-        new AlertDialog.Builder(this).setTitle(u.nome).setMessage(u.email+"\nNível atual: "+u.perfilExibicao())
-                .setItems(new String[]{"Editar nome / nível / status",alternar,"Enviar redefinição de senha","Excluir usuário da loja"},(d,w)->{
-                    if(w==0)editarUsuario(u);
-                    else if(w==1)alterarAtivo(u,!u.ativo);
-                    else if(w==2)reset(u);
-                    else confirmarExcluir(u);
-                }).setNegativeButton("Fechar",null).show();
+        dialog.show();
     }
 
     private void editarMaster(TechCellCloudUsers.Usuario u){
