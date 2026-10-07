@@ -10,6 +10,7 @@ import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.Source;
 
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Sessão e permissões dos usuários da loja.
@@ -19,6 +20,7 @@ import java.util.Locale;
 public final class TechCellAccess {
     private static final String ROOT = "techcell_empresas";
     private static final String PREF = "techcell_access_v1";
+    private static final long READ_TIMEOUT_SECONDS = 12L;
 
     public enum Perfil { MASTER, GERENTE, CAIXA, NENHUM }
 
@@ -87,8 +89,18 @@ public final class TechCellAccess {
         GestaoDbHelper.SyncContext ctx;
         try { ctx = db.getSyncContext(); }
         finally { db.close(); }
+
+        if (!ctx.configurado) {
+            throw new IllegalStateException("Este aparelho ainda não foi configurado. No primeiro uso, configure-o como Caixa e faça o pareamento com o Master na mesma rede Wi-Fi.");
+        }
         if (ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
-            throw new IllegalStateException("Este aparelho ainda não possui uma empresa vinculada.");
+            throw new IllegalStateException("Este aparelho ainda não possui uma empresa vinculada. Faça o pareamento com o Master antes do primeiro login.");
+        }
+        if (!"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+            String masterId = ctx.masterDeviceUuid == null ? "" : ctx.masterDeviceUuid.trim();
+            if (masterId.isEmpty()) {
+                throw new IllegalStateException("Este aparelho ainda não está vinculado ao Master. Conecte os dois aparelhos à mesma rede Wi-Fi, abra Dispositivo e rede e faça o pareamento antes de entrar com a conta do Caixa.");
+            }
         }
 
         FirebaseUser user = TechCellCloudSync.auth(app).getCurrentUser();
@@ -96,7 +108,7 @@ public final class TechCellAccess {
 
         DocumentReference empresa = TechCellCloudSync.firestore(app)
                 .collection(ROOT).document(ctx.empresaUuid);
-        DocumentSnapshot emp = Tasks.await(empresa.get(Source.SERVER));
+        DocumentSnapshot emp = Tasks.await(empresa.get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         if (!emp.exists()) throw new IllegalStateException("Esta empresa ainda não foi registrada na Nuvem Tech Cell.");
 
         String owner = texto(emp.get("owner_uid"));
@@ -109,8 +121,10 @@ public final class TechCellAccess {
             s.perfil = Perfil.MASTER;
             s.ativo = true;
             DocumentSnapshot ud = null;
-            try { ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER)); }
-            catch (Throwable ignored) {}
+            try {
+                ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER),
+                        READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            } catch (Throwable ignored) {}
             if (ud != null && ud.exists()) {
                 s.nome = texto(ud.get("nome"));
                 Object ativo = ud.get("ativo");
@@ -119,7 +133,7 @@ public final class TechCellAccess {
             if (s.nome.isEmpty()) s.nome = "Master";
         } else {
             DocumentSnapshot ud = Tasks.await(empresa.collection("usuarios")
-                    .document(user.getUid()).get(Source.SERVER));
+                    .document(user.getUid()).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (!ud.exists()) throw new IllegalStateException("Esta conta não está vinculada a esta empresa.");
             Object ativo = ud.get("ativo");
             s.ativo = !(ativo instanceof Boolean) || (Boolean) ativo;
