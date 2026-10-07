@@ -87,7 +87,7 @@ public final class TechCellCloudUsers {
         FirebaseUser criado = null;
         try {
             String appName = "TECHCELL_CREATE_" + UUID.randomUUID().toString();
-            secundaria = FirebaseApp.initializeApp(appContext, options(), appName);
+            secundaria = FirebaseApp.initializeApp(appContext, TechCellCloudSync.app(appContext).getOptions(), appName);
             authSec = FirebaseAuth.getInstance(secundaria);
             AuthResult ar = Tasks.await(authSec.createUserWithEmailAndPassword(e, senha));
             criado = ar.getUser();
