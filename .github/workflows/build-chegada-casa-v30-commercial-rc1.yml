@@ -1,4 +1,4 @@
-name: Build Chegada Casa 3.0 Commercial RC1
+name: Build Chegada Casa 3.0 Commercial RC2
 
 on:
   push:
@@ -43,7 +43,7 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
-      - name: Criar variante comercial RC1 lado a lado
+      - name: Criar variante comercial RC2 lado a lado
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -52,13 +52,13 @@ jobs:
           s=s.replace("applicationId 'com.cilassouza.chegadacasa.fast'", "applicationId 'com.cilassouza.chegadacasa.commercialrc1'")
           g.write_text(s)
           PY
-      - name: Compilar APK comercial RC1
+      - name: Compilar APK comercial RC2
         working-directory: chegada-casa
         run: gradle :app:assembleDebug --no-daemon
       - name: Preparar APK
-        run: cp chegada-casa/app/build/outputs/apk/debug/app-debug.apk ChegadaCasa-Rapida-v3.0-RC1.apk
+        run: cp chegada-casa/app/build/outputs/apk/debug/app-debug.apk ChegadaCasa-Rapida-v3.0-RC2.apk
       - name: Salvar artefato
         uses: actions/upload-artifact@v4
         with:
-          name: Chegada-Casa-Rapida-v3.0-RC1
-          path: ChegadaCasa-Rapida-v3.0-RC1.apk
+          name: Chegada-Casa-Rapida-v3.0-RC2
+          path: ChegadaCasa-Rapida-v3.0-RC2.apk
