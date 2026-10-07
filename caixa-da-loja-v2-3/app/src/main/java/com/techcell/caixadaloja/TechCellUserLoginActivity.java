@@ -3,6 +3,8 @@ package com.techcell.caixadaloja;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -17,6 +19,10 @@ import com.google.firebase.auth.FirebaseUser;
 
 public class TechCellUserLoginActivity extends Activity {
     private boolean ocupado;
+    private long tentativaLogin;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private TextView statusLogin;
+
     private int dp(int v){ return TechCellUi.dp(this,v); }
     private TextView txt(String s,int size,boolean bold){
         TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(TechCellUi.TEXT);
@@ -52,6 +58,11 @@ public class TechCellUserLoginActivity extends Activity {
         Button entrar=botao("Entrar");TechCellUi.stylePrimary(this,entrar,TechCellUi.BLUE);
         entrar.setOnClickListener(v->entrar(email.getText().toString().trim(),senha.getText().toString(),entrar));
         LinearLayout.LayoutParams ep=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));ep.setMargins(0,dp(12),0,0);card.addView(entrar,ep);
+
+        statusLogin=txt("Aguardando login.",12,true);
+        statusLogin.setTextColor(TechCellUi.MUTED);
+        statusLogin.setPadding(0,dp(10),0,0);
+        card.addView(statusLogin);
         root.addView(card);
 
         TechCellAccess.Sessao s=TechCellAccess.sessao(this);
@@ -66,15 +77,42 @@ public class TechCellUserLoginActivity extends Activity {
         setContentView(scroll);
     }
 
+    private String problemaPreparacao(){
+        GestaoDbHelper db=new GestaoDbHelper(getApplicationContext());
+        try{
+            GestaoDbHelper.SyncContext ctx=db.getSyncContext();
+            if(!ctx.configurado){
+                return "Este aparelho ainda não foi configurado. Configure-o como Caixa e faça o pareamento com o Master na mesma rede Wi-Fi antes do primeiro login.";
+            }
+            if(!"MASTER".equalsIgnoreCase(ctx.papelDispositivo)){
+                String masterId=ctx.masterDeviceUuid==null?"":ctx.masterDeviceUuid.trim();
+                if(masterId.isEmpty()){
+                    return "Este aparelho ainda não está vinculado ao Master. Conecte os dois aparelhos à mesma rede Wi-Fi, abra Dispositivo e rede e faça o pareamento primeiro.";
+                }
+            }
+            return "";
+        }finally{db.close();}
+    }
+
     private void validarContaAtual(){
         if(ocupado)return;ocupado=true;
+        if(statusLogin!=null){statusLogin.setText("Validando conta conectada…");statusLogin.setTextColor(TechCellUi.BLUE);}
         Toast.makeText(this,"Validando conta conectada…",Toast.LENGTH_SHORT).show();
         new Thread(()->{
             try{
                 TechCellAccess.Sessao s=TechCellAccess.atualizarDaNuvem(getApplicationContext());
-                runOnUiThread(()->{ocupado=false;Toast.makeText(this,"Acesso: "+TechCellAccess.perfilExibicao(s.perfil),Toast.LENGTH_SHORT).show();setResult(RESULT_OK);finish();});
+                runOnUiThread(()->{
+                    ocupado=false;
+                    if(statusLogin!=null){statusLogin.setText("Acesso liberado • "+TechCellAccess.perfilExibicao(s.perfil));statusLogin.setTextColor(TechCellUi.GREEN);}
+                    Toast.makeText(this,"Acesso: "+TechCellAccess.perfilExibicao(s.perfil),Toast.LENGTH_SHORT).show();setResult(RESULT_OK);finish();
+                });
             }catch(Throwable e){
-                runOnUiThread(()->{ocupado=false;mostrarErro("Não foi possível validar a conta",TechCellCloudUsers.mensagem(e));});
+                runOnUiThread(()->{
+                    ocupado=false;
+                    String m=TechCellCloudUsers.mensagem(e);
+                    if(statusLogin!=null){statusLogin.setText("Falha: "+m);statusLogin.setTextColor(TechCellUi.RED);}
+                    mostrarErro("Não foi possível validar a conta",m);
+                });
             }
         },"TechCell-Access-Validate").start();
     }
@@ -82,20 +120,59 @@ public class TechCellUserLoginActivity extends Activity {
     private void entrar(String email,String senha,Button entrar){
         if(ocupado)return;
         if(email.isEmpty()||senha.isEmpty()){Toast.makeText(this,"Informe e-mail e senha.",Toast.LENGTH_LONG).show();return;}
+
+        String preparo=problemaPreparacao();
+        if(!preparo.isEmpty()){
+            if(statusLogin!=null){statusLogin.setText("Configuração necessária antes do login.");statusLogin.setTextColor(TechCellUi.ORANGE);}
+            mostrarErro("Configure este aparelho primeiro",preparo);
+            return;
+        }
+
+        final long tentativa=++tentativaLogin;
         ocupado=true;entrar.setEnabled(false);entrar.setText("Entrando…");
+        if(statusLogin!=null){statusLogin.setText("1/2 • Conferindo e-mail e senha…");statusLogin.setTextColor(TechCellUi.BLUE);}
         TechCellAccess.encerrar(this);
+
+        handler.postDelayed(()->{
+            if(!ocupado || tentativa!=tentativaLogin)return;
+            tentativaLogin++;
+            ocupado=false;
+            try{TechCellCloudSync.auth(this).signOut();}catch(Throwable ignored){}
+            entrar.setEnabled(true);entrar.setText("Entrar");
+            if(statusLogin!=null){statusLogin.setText("Tempo esgotado. Verifique a internet e tente novamente.");statusLogin.setTextColor(TechCellUi.RED);}
+            mostrarErro("Sem resposta da nuvem","O login demorou mais de 25 segundos. Verifique a internet deste aparelho e tente novamente. O aplicativo não ficará mais esperando sem mostrar uma mensagem.");
+        },25000L);
+
         TechCellCloudSync.auth(this).signInWithEmailAndPassword(email,senha).addOnCompleteListener(this,t->{
+            if(tentativa!=tentativaLogin)return;
             if(!t.isSuccessful()){
+                tentativaLogin++;
                 ocupado=false;entrar.setEnabled(true);entrar.setText("Entrar");
-                mostrarErro("Não foi possível entrar",TechCellCloudUsers.mensagem(t.getException()));return;
+                String m=TechCellCloudUsers.mensagem(t.getException());
+                if(statusLogin!=null){statusLogin.setText("Falha no e-mail/senha: "+m);statusLogin.setTextColor(TechCellUi.RED);}
+                mostrarErro("Não foi possível entrar",m);return;
             }
+            if(statusLogin!=null){statusLogin.setText("2/2 • Login confirmado. Validando empresa e nível de acesso…");statusLogin.setTextColor(TechCellUi.BLUE);}
             new Thread(()->{
                 try{
                     TechCellAccess.Sessao s=TechCellAccess.atualizarDaNuvem(getApplicationContext());
-                    runOnUiThread(()->{ocupado=false;Toast.makeText(this,"Bem-vindo • "+TechCellAccess.perfilExibicao(s.perfil),Toast.LENGTH_SHORT).show();setResult(RESULT_OK);finish();});
+                    runOnUiThread(()->{
+                        if(tentativa!=tentativaLogin)return;
+                        tentativaLogin++;
+                        ocupado=false;
+                        if(statusLogin!=null){statusLogin.setText("Acesso liberado • "+TechCellAccess.perfilExibicao(s.perfil));statusLogin.setTextColor(TechCellUi.GREEN);}
+                        Toast.makeText(this,"Bem-vindo • "+TechCellAccess.perfilExibicao(s.perfil),Toast.LENGTH_SHORT).show();setResult(RESULT_OK);finish();
+                    });
                 }catch(Throwable e){
                     TechCellAccess.encerrar(getApplicationContext());
-                    runOnUiThread(()->{ocupado=false;entrar.setEnabled(true);entrar.setText("Entrar");mostrarErro("Acesso não autorizado",TechCellCloudUsers.mensagem(e));});
+                    runOnUiThread(()->{
+                        if(tentativa!=tentativaLogin)return;
+                        tentativaLogin++;
+                        ocupado=false;entrar.setEnabled(true);entrar.setText("Entrar");
+                        String m=TechCellCloudUsers.mensagem(e);
+                        if(statusLogin!=null){statusLogin.setText("Acesso não autorizado: "+m);statusLogin.setTextColor(TechCellUi.RED);}
+                        mostrarErro("Acesso não autorizado",m);
+                    });
                 }
             },"TechCell-Access-Login").start();
         });
