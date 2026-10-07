@@ -82,7 +82,7 @@ public final class TechCellCloudUsers {
         FirebaseAuth authSec = null;
         FirebaseUser criado = null;
         try {
-            String appName = "TECHCELL_CREATE_" + UUID.randomUUID().toString();
+            String appName = "TECHCELL_CREATE_" + UUID.randomUUID();
             secundaria = FirebaseApp.initializeApp(appContext, TechCellCloudSync.app(appContext).getOptions(), appName);
             authSec = FirebaseAuth.getInstance(secundaria);
             AuthResult ar = Tasks.await(authSec.createUserWithEmailAndPassword(e, senha), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -91,27 +91,7 @@ public final class TechCellCloudUsers {
                 throw new IllegalStateException("O Firebase não devolveu a identificação da nova conta.");
             }
 
-            Map<String,Object> dados = new HashMap<>();
-            dados.put("uid", criado.getUid());
-            dados.put("empresa_uuid", s.ctx.empresaUuid);
-            dados.put("filial_uuid", s.ctx.filialUuid);
-            dados.put("nome", n);
-            dados.put("email", e);
-            dados.put("perfil", p);
-            dados.put("ativo", true);
-            dados.put("proprietario", false);
-            dados.put("created_by_uid", s.user.getUid());
-            dados.put("created_at", FieldValue.serverTimestamp());
-            dados.put("updated_at", FieldValue.serverTimestamp());
-            Tasks.await(s.empresa.collection("usuarios").document(criado.getUid()).set(dados), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-
-            Usuario u = new Usuario();
-            u.uid = criado.getUid();
-            u.nome = n;
-            u.email = e;
-            u.perfil = p;
-            u.ativo = true;
-            u.proprietario = false;
+            Usuario u = gravarUsuario(s, criado.getUid(), n, e, p, true, "created_by_uid", "created_at");
             return u;
         } catch (Throwable erro) {
             if (criado != null) {
@@ -123,6 +103,96 @@ public final class TechCellCloudUsers {
             try { if (authSec != null) authSec.signOut(); } catch (Throwable ignored) {}
             try { if (secundaria != null) secundaria.delete(); } catch (Throwable ignored) {}
         }
+    }
+
+    /**
+     * Vincula uma conta que já existe no Firebase Authentication a esta empresa.
+     * A senha é usada somente para confirmar a identidade na instância secundária e nunca é salva.
+     */
+    public static Usuario vincularExistente(Context context, String nome, String email, String senha, String perfil) throws Exception {
+        Context appContext = context.getApplicationContext();
+        Sessao s = sessaoOwner(appContext);
+
+        String n = nome == null ? "" : nome.trim();
+        String e = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
+        String p = normalizarPerfil(perfil);
+        if (n.isEmpty()) throw new IllegalArgumentException("Informe o nome do usuário.");
+        if (e.isEmpty() || !e.contains("@")) throw new IllegalArgumentException("Informe um e-mail válido.");
+        if (senha == null || senha.isEmpty()) throw new IllegalArgumentException("Informe a senha atual desta conta para vinculá-la.");
+
+        FirebaseApp secundaria = null;
+        FirebaseAuth authSec = null;
+        try {
+            String appName = "TECHCELL_LINK_" + UUID.randomUUID();
+            secundaria = FirebaseApp.initializeApp(appContext, TechCellCloudSync.app(appContext).getOptions(), appName);
+            authSec = FirebaseAuth.getInstance(secundaria);
+            AuthResult ar = Tasks.await(authSec.signInWithEmailAndPassword(e, senha), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            FirebaseUser existente = ar.getUser();
+            if (existente == null || existente.getUid() == null || existente.getUid().trim().isEmpty()) {
+                throw new IllegalStateException("Não foi possível identificar a conta existente.");
+            }
+            if (existente.getUid().equals(s.user.getUid())) {
+                throw new IllegalStateException("Esta é a conta Master proprietária da loja e já está vinculada.");
+            }
+            String emailReal = existente.getEmail() == null ? e : existente.getEmail().trim().toLowerCase(Locale.ROOT);
+            return gravarUsuario(s, existente.getUid(), n, emailReal, p, true, "linked_by_uid", "linked_at");
+        } catch (Throwable erro) {
+            if (erro instanceof Exception) throw (Exception) erro;
+            throw new IllegalStateException(mensagem(erro), erro);
+        } finally {
+            try { if (authSec != null) authSec.signOut(); } catch (Throwable ignored) {}
+            try { if (secundaria != null) secundaria.delete(); } catch (Throwable ignored) {}
+        }
+    }
+
+    private static Usuario gravarUsuario(Sessao s, String uid, String nome, String email, String perfil,
+                                         boolean ativo, String campoAutor, String campoData) throws Exception {
+        DocumentReference ref = s.empresa.collection("usuarios").document(uid);
+        DocumentSnapshot atual = lerDocumento(ref);
+        Map<String,Object> dados = new HashMap<>();
+        dados.put("uid", uid);
+        dados.put("empresa_uuid", s.ctx.empresaUuid);
+        dados.put("filial_uuid", s.ctx.filialUuid);
+        dados.put("nome", nome);
+        dados.put("email", email);
+        dados.put("perfil", perfil);
+        dados.put("ativo", ativo);
+        dados.put("proprietario", false);
+        dados.put(campoAutor, s.user.getUid());
+        if (!atual.exists()) dados.put(campoData, FieldValue.serverTimestamp());
+        dados.put("updated_at", FieldValue.serverTimestamp());
+        Tasks.await(ref.set(dados, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        Usuario u = new Usuario();
+        u.uid = uid;
+        u.nome = nome;
+        u.email = email;
+        u.perfil = perfil;
+        u.ativo = ativo;
+        u.proprietario = false;
+        return u;
+    }
+
+    /** Edita nome, nível e status. O e-mail do login é mantido pelo Firebase Authentication. */
+    public static void editar(Context context, Usuario alvo, String nome, String perfil, boolean ativo) throws Exception {
+        if (alvo == null || alvo.uid == null || alvo.uid.trim().isEmpty()) throw new IllegalArgumentException("Usuário inválido.");
+        Sessao s = sessaoOwner(context.getApplicationContext());
+        if (alvo.uid.equals(s.user.getUid()) || alvo.proprietario) {
+            throw new IllegalStateException("A conta Master proprietária não pode ser alterada por esta tela.");
+        }
+        String n = nome == null ? "" : nome.trim();
+        if (n.isEmpty()) throw new IllegalArgumentException("Informe o nome do usuário.");
+        String p = normalizarPerfil(perfil);
+        Map<String,Object> v = new HashMap<>();
+        v.put("nome", n);
+        v.put("perfil", p);
+        v.put("ativo", ativo);
+        v.put("updated_at", FieldValue.serverTimestamp());
+        v.put("updated_by_uid", s.user.getUid());
+        Tasks.await(s.empresa.collection("usuarios").document(alvo.uid).set(v, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        alvo.nome = n;
+        alvo.perfil = p;
+        alvo.ativo = ativo;
     }
 
     public static void alterarPerfil(Context context, Usuario alvo, String perfil) throws Exception {
@@ -275,7 +345,13 @@ public final class TechCellCloudUsers {
         String base = TechCellCloudSync.mensagemCloud(e);
         String lower = base == null ? "" : base.toLowerCase(Locale.ROOT);
         if (lower.contains("email address is already in use") || lower.contains("email-already-in-use") || lower.contains("already in use")) {
-            return "Este e-mail já possui uma conta cadastrada. Use Entrar na conta existente.";
+            return "Este e-mail já existe no Firebase. Use a opção Vincular conta existente.";
+        }
+        if (lower.contains("invalid-credential") || lower.contains("wrong-password") || lower.contains("invalid password") || lower.contains("password is invalid")) {
+            return "E-mail ou senha atual da conta existente estão incorretos.";
+        }
+        if (lower.contains("user-not-found")) {
+            return "Esta conta ainda não existe no Firebase. Use Cadastrar usuário.";
         }
         if (lower.contains("password") && lower.contains("6")) {
             return "A senha inicial deve ter pelo menos 6 caracteres.";
