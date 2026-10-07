@@ -19,6 +19,7 @@ import java.util.List;
 /** Gestão de contas e níveis de acesso, exclusiva do Master proprietário. */
 public class TechCellUsuariosActivity extends Activity {
     private boolean ocupado;
+    private boolean carregando;
     private LinearLayout lista;
     private int dp(int v){return TechCellUi.dp(this,v);}
     private TextView txt(String s,int z,boolean b){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t;}
@@ -54,13 +55,13 @@ public class TechCellUsuariosActivity extends Activity {
     }
 
     private void carregar(){
-        if(ocupado||lista==null)return;ocupado=true;lista.removeAllViews();
+        if(carregando||lista==null)return;carregando=true;lista.removeAllViews();
         TextView t=txt("Carregando contas…",13,true);t.setPadding(0,dp(16),0,0);lista.addView(t);
         new Thread(()->{
             try{
                 List<TechCellCloudUsers.Usuario> us=TechCellCloudUsers.listar(getApplicationContext());
-                runOnUiThread(()->{ocupado=false;mostrarLista(us);});
-            }catch(Throwable e){runOnUiThread(()->{ocupado=false;lista.removeAllViews();erro("Não foi possível carregar os usuários",e);});}
+                runOnUiThread(()->{carregando=false;mostrarLista(us);});
+            }catch(Throwable e){runOnUiThread(()->{carregando=false;lista.removeAllViews();erro("Não foi possível carregar os usuários",e);});}
         },"TechCell-Users-List").start();
     }
 
@@ -91,7 +92,8 @@ public class TechCellUsuariosActivity extends Activity {
     }
 
     private void criar(String nome,String email,String senha,String perfil){
-        if(ocupado)return;ocupado=true;
+        if(ocupado){Toast.makeText(this,"Aguarde a operação atual terminar.",Toast.LENGTH_SHORT).show();return;}
+        ocupado=true;
         new Thread(()->{
             try{
                 TechCellCloudUsers.Usuario u=TechCellCloudUsers.criar(getApplicationContext(),nome,email,senha,perfil);
@@ -138,7 +140,8 @@ public class TechCellUsuariosActivity extends Activity {
 
     private interface Op{String rodar()throws Exception;}
     private void executar(String titulo,Op op){
-        if(ocupado)return;ocupado=true;
+        if(ocupado){Toast.makeText(this,"Aguarde a operação atual terminar.",Toast.LENGTH_SHORT).show();return;}
+        ocupado=true;
         new Thread(()->{try{String m=op.rodar();runOnUiThread(()->{ocupado=false;new AlertDialog.Builder(this).setTitle(titulo+" ✓").setMessage(m).setPositiveButton("OK",(d,w)->carregar()).show();});}
         catch(Throwable e){runOnUiThread(()->{ocupado=false;erro(titulo,e);});}},"TechCell-Users-Action").start();
     }
