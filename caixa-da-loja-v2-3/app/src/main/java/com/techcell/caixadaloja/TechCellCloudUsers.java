@@ -91,8 +91,7 @@ public final class TechCellCloudUsers {
                 throw new IllegalStateException("O Firebase não devolveu a identificação da nova conta.");
             }
 
-            Usuario u = gravarUsuario(s, criado.getUid(), n, e, p, true, "created_by_uid", "created_at");
-            return u;
+            return gravarUsuario(s, criado.getUid(), n, e, p, true, "created_by_uid", "created_at");
         } catch (Throwable erro) {
             if (criado != null) {
                 try { Tasks.await(criado.delete(), 10L, TimeUnit.SECONDS); } catch (Throwable ignored) {}
@@ -173,26 +172,77 @@ public final class TechCellCloudUsers {
         return u;
     }
 
-    /** Edita nome, nível e status. O e-mail do login é mantido pelo Firebase Authentication. */
+    /** Edita nome, nível e status de uma conta secundária. */
     public static void editar(Context context, Usuario alvo, String nome, String perfil, boolean ativo) throws Exception {
         if (alvo == null || alvo.uid == null || alvo.uid.trim().isEmpty()) throw new IllegalArgumentException("Usuário inválido.");
         Sessao s = sessaoOwner(context.getApplicationContext());
         if (alvo.uid.equals(s.user.getUid()) || alvo.proprietario) {
-            throw new IllegalStateException("A conta Master proprietária não pode ser alterada por esta tela.");
+            throw new IllegalStateException("Use a opção Editar nome do Master para alterar a conta proprietária.");
         }
         String n = nome == null ? "" : nome.trim();
         if (n.isEmpty()) throw new IllegalArgumentException("Informe o nome do usuário.");
         String p = normalizarPerfil(perfil);
+        DocumentReference ref = s.empresa.collection("usuarios").document(alvo.uid);
+        DocumentSnapshot atual = lerDocumento(ref);
+        if (!atual.exists()) throw new IllegalStateException("Este usuário não está mais vinculado à empresa. Atualize a lista.");
+
         Map<String,Object> v = new HashMap<>();
         v.put("nome", n);
         v.put("perfil", p);
         v.put("ativo", ativo);
         v.put("updated_at", FieldValue.serverTimestamp());
         v.put("updated_by_uid", s.user.getUid());
-        Tasks.await(s.empresa.collection("usuarios").document(alvo.uid).set(v, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        alvo.nome = n;
-        alvo.perfil = p;
-        alvo.ativo = ativo;
+        Tasks.await(ref.set(v, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        DocumentSnapshot confirmado = Tasks.await(ref.get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        if (!confirmado.exists()) throw new IllegalStateException("A atualização não foi confirmada pela nuvem.");
+        alvo.nome = string(confirmado.get("nome"));
+        alvo.perfil = normalizarPerfil(string(confirmado.get("perfil")));
+        Object valorAtivo = confirmado.get("ativo");
+        alvo.ativo = !(valorAtivo instanceof Boolean) || (Boolean) valorAtivo;
+    }
+
+    /** Permite ao proprietário editar apenas o nome de exibição, preservando MASTER e ativo. */
+    public static void editarNomeProprietario(Context context, String nome) throws Exception {
+        Sessao s = sessaoOwner(context.getApplicationContext());
+        String n = nome == null ? "" : nome.trim();
+        if (n.isEmpty()) throw new IllegalArgumentException("Informe o nome do Master.");
+
+        DocumentReference ref = s.empresa.collection("usuarios").document(s.user.getUid());
+        Map<String,Object> v = new HashMap<>();
+        v.put("uid", s.user.getUid());
+        v.put("empresa_uuid", s.ctx.empresaUuid);
+        v.put("filial_uuid", s.ctx.filialUuid);
+        v.put("nome", n);
+        v.put("email", s.user.getEmail() == null ? "" : s.user.getEmail());
+        v.put("perfil", "MASTER");
+        v.put("ativo", true);
+        v.put("proprietario", true);
+        v.put("updated_at", FieldValue.serverTimestamp());
+        v.put("updated_by_uid", s.user.getUid());
+        Tasks.await(ref.set(v, SetOptions.merge()), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Remove o usuário desta empresa. O Firebase Authentication não permite que um
+     * cliente Master apague arbitrariamente a credencial de outra pessoa; portanto
+     * removemos o vínculo da loja. Sem o documento em usuarios/{uid}, a conta deixa
+     * de validar acesso à empresa e pode ser vinculada novamente no futuro.
+     */
+    public static void excluirDaEmpresa(Context context, Usuario alvo) throws Exception {
+        if (alvo == null || alvo.uid == null || alvo.uid.trim().isEmpty()) throw new IllegalArgumentException("Usuário inválido.");
+        Sessao s = sessaoOwner(context.getApplicationContext());
+        if (alvo.uid.equals(s.user.getUid()) || alvo.proprietario) {
+            throw new IllegalStateException("A conta Master proprietária não pode ser excluída.");
+        }
+        DocumentReference ref = s.empresa.collection("usuarios").document(alvo.uid);
+        DocumentSnapshot atual = lerDocumento(ref);
+        if (!atual.exists()) return;
+        Tasks.await(ref.delete(), WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+        DocumentSnapshot confirmado = Tasks.await(ref.get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        if (confirmado.exists()) throw new IllegalStateException("A exclusão não foi confirmada pela nuvem.");
+        alvo.ativo = false;
     }
 
     public static void alterarPerfil(Context context, Usuario alvo, String perfil) throws Exception {
