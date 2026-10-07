@@ -23,6 +23,8 @@ import java.util.UUID;
 public class FixedMainActivity extends MainActivity {
     private static final String BACKEND_BASE = "https://chegada-casa-api.vercel.app";
     private static final String PREF_OAUTH_STATE = "ewelink_oauth_state";
+    private static final String OAUTH_STATE_PREFIX = "v3-";
+    private static final String OAUTH_SCHEME = "chegadacasav3";
     private boolean monitorStartRequested = false;
 
     private final Runnable monitorStarter = new Runnable() {
@@ -114,7 +116,7 @@ public class FixedMainActivity extends MainActivity {
             return;
         }
 
-        String state = "v2-" + UUID.randomUUID();
+        String state = OAUTH_STATE_PREFIX + UUID.randomUUID();
         getSharedPreferences("config", MODE_PRIVATE)
                 .edit()
                 .putString(PREF_OAUTH_STATE, state)
@@ -128,7 +130,7 @@ public class FixedMainActivity extends MainActivity {
                 .build();
 
         Toast.makeText(this,
-                "Abrindo o login oficial do eWeLink. Após autorizar, o Chegada Casa V2 abrirá sozinho.",
+                "Abrindo o login oficial do eWeLink. Após autorizar, o Chegada Casa Rápido abrirá sozinho.",
                 Toast.LENGTH_LONG).show();
 
         startActivity(new Intent(Intent.ACTION_VIEW, loginUrl));
@@ -137,7 +139,7 @@ public class FixedMainActivity extends MainActivity {
     private void handleOAuthIntent(Intent intent) {
         if (intent == null || intent.getData() == null) return;
         Uri data = intent.getData();
-        if (!"chegadacasav2".equalsIgnoreCase(data.getScheme()) ||
+        if (!OAUTH_SCHEME.equalsIgnoreCase(data.getScheme()) ||
                 !"oauth".equalsIgnoreCase(data.getHost())) return;
 
         String oauthError = data.getQueryParameter("error");
