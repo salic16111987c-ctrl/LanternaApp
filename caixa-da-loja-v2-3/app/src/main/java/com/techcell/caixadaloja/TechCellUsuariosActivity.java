@@ -7,6 +7,7 @@ import android.text.InputType;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -46,8 +47,11 @@ public class TechCellUsuariosActivity extends Activity {
         regras.addView(txt("Níveis atuais",14,true));
         TextView r=txt("MASTER: acesso total.\nGERENTE: PDV, produtos, estoque, clientes, fornecedores, financeiro, relatórios e vendas.\nCAIXA: PDV e clientes.",12,false);r.setTextColor(TechCellUi.MUTED);r.setPadding(0,dp(5),0,0);regras.addView(r);root.addView(regras);
 
-        Button novo=botao("＋  Cadastrar usuário");TechCellUi.stylePrimary(this,novo,TechCellUi.GREEN);novo.setOnClickListener(v->novoUsuario());
-        LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));np.setMargins(0,dp(4),0,dp(10));root.addView(novo,np);
+        Button novo=botao("＋  Cadastrar novo usuário");TechCellUi.stylePrimary(this,novo,TechCellUi.GREEN);novo.setOnClickListener(v->novoUsuario());
+        LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));np.setMargins(0,dp(4),0,dp(8));root.addView(novo,np);
+
+        Button vincular=botao("🔗  Vincular conta já existente");TechCellUi.styleSecondary(this,vincular);vincular.setOnClickListener(v->vincularUsuario());
+        LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));vp.setMargins(0,0,0,dp(10));root.addView(vincular,vp);
 
         Button atualizar=botao("↻  Atualizar lista");TechCellUi.styleSecondary(this,atualizar);atualizar.setOnClickListener(v->carregar());root.addView(atualizar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46)));
         lista=new LinearLayout(this);lista.setOrientation(LinearLayout.VERTICAL);root.addView(lista);
@@ -75,7 +79,7 @@ public class TechCellUsuariosActivity extends Activity {
             String status=u.ativo?"ATIVO":"BLOQUEADO";
             card.addView(txt((u.proprietario?"👑  ":"👤  ")+u.nome,16,true));
             TextView d=txt(u.email+"\nNível: "+u.perfilExibicao()+"  •  "+status,12,false);d.setTextColor(u.ativo?TechCellUi.NAVY:TechCellUi.RED);d.setPadding(0,dp(4),0,dp(8));card.addView(d);
-            Button acao=botao(u.proprietario?"Gerenciar conta Master":"Alterar nível / acesso");TechCellUi.styleSecondary(this,acao);acao.setOnClickListener(v->acoes(u));card.addView(acao,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46)));
+            Button acao=botao(u.proprietario?"Gerenciar conta Master":"Editar usuário / acesso");TechCellUi.styleSecondary(this,acao);acao.setOnClickListener(v->acoes(u));card.addView(acao,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46)));
             lista.addView(card);
         }
     }
@@ -86,8 +90,20 @@ public class TechCellUsuariosActivity extends Activity {
         EditText email=new EditText(this);email.setHint("E-mail");email.setSingleLine(true);email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);form.addView(email);
         EditText senha=new EditText(this);senha.setHint("Senha inicial (mínimo 6 caracteres)");senha.setSingleLine(true);senha.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);form.addView(senha);
         Spinner perfil=spinnerPerfis("CAIXA");form.addView(perfil);
-        new AlertDialog.Builder(this).setTitle("Cadastrar usuário").setView(form)
+        new AlertDialog.Builder(this).setTitle("Cadastrar novo usuário").setView(form)
                 .setPositiveButton("Cadastrar",(d,w)->criar(nome.getText().toString(),email.getText().toString(),senha.getText().toString(),perfilSelecionado(perfil)))
+                .setNegativeButton("Cancelar",null).show();
+    }
+
+    private void vincularUsuario(){
+        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(20),dp(4),dp(20),0);
+        TextView info=txt("Use esta opção quando o sistema disser que o e-mail já existe, mas ele não aparece na lista. A senha atual é usada apenas para confirmar a conta e não é salva.",11,false);info.setTextColor(TechCellUi.MUTED);info.setPadding(0,0,0,dp(6));form.addView(info);
+        EditText nome=new EditText(this);nome.setHint("Nome");nome.setSingleLine(true);form.addView(nome);
+        EditText email=new EditText(this);email.setHint("E-mail da conta existente");email.setSingleLine(true);email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);form.addView(email);
+        EditText senha=new EditText(this);senha.setHint("Senha atual da conta");senha.setSingleLine(true);senha.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);form.addView(senha);
+        Spinner perfil=spinnerPerfis("CAIXA");form.addView(perfil);
+        new AlertDialog.Builder(this).setTitle("Vincular conta existente").setView(form)
+                .setPositiveButton("Vincular",(d,w)->vincular(nome.getText().toString(),email.getText().toString(),senha.getText().toString(),perfilSelecionado(perfil)))
                 .setNegativeButton("Cancelar",null).show();
     }
 
@@ -102,6 +118,19 @@ public class TechCellUsuariosActivity extends Activity {
         },"TechCell-Users-Create").start();
     }
 
+    private void vincular(String nome,String email,String senha,String perfil){
+        if(ocupado){Toast.makeText(this,"Aguarde a operação atual terminar.",Toast.LENGTH_SHORT).show();return;}
+        ocupado=true;
+        new Thread(()->{
+            try{
+                TechCellCloudUsers.Usuario u=TechCellCloudUsers.vincularExistente(getApplicationContext(),nome,email,senha,perfil);
+                runOnUiThread(()->{ocupado=false;new AlertDialog.Builder(this).setTitle("Conta vinculada ✓")
+                        .setMessage(u.email+" agora está vinculada a esta loja como "+u.perfilExibicao()+".")
+                        .setPositiveButton("OK",(d,w)->carregar()).show();});
+            }catch(Throwable e){runOnUiThread(()->{ocupado=false;erro("Não foi possível vincular a conta",e);});}
+        },"TechCell-Users-Link").start();
+    }
+
     private void acoes(TechCellCloudUsers.Usuario u){
         if(u.proprietario){
             new AlertDialog.Builder(this).setTitle(u.nome).setMessage(u.email+"\nNível: Master proprietário\nStatus: ativo")
@@ -111,16 +140,22 @@ public class TechCellUsuariosActivity extends Activity {
         }
         String alternar=u.ativo?"Bloquear usuário":"Reativar usuário";
         new AlertDialog.Builder(this).setTitle(u.nome).setMessage(u.email+"\nNível atual: "+u.perfilExibicao())
-                .setItems(new String[]{"Mudar nível de acesso",alternar,"Enviar redefinição de senha"},(d,w)->{
-                    if(w==0)mudarNivel(u);else if(w==1)alterarAtivo(u,!u.ativo);else reset(u);
+                .setItems(new String[]{"Editar nome / nível / status",alternar,"Enviar redefinição de senha"},(d,w)->{
+                    if(w==0)editarUsuario(u);else if(w==1)alterarAtivo(u,!u.ativo);else reset(u);
                 }).setNegativeButton("Fechar",null).show();
     }
 
-    private void mudarNivel(TechCellCloudUsers.Usuario u){
-        Spinner sp=spinnerPerfis(u.perfil);
-        LinearLayout box=new LinearLayout(this);box.setPadding(dp(20),dp(10),dp(20),0);box.addView(sp,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT));
-        new AlertDialog.Builder(this).setTitle("Mudar nível de "+u.nome).setView(box)
-                .setPositiveButton("Salvar",(d,w)->executar("Nível alterado",()->{TechCellCloudUsers.alterarPerfil(getApplicationContext(),u,perfilSelecionado(sp));return "Novo nível: "+perfilSelecionado(sp);}))
+    private void editarUsuario(TechCellCloudUsers.Usuario u){
+        LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(dp(20),dp(4),dp(20),0);
+        EditText nome=new EditText(this);nome.setHint("Nome");nome.setSingleLine(true);nome.setText(u.nome);form.addView(nome);
+        TextView email=txt("Login: "+u.email+"\nO e-mail de login é mantido pelo Firebase e não é alterado nesta tela.",11,false);email.setTextColor(TechCellUi.MUTED);email.setPadding(0,dp(4),0,dp(6));form.addView(email);
+        Spinner perfil=spinnerPerfis(u.perfil);form.addView(perfil);
+        CheckBox ativo=new CheckBox(this);ativo.setText("Usuário ativo");ativo.setChecked(u.ativo);form.addView(ativo);
+        new AlertDialog.Builder(this).setTitle("Editar "+u.nome).setView(form)
+                .setPositiveButton("Salvar",(d,w)->executar("Usuário atualizado",()->{
+                    TechCellCloudUsers.editar(getApplicationContext(),u,nome.getText().toString(),perfilSelecionado(perfil),ativo.isChecked());
+                    return "Nome: "+u.nome+"\nNível: "+u.perfilExibicao()+"\nStatus: "+(u.ativo?"ATIVO":"BLOQUEADO");
+                }))
                 .setNegativeButton("Cancelar",null).show();
     }
 
