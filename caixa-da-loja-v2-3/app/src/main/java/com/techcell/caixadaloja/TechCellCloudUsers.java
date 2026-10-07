@@ -56,7 +56,7 @@ public final class TechCellCloudUsers {
         Sessao s = sessaoOwner(app);
         garantirProprietario(app, s);
 
-        QuerySnapshot qs = Tasks.await(s.empresa.collection("usuarios").get(Source.SERVER));
+        QuerySnapshot qs = Tasks.await(s.empresa.collection("usuarios").get(Source.DEFAULT));
         List<Usuario> out = new ArrayList<>();
         for (QueryDocumentSnapshot d : qs) out.add(fromDoc(d, s.user.getUid()));
         Collections.sort(out, new Comparator<Usuario>() {
@@ -171,7 +171,7 @@ public final class TechCellCloudUsers {
 
     private static void garantirProprietario(Context context, Sessao s) throws Exception {
         DocumentReference ref = s.empresa.collection("usuarios").document(s.user.getUid());
-        DocumentSnapshot atual = Tasks.await(ref.get(Source.SERVER));
+        DocumentSnapshot atual = Tasks.await(ref.get(Source.DEFAULT));
         Map<String,Object> v = new HashMap<>();
         v.put("uid", s.user.getUid());
         v.put("empresa_uuid", s.ctx.empresaUuid);
@@ -232,7 +232,7 @@ public final class TechCellCloudUsers {
 
         DocumentReference empresa = TechCellCloudSync.firestore(context)
                 .collection(ROOT).document(ctx.empresaUuid);
-        DocumentSnapshot d = Tasks.await(empresa.get(Source.SERVER));
+        DocumentSnapshot d = Tasks.await(empresa.get(Source.DEFAULT));
         if (!d.exists()) throw new IllegalStateException("Primeiro registre esta empresa na Nuvem Tech Cell.");
         String owner = d.getString("owner_uid");
         if (owner == null || !owner.equals(user.getUid())) {
@@ -269,6 +269,9 @@ public final class TechCellCloudUsers {
         }
         if (lower.contains("api key not valid")) {
             return "A configuração do Firebase deste APK está inválida. Instale a versão mais recente do Tech Cell.";
+        }
+        if (lower.contains("failed to get document from server") || lower.contains("unavailable")) {
+            return "A nuvem está temporariamente indisponível. Verifique a conexão com a internet e tente novamente.";
         }
         return base == null || base.trim().isEmpty() ? "Erro desconhecido." : base;
     }
