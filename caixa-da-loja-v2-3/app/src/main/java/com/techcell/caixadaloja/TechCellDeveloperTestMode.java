@@ -3,7 +3,11 @@ package com.techcell.caixadaloja;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.sqlite.SQLiteDatabase;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -11,13 +15,14 @@ import java.util.Set;
 /**
  * Modo de teste/impersonação do Desenvolvedor.
  *
- * A autenticação Firebase continua sendo a conta Desenvolvedor. A identidade simulada
- * existe apenas no app para reproduzir menus/permissões. Os dados são carregados para
- * um SQLite separado por empresa e alterações locais desse modo nunca são enviadas à nuvem.
+ * A conta Firebase continua sendo a conta Desenvolvedor. O usuário Master/Gerente/Caixa
+ * é apenas simulado no app. Antes do teste o banco local real é guardado; durante o teste
+ * trabalhamos em um SQLite temporário. Ao sair, o banco real é restaurado.
  */
 public final class TechCellDeveloperTestMode {
     private static final String PREF = "techcell_developer_test_v1";
-    private static final String DB_PREFIX = "gestao_techcell_devtest_";
+    private static final String DB_NAME = "gestao_techcell.db";
+    private static final String BACKUP_NAME = "gestao_techcell_before_devtest.db";
 
     public static class Estado {
         public boolean ativo;
@@ -58,12 +63,6 @@ public final class TechCellDeveloperTestMode {
         return e;
     }
 
-    public static String nomeBanco(Context context) {
-        Estado e = estado(context);
-        if (!e.ativo || e.empresaUuid == null || e.empresaUuid.trim().isEmpty()) return "gestao_techcell.db";
-        return nomeBancoEmpresa(e.empresaUuid);
-    }
-
     public static void iniciar(Context context, TechCellDeveloper.Empresa empresa,
                                TechCellDeveloper.UsuarioTeste usuario) throws Exception {
         Context app = context.getApplicationContext();
@@ -76,18 +75,20 @@ public final class TechCellDeveloperTestMode {
         }
         if (!usuario.ativo) throw new IllegalStateException("Este usuário está bloqueado na empresa.");
 
+        TechCellBackgroundSync.parar(app);
+        garantirBackupBancoReal(app);
+
+        // Descarta um teste anterior e cria uma base temporária limpa.
+        app.deleteDatabase(DB_NAME);
         String perfil = normalizarPerfil(usuario.proprietario ? "MASTER" : usuario.perfil);
         Set<String> permissoes = usuario.proprietario
                 ? TechCellPermissions.padrao("MASTER")
                 : new LinkedHashSet<>(usuario.permissoes == null ? TechCellPermissions.padrao(perfil) : usuario.permissoes);
         StringBuilder csv = new StringBuilder();
         for (String x : permissoes) { if (csv.length() > 0) csv.append(','); csv.append(x); }
-
         String filial = empresa.filialUuid == null || empresa.filialUuid.trim().isEmpty()
                 ? empresa.empresaUuid : empresa.filialUuid.trim();
-        String dbName = nomeBancoEmpresa(empresa.empresaUuid);
 
-        // Ativa primeiro para que GestaoDbHelper abra o banco de teste, nunca o banco real da loja.
         prefs(app).edit()
                 .putBoolean("ativo", true)
                 .putString("empresa_uuid", empresa.empresaUuid)
@@ -101,15 +102,12 @@ public final class TechCellDeveloperTestMode {
                 .putString("permissoes_csv", csv.toString())
                 .apply();
 
-        // Cada entrada começa com snapshot limpo da nuvem para não reaproveitar alterações de um teste anterior.
-        app.deleteDatabase(dbName);
-        app.getSharedPreferences("techcell_cloud_realtime_devtest_v1", Context.MODE_PRIVATE).edit().clear().apply();
-
         GestaoDbHelper db = new GestaoDbHelper(app);
         try {
             ContentValues v = new ContentValues();
             v.put("empresa_uuid", empresa.empresaUuid);
             v.put("filial_uuid", filial);
+            // ADMIN força a carga do histórico cloud; o perfil visual vem da sessão simulada.
             v.put("papel_dispositivo", "ADMIN");
             v.put("nome_dispositivo", "Teste Desenvolvedor");
             v.put("master_tipo", "NUVEM");
@@ -123,24 +121,32 @@ public final class TechCellDeveloperTestMode {
             db.getWritableDatabase().update("sync_context", v, "id=1", null);
         } finally { db.close(); }
 
-        TechCellBackgroundSync.parar(app);
-        TechCellCloudRealtimeSync.Resultado r = TechCellCloudRealtimeSync.sincronizar(app);
-        if (r == null || !r.ok) {
-            String erro = r == null ? "Falha ao carregar a base da empresa." : r.erro;
+        try {
+            TechCellDeveloperSnapshotSync.Resultado r = TechCellDeveloperSnapshotSync.carregar(app);
+            if (r == null || !r.ok) {
+                String erro = r == null ? "Falha ao carregar a base da empresa." : r.erro;
+                throw new IllegalStateException(erro == null || erro.trim().isEmpty()
+                        ? "Falha ao carregar a base da empresa para o modo de teste." : erro);
+            }
+        } catch (Throwable e) {
             sair(app);
-            throw new IllegalStateException(erro == null || erro.trim().isEmpty()
-                    ? "Falha ao carregar a base da empresa para o modo de teste." : erro);
+            if (e instanceof Exception) throw (Exception)e;
+            throw new IllegalStateException(e.getMessage(), e);
         }
     }
 
+    /** Sai do personagem de teste e volta à mesma conta Desenvolvedor. */
     public static void sair(Context context) {
         Context app = context.getApplicationContext();
-        Estado e = estado(app);
-        String dbName = e.empresaUuid == null || e.empresaUuid.trim().isEmpty() ? "" : nomeBancoEmpresa(e.empresaUuid);
-        prefs(app).edit().clear().apply();
-        app.getSharedPreferences("techcell_cloud_realtime_devtest_v1", Context.MODE_PRIVATE).edit().clear().apply();
-        if (!dbName.isEmpty()) app.deleteDatabase(dbName);
         TechCellBackgroundSync.parar(app);
+        try { app.deleteDatabase(DB_NAME); } catch (Throwable ignored) {}
+        restaurarBancoReal(app);
+        SharedPreferences p = prefs(app);
+        boolean backupPronto = p.getBoolean("backup_pronto", false);
+        boolean tinhaOriginal = p.getBoolean("tinha_original", false);
+        p.edit().clear().putBoolean("backup_pronto", backupPronto).putBoolean("tinha_original", tinhaOriginal).apply();
+        // O backup já foi restaurado; remove também os marcadores.
+        p.edit().clear().apply();
     }
 
     public static TechCellAccess.Sessao sessaoSimulada(Context context) {
@@ -159,15 +165,61 @@ public final class TechCellDeveloperTestMode {
         return s;
     }
 
+    /** Qualquer alteração feita no teste fica apenas no SQLite temporário. */
     public static boolean redeSomenteLeitura(Context context) {
         return ativo(context);
     }
 
-    private static String nomeBancoEmpresa(String empresaUuid) {
-        String safe = empresaUuid == null ? "empresa" : empresaUuid.replaceAll("[^A-Za-z0-9_-]", "");
-        if (safe.length() > 48) safe = safe.substring(0, 48);
-        if (safe.isEmpty()) safe = "empresa";
-        return DB_PREFIX + safe + ".db";
+    private static void garantirBackupBancoReal(Context app) throws Exception {
+        SharedPreferences p = prefs(app);
+        if (p.getBoolean("backup_pronto", false)) return;
+
+        File origem = app.getDatabasePath(DB_NAME);
+        File backup = new File(app.getFilesDir(), BACKUP_NAME);
+        boolean existe = origem.exists();
+        if (existe) {
+            checkpoint(origem);
+            copiar(origem, backup);
+        } else if (backup.exists()) {
+            // Backup antigo sem marcador não deve contaminar uma nova sessão.
+            backup.delete();
+        }
+        p.edit().putBoolean("backup_pronto", true).putBoolean("tinha_original", existe).apply();
+    }
+
+    private static void restaurarBancoReal(Context app) {
+        SharedPreferences p = prefs(app);
+        if (!p.getBoolean("backup_pronto", false)) return;
+        File backup = new File(app.getFilesDir(), BACKUP_NAME);
+        File destino = app.getDatabasePath(DB_NAME);
+        try {
+            if (p.getBoolean("tinha_original", false) && backup.exists()) {
+                File parent = destino.getParentFile(); if (parent != null && !parent.exists()) parent.mkdirs();
+                copiar(backup, destino);
+            }
+        } catch (Throwable ignored) {
+            // Mantém o backup se a restauração falhar; não o apagamos neste caso.
+            return;
+        }
+        try { if (backup.exists()) backup.delete(); } catch (Throwable ignored) {}
+    }
+
+    private static void checkpoint(File banco) {
+        SQLiteDatabase db = null;
+        try {
+            db = SQLiteDatabase.openDatabase(banco.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
+            db.execSQL("PRAGMA wal_checkpoint(FULL)");
+        } catch (Throwable ignored) {
+        } finally { if (db != null) try { db.close(); } catch (Throwable ignored) {} }
+    }
+
+    private static void copiar(File origem, File destino) throws Exception {
+        File parent = destino.getParentFile(); if (parent != null && !parent.exists()) parent.mkdirs();
+        try (FileInputStream in = new FileInputStream(origem); FileOutputStream out = new FileOutputStream(destino, false)) {
+            byte[] buf = new byte[64 * 1024]; int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            out.flush();
+        }
     }
 
     private static String normalizarPerfil(String valor) {
