@@ -35,8 +35,23 @@ public final class TechCellCloudAutoSync {
                     if (ctx.cloudAtiva && TechCellCloudSync.estaAutenticado(app)) {
                         // Vendas: LAN e nuvem trabalham em paralelo. Se a LAN não
                         // estiver disponível, a fila cloud leva a venda ao Master.
-                        try { TechCellCloudSaleQueue.sincronizar(app); }
-                        catch (Throwable ignored) {}
+                        try {
+                            TechCellCloudSaleQueue.Resultado fila = TechCellCloudSaleQueue.sincronizar(app);
+                            if (!fila.ok && !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+                                GestaoDbHelper statusDb = new GestaoDbHelper(app);
+                                try { statusDb.registrarResultadoEnvioVendas(0, fila.erro); }
+                                finally { statusDb.close(); }
+                            }
+                        } catch (Throwable e) {
+                            if (!"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+                                GestaoDbHelper statusDb = new GestaoDbHelper(app);
+                                try {
+                                    String m = e.getMessage();
+                                    statusDb.registrarResultadoEnvioVendas(0,
+                                            m == null || m.trim().isEmpty() ? e.getClass().getSimpleName() : m.trim());
+                                } finally { statusDb.close(); }
+                            }
+                        }
 
                         try { TechCellCloudRealtimeSync.sincronizar(app); }
                         catch (Throwable ignored) {}
