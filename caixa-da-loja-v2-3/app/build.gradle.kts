@@ -10,8 +10,8 @@ android {
         applicationId = "com.techcell.techcellacs.gestao.pdvpreview"
         minSdk = 24
         targetSdk = 35
-        versionCode = 471
-        versionName = "3.0.0-alpha42-pdvpreview-r41"
+        versionCode = 472
+        versionName = "3.0.0-alpha42-pdvpreview-r42"
     }
 
     buildTypes {
