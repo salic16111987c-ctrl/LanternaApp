@@ -27,9 +27,31 @@ service cloud.firestore {
         allow create, update, delete: if isOwner(empresaId);
       }
 
+      // Fila híbrida de vendas: Caixa/Gerente envia somente vendas assinadas
+      // pela própria conta. O Master proprietário é quem aceita e consolida.
+      match /vendas_entrada/{saleId} {
+        allow read: if isOwner(empresaId) || isActiveMember(empresaId);
+
+        allow create: if isOwner(empresaId)
+                      || (isActiveMember(empresaId)
+                          && request.resource.data.empresa_uuid == empresaId
+                          && request.resource.data.source_uid == request.auth.uid
+                          && request.resource.data.status == 'PENDENTE_MASTER');
+
+        allow update: if isOwner(empresaId)
+                      || (isActiveMember(empresaId)
+                          && resource.data.source_uid == request.auth.uid
+                          && request.resource.data.source_uid == request.auth.uid
+                          && request.resource.data.empresa_uuid == empresaId
+                          && resource.data.status != 'ACEITA_MASTER'
+                          && request.resource.data.status == 'PENDENTE_MASTER');
+
+        allow delete: if isOwner(empresaId);
+      }
+
       match /{document=**} {
         allow read: if isOwner(empresaId) || isActiveMember(empresaId);
-        // Nesta fase o Master continua sendo a autoridade que grava na nuvem.
+        // Dados canônicos continuam protegidos: só o Master/Administrador grava.
         allow write: if isOwner(empresaId);
       }
     }
