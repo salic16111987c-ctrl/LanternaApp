@@ -30,6 +30,9 @@ public final class TechCellBackgroundSync {
 
         if (ctx.cloudAtiva && TechCellCloudSync.estaAutenticado(app)) {
             TechCellCloudAutoSync.garantir(app);
+            TechCellPermissionRealtime.garantir(app);
+        } else {
+            TechCellPermissionRealtime.parar();
         }
 
         if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
@@ -51,6 +54,7 @@ public final class TechCellBackgroundSync {
     public static void parar(Context context) {
         Context app = context.getApplicationContext();
         TechCellCloudAutoSync.parar();
+        TechCellPermissionRealtime.parar();
         try { app.stopService(new Intent(app, TechCellMasterService.class)); } catch (Throwable ignored) {}
         try { app.stopService(new Intent(app, TechCellTerminalSyncService.class)); } catch (Throwable ignored) {}
     }
