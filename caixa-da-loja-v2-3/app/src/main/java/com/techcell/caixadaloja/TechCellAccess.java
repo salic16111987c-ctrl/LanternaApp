@@ -1,12 +1,15 @@
 package com.techcell.caixadaloja;
 
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.database.sqlite.SQLiteDatabase;
 
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.DocumentReference;
 import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.Source;
 
 import java.util.Locale;
@@ -85,68 +88,136 @@ public final class TechCellAccess {
 
     public static Sessao atualizarDaNuvem(Context context) throws Exception {
         Context app = context.getApplicationContext();
-        GestaoDbHelper db = new GestaoDbHelper(app);
-        GestaoDbHelper.SyncContext ctx;
-        try { ctx = db.getSyncContext(); }
-        finally { db.close(); }
-
-        if (!ctx.configurado) {
-            throw new IllegalStateException("Este aparelho ainda não foi configurado. No primeiro uso, configure-o como Caixa e faça o pareamento com o Master na mesma rede Wi-Fi.");
-        }
-        if (ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
-            throw new IllegalStateException("Este aparelho ainda não possui uma empresa vinculada. Faça o pareamento com o Master antes do primeiro login.");
-        }
-        if (!"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
-            String masterId = ctx.masterDeviceUuid == null ? "" : ctx.masterDeviceUuid.trim();
-            if (masterId.isEmpty()) {
-                throw new IllegalStateException("Este aparelho ainda não está vinculado ao Master. Conecte os dois aparelhos à mesma rede Wi-Fi, abra Dispositivo e rede e faça o pareamento antes de entrar com a conta do Caixa.");
-            }
-        }
-
         FirebaseUser user = TechCellCloudSync.auth(app).getCurrentUser();
         if (user == null) throw new IllegalStateException("Entre com seu e-mail e senha.");
 
-        DocumentReference empresa = TechCellCloudSync.firestore(app)
-                .collection(ROOT).document(ctx.empresaUuid);
-        DocumentSnapshot emp = Tasks.await(empresa.get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        if (!emp.exists()) throw new IllegalStateException("Esta empresa ainda não foi registrada na Nuvem Tech Cell.");
+        GestaoDbHelper db = new GestaoDbHelper(app);
+        GestaoDbHelper.SyncContext ctx;
+        try {
+            ctx = db.getSyncContext();
 
-        String owner = texto(emp.get("owner_uid"));
-        Sessao s = new Sessao();
-        s.uid = user.getUid();
-        s.email = user.getEmail() == null ? "" : user.getEmail();
-        s.empresaUuid = ctx.empresaUuid;
-
-        if (user.getUid().equals(owner)) {
-            s.perfil = Perfil.MASTER;
-            s.ativo = true;
-            DocumentSnapshot ud = null;
-            try {
-                ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER),
-                        READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            } catch (Throwable ignored) {}
-            if (ud != null && ud.exists()) {
-                s.nome = texto(ud.get("nome"));
-                Object ativo = ud.get("ativo");
-                if (ativo instanceof Boolean) s.ativo = (Boolean) ativo;
+            // Em um aparelho novo, a conta proprietária pode localizar a própria
+            // empresa pela nuvem. O aparelho passa a ser um terminal ADMIN remoto,
+            // sem virar o Master físico da loja.
+            if (!ctx.configurado || ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
+                if (descobrirEmpresaProprietario(app, user, db)) {
+                    ctx = db.getSyncContext();
+                }
             }
-            if (s.nome.isEmpty()) s.nome = "Master";
-        } else {
-            DocumentSnapshot ud = Tasks.await(empresa.collection("usuarios")
-                    .document(user.getUid()).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            if (!ud.exists()) throw new IllegalStateException("Esta conta não está vinculada a esta empresa.");
-            Object ativo = ud.get("ativo");
-            s.ativo = !(ativo instanceof Boolean) || (Boolean) ativo;
-            s.perfil = normalizar(texto(ud.get("perfil")));
-            s.nome = texto(ud.get("nome"));
-            if (s.nome.isEmpty()) s.nome = s.email;
+
+            if (!ctx.configurado) {
+                throw new IllegalStateException(
+                        "Este aparelho ainda não foi configurado. Se esta for a conta Administrador proprietária, confira a internet e tente novamente. Para uma conta Caixa/Gerente nova, faça primeiro o pareamento com o Master.");
+            }
+            if (ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
+                throw new IllegalStateException("Este aparelho ainda não possui uma empresa vinculada.");
+            }
+
+            String papelAparelho = ctx.papelDispositivo == null ? "" : ctx.papelDispositivo.trim();
+            boolean remotoNuvem = "ADMIN".equalsIgnoreCase(papelAparelho) || "CONSULTA".equalsIgnoreCase(papelAparelho);
+            if (!"MASTER".equalsIgnoreCase(papelAparelho) && !remotoNuvem) {
+                String masterId = ctx.masterDeviceUuid == null ? "" : ctx.masterDeviceUuid.trim();
+                if (masterId.isEmpty()) {
+                    throw new IllegalStateException(
+                            "Este aparelho ainda não está vinculado ao Master. Para um Caixa/Gerente, conecte os aparelhos à mesma rede Wi-Fi e faça o pareamento inicial.");
+                }
+            }
+
+            DocumentReference empresa = TechCellCloudSync.firestore(app)
+                    .collection(ROOT).document(ctx.empresaUuid);
+            DocumentSnapshot emp = Tasks.await(empresa.get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!emp.exists()) throw new IllegalStateException("Esta empresa ainda não foi registrada na Nuvem Tech Cell.");
+
+            String owner = texto(emp.get("owner_uid"));
+            Sessao s = new Sessao();
+            s.uid = user.getUid();
+            s.email = user.getEmail() == null ? "" : user.getEmail();
+            s.empresaUuid = ctx.empresaUuid;
+
+            if (user.getUid().equals(owner)) {
+                s.perfil = Perfil.MASTER;
+                s.ativo = true;
+                DocumentSnapshot ud = null;
+                try {
+                    ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER),
+                            READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                } catch (Throwable ignored) {}
+                if (ud != null && ud.exists()) {
+                    s.nome = texto(ud.get("nome"));
+                    Object ativo = ud.get("ativo");
+                    if (ativo instanceof Boolean) s.ativo = (Boolean) ativo;
+                }
+                if (s.nome.isEmpty()) s.nome = "Master";
+            } else {
+                DocumentSnapshot ud = Tasks.await(empresa.collection("usuarios")
+                        .document(user.getUid()).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                if (!ud.exists()) throw new IllegalStateException("Esta conta não está vinculada a esta empresa.");
+                Object ativo = ud.get("ativo");
+                s.ativo = !(ativo instanceof Boolean) || (Boolean) ativo;
+                s.perfil = normalizar(texto(ud.get("perfil")));
+                s.nome = texto(ud.get("nome"));
+                if (s.nome.isEmpty()) s.nome = s.email;
+            }
+
+            if (!s.ativo) throw new IllegalStateException("Esta conta está bloqueada pelo Master.");
+            if (s.perfil == Perfil.NENHUM) throw new IllegalStateException("Esta conta está sem nível de acesso válido.");
+
+            ContentValues cloud = new ContentValues();
+            cloud.put("cloud_ativa", 1);
+            cloud.put("updated_at", System.currentTimeMillis());
+            db.getWritableDatabase().update("sync_context", cloud, "id=1", null);
+
+            salvar(app, s);
+            s.valida = true;
+            return s;
+        } finally {
+            db.close();
+        }
+    }
+
+    /**
+     * Descobre automaticamente a empresa apenas para a conta proprietária.
+     * Contas Caixa/Gerente continuam exigindo o vínculo inicial com a loja,
+     * preservando o isolamento entre empresas.
+     */
+    private static boolean descobrirEmpresaProprietario(Context app, FirebaseUser user, GestaoDbHelper db) throws Exception {
+        QuerySnapshot qs;
+        try {
+            qs = Tasks.await(TechCellCloudSync.firestore(app)
+                            .collection(ROOT)
+                            .whereEqualTo("owner_uid", user.getUid())
+                            .limit(2)
+                            .get(Source.SERVER),
+                    READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (Throwable e) {
+            return false;
+        }
+        if (qs == null || qs.isEmpty()) return false;
+        if (qs.size() > 1) {
+            throw new IllegalStateException("Esta conta administra mais de uma empresa. A seleção da empresa será habilitada em uma próxima etapa.");
         }
 
-        if (!s.ativo) throw new IllegalStateException("Esta conta está bloqueada pelo Master.");
-        if (s.perfil == Perfil.NENHUM) throw new IllegalStateException("Esta conta está sem nível de acesso válido.");
-        salvar(app, s);
-        s.valida = true;
-        return s;
+        DocumentSnapshot emp = qs.getDocuments().get(0);
+        String empresaUuid = emp.getId();
+        String filialUuid = texto(emp.get("filial_uuid"));
+        if (filialUuid.isEmpty()) filialUuid = empresaUuid;
+
+        SQLiteDatabase sql = db.getWritableDatabase();
+        ContentValues v = new ContentValues();
+        v.put("empresa_uuid", empresaUuid);
+        v.put("filial_uuid", filialUuid);
+        v.put("papel_dispositivo", "ADMIN");
+        v.put("nome_dispositivo", "Acesso remoto");
+        v.put("master_tipo", "NUVEM");
+        v.put("master_host", "");
+        v.put("master_device_uuid", "");
+        v.put("master_name", "Master da loja");
+        v.put("master_auth_token", "");
+        v.put("configurado", 1);
+        v.put("cloud_ativa", 1);
+        v.put("updated_at", System.currentTimeMillis());
+        sql.update("sync_context", v, "id=1", null);
+        return true;
     }
 
     public static void encerrar(Context context) {
