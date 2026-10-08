@@ -40,14 +40,19 @@ public final class TechCellAccess {
     private TechCellAccess() {}
 
     public static boolean controleAtivo(Context context) {
+        if (TechCellDeveloperTestMode.ativo(context)) return true;
         GestaoDbHelper db = new GestaoDbHelper(context.getApplicationContext());
         try { return db.getSyncContext().cloudAtiva; }
         finally { db.close(); }
     }
 
     public static Sessao sessao(Context context) {
-        Sessao s = new Sessao();
         Context app = context.getApplicationContext();
+        if (TechCellDeveloperTestMode.ativo(app) && TechCellDeveloperAccess.ehDesenvolvedor(app)) {
+            return TechCellDeveloperTestMode.sessaoSimulada(app);
+        }
+
+        Sessao s = new Sessao();
         GestaoDbHelper db = new GestaoDbHelper(app);
         GestaoDbHelper.SyncContext ctx;
         try { ctx = db.getSyncContext(); }
@@ -100,6 +105,10 @@ public final class TechCellAccess {
 
     public static Sessao atualizarDaNuvem(Context context) throws Exception {
         Context app = context.getApplicationContext();
+        if (TechCellDeveloperTestMode.ativo(app) && TechCellDeveloperAccess.ehDesenvolvedor(app)) {
+            return TechCellDeveloperTestMode.sessaoSimulada(app);
+        }
+
         FirebaseUser user = TechCellCloudSync.auth(app).getCurrentUser();
         if (user == null) throw new IllegalStateException("Entre com seu e-mail e senha.");
 
@@ -145,8 +154,6 @@ public final class TechCellAccess {
             String owner = texto(emp.get("owner_uid"));
             boolean ehOwner = user.getUid().equals(owner);
 
-            // A licença é controlada pelo Desenvolvedor. Empresas antigas sem documento continuam
-            // em modo legado até serem migradas no novo painel.
             TechCellLicenseManager.validarAcesso(app, ctx.empresaUuid, ehOwner);
 
             Sessao s = new Sessao();
@@ -182,7 +189,6 @@ public final class TechCellAccess {
             if (!s.ativo) throw new IllegalStateException("Esta conta está bloqueada pelo Master.");
             if (s.perfil == Perfil.NENHUM) throw new IllegalStateException("Esta conta está sem nível de acesso válido.");
 
-            // O Master físico é raiz da empresa. Demais aparelhos precisam de aprovação do Master.
             boolean masterFisico = ehOwner && "MASTER".equalsIgnoreCase(papelAparelho);
             if (!masterFisico) {
                 String device = ctx.dispositivoUuid == null ? "" : ctx.dispositivoUuid.trim();
@@ -247,6 +253,10 @@ public final class TechCellAccess {
     }
 
     public static void encerrar(Context context) {
+        if (TechCellDeveloperTestMode.ativo(context) && TechCellDeveloperAccess.ehDesenvolvedor(context)) {
+            TechCellDeveloperTestMode.sair(context);
+            return;
+        }
         try { TechCellCloudSync.auth(context).signOut(); } catch (Throwable ignored) {}
         prefs(context).edit().clear().apply();
         TechCellDeveloperAccess.limpar(context);
