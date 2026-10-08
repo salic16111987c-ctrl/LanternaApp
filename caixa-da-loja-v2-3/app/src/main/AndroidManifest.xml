@@ -30,6 +30,7 @@
         </activity>
 
         <activity android:name="com.techcell.caixadaloja.TechCellCloudFirstLoginActivity" android:exported="false" android:screenOrientation="portrait" />
+        <activity android:name="com.techcell.caixadaloja.TechCellDeviceApprovalsActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.TechCellUserLoginActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.TechCellUsuariosActivity" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name="com.techcell.caixadaloja.MainActivity" android:exported="false" android:screenOrientation="portrait" />
