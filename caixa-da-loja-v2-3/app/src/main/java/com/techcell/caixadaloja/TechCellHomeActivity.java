@@ -15,6 +15,7 @@ public class TechCellHomeActivity extends Activity {
     private boolean abrindoLogin;
     private boolean checandoAprovacoes;
     private boolean avisoAprovacoesAberto;
+    private boolean checandoDeveloper;
     private static final int REQ_LOGIN=701;
     private int dp(int v){return TechCellUi.dp(this,v);}
     private TextView text(String v,int s,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t;}
@@ -40,7 +41,23 @@ public class TechCellHomeActivity extends Activity {
             if(!abrindoLogin){abrindoLogin=true;startActivityForResult(new Intent(this,TechCellUserLoginActivity.class),REQ_LOGIN);}return;
         }
         abrindoLogin=false;render();
+        verificarDesenvolvedor();
         if(TechCellAccess.controleAtivo(this)&&TechCellAccess.podeAdministrar(this))verificarAprovacoes();
+    }
+
+    private void verificarDesenvolvedor(){
+        if(checandoDeveloper||!TechCellCloudSync.estaAutenticado(this))return;
+        checandoDeveloper=true;
+        final boolean antes=TechCellDeveloperAccess.ehDesenvolvedor(this);
+        new Thread(()->{
+            try{
+                TechCellDeveloperAccess.Estado e=TechCellDeveloperAccess.atualizar(getApplicationContext());
+                runOnUiThread(()->{
+                    checandoDeveloper=false;
+                    if(!isFinishing()&&antes!=e.desenvolvedor)render();
+                });
+            }catch(Throwable ignored){runOnUiThread(()->checandoDeveloper=false);}
+        },"TechCell-Developer-Check").start();
     }
 
     private void verificarAprovacoes(){
@@ -75,10 +92,16 @@ public class TechCellHomeActivity extends Activity {
         TechCellAccess.Sessao sessao=TechCellAccess.sessao(this);
         if(cloud&&sessao.valida){
             LinearLayout user=TechCellUi.card(this);user.setLayoutParams(TechCellUi.fullCardParams(this,8));
+            String sufixo=TechCellDeveloperAccess.ehDesenvolvedor(this)?"  •  DESENVOLVEDOR":"";
             TextView ut=text("👤  "+sessao.nome,14,true);user.addView(ut);
-            TextView ud=text(sessao.email+"  •  "+TechCellAccess.perfilExibicao(sessao.perfil),11,false);ud.setTextColor(TechCellUi.MUTED);ud.setPadding(0,dp(3),0,dp(7));user.addView(ud);
-            Button trocar=new Button(this);trocar.setText("Trocar usuário");trocar.setTextSize(13);TechCellUi.styleSecondary(this,trocar);trocar.setOnClickListener(v->{TechCellAccess.encerrar(this);abrindoLogin=false;abrirOuRenderizar();});
+            TextView ud=text(sessao.email+"  •  "+TechCellAccess.perfilExibicao(sessao.perfil)+sufixo,11,false);ud.setTextColor(TechCellUi.MUTED);ud.setPadding(0,dp(3),0,dp(7));user.addView(ud);
+            Button trocar=new Button(this);trocar.setText("Trocar usuário");trocar.setTextSize(13);TechCellUi.styleSecondary(this,trocar);trocar.setOnClickListener(v->{TechCellAccess.encerrar(this);TechCellDeveloperAccess.limpar(this);abrindoLogin=false;abrirOuRenderizar();});
             user.addView(trocar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(42)));root.addView(user);
+        }
+
+        if(TechCellDeveloperAccess.ehDesenvolvedor(this)){
+            LinearLayout dev=modulo("🛠","Painel do Desenvolvedor","Controle global de clientes, licença Master, planos e quantidade de licenças Caixa.",true);
+            Button abrirD=(Button)dev.getTag();abrirD.setText("Administrar plataforma  →");abrirD.setOnClickListener(v->startActivity(new Intent(this,TechCellDeveloperActivity.class)));dev.setOnClickListener(v->abrirD.performClick());root.addView(dev);
         }
 
         if(!ctx.configurado){
@@ -108,7 +131,7 @@ public class TechCellHomeActivity extends Activity {
 
         String rodape=!ctx.configurado
                 ?"Aparelho novo • login + autorização do Master"
-                :(cloud?"Controle de acesso ativo • operação local continua disponível sem internet":"Ambiente local • ative a nuvem quando desejar acesso remoto");
+                :(TechCellDeveloperAccess.ehDesenvolvedor(this)?"Modo Desenvolvedor ativo • acesso global da plataforma":(cloud?"Controle de acesso ativo • operação local continua disponível sem internet":"Ambiente local • ative a nuvem quando desejar acesso remoto"));
         TextView safe=text(rodape,12,true);safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(11),dp(12),dp(11));
         root.addView(safe,TechCellUi.fullCardParams(this,16));setContentView(scroll);
     }
