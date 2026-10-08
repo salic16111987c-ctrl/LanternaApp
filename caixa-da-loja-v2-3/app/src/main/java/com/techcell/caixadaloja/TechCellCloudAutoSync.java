@@ -27,6 +27,12 @@ public final class TechCellCloudAutoSync {
                     if (!ctx.configurado) break;
 
                     if (ctx.cloudAtiva && TechCellCloudSync.estaAutenticado(app)) {
+                        // O proprietário publica/migra o vínculo conta -> empresa.
+                        // Isso permite que um aparelho zerado faça o primeiro login
+                        // em outra cidade sem nunca ter visto a LAN do Master.
+                        try { TechCellUserCompanyIndex.garantirIndicesSeNecessario(app); }
+                        catch (Throwable ignored) {}
+
                         // Permissões alteradas pelo Master passam a valer sem exigir novo login.
                         long agora = System.currentTimeMillis();
                         if (agora - ultimoRefreshAcesso >= 15000L) {
