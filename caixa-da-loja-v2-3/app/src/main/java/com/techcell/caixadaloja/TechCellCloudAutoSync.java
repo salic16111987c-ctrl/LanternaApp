@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class TechCellCloudAutoSync {
     private static final AtomicBoolean RODANDO = new AtomicBoolean(false);
     private static volatile boolean parar;
+    private static volatile long ultimoRefreshAcesso;
 
     private TechCellCloudAutoSync() {}
 
@@ -26,6 +27,15 @@ public final class TechCellCloudAutoSync {
                     if (!ctx.configurado) break;
 
                     if (ctx.cloudAtiva && TechCellCloudSync.estaAutenticado(app)) {
+                        // Permissões alteradas pelo Master passam a valer sem exigir novo login.
+                        long agora = System.currentTimeMillis();
+                        if (agora - ultimoRefreshAcesso >= 15000L) {
+                            try {
+                                TechCellAccess.atualizarDaNuvem(app);
+                                ultimoRefreshAcesso = agora;
+                            } catch (Throwable ignored) {}
+                        }
+
                         // Caixa/Gerente com permissão podem cadastrar/alterar produtos remotamente.
                         try { TechCellCloudProductPush.sincronizar(app); }
                         catch (Throwable ignored) {}
