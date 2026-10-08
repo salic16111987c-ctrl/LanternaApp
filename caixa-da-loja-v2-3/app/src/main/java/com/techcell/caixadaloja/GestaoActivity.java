@@ -127,6 +127,7 @@ public class GestaoActivity extends Activity {
             }else{
                 TextView dica=text("Resumo liberado para conferência do dia. Lucro, custo e financeiro completo permanecem protegidos.",11,false);dica.setTextColor(TechCellUi.MUTED);dica.setPadding(dp(4),dp(2),dp(4),0);root.addView(dica);
             }
+            Button relDia=moduleButton("📋  Ver relatório do dia");TechCellUi.stylePrimary(this,relDia,TechCellUi.BLUE);relDia.setOnClickListener(v->startActivity(new Intent(this,RelatorioDiaActivity.class)));addFull(root,relDia);
         }
 
         TextView menu=text("Acesso rápido",17,true);menu.setPadding(0,dp(18),0,0);root.addView(menu);
