@@ -104,8 +104,6 @@ public final class TechCellAccess {
         try {
             ctx = db.getSyncContext();
 
-            // Primeiro acesso remoto: antes de exigir LAN, tenta localizar a empresa
-            // pelo índice privado da própria conta. Isso funciona para Caixa/Gerente.
             if (!ctx.configurado || ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
                 boolean configurou = false;
                 Throwable erroIndice = null;
@@ -115,24 +113,17 @@ public final class TechCellAccess {
                     erroIndice = e;
                 }
                 if (!configurou) {
-                    // Mantém compatibilidade com a conta proprietária já existente.
                     if (descobrirEmpresaProprietario(app, user, db)) configurou = true;
                 }
                 if (configurou) ctx = db.getSyncContext();
                 else if (erroIndice != null) {
                     String m = TechCellCloudSync.mensagemCloud(erroIndice);
-                    throw new IllegalStateException(
-                            "Não foi possível localizar a empresa desta conta pela nuvem. " +
-                            (m == null ? "" : m), erroIndice);
+                    throw new IllegalStateException("Não foi possível localizar a empresa desta conta pela nuvem. " + (m == null ? "" : m), erroIndice);
                 }
             }
 
-            if (!ctx.configurado) {
-                throw new IllegalStateException("Esta conta ainda não possui um vínculo de empresa disponível na nuvem.");
-            }
-            if (ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
-                throw new IllegalStateException("Este aparelho ainda não possui uma empresa vinculada.");
-            }
+            if (!ctx.configurado) throw new IllegalStateException("Esta conta ainda não possui um vínculo de empresa disponível na nuvem.");
+            if (ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) throw new IllegalStateException("Este aparelho ainda não possui uma empresa vinculada.");
 
             String papelAparelho = ctx.papelDispositivo == null ? "" : ctx.papelDispositivo.trim();
             boolean remotoNuvem = "ADMIN".equalsIgnoreCase(papelAparelho)
@@ -140,9 +131,7 @@ public final class TechCellAccess {
                     || TechCellCloudFirstLogin.aceitaSemPareamento(ctx);
             if (!"MASTER".equalsIgnoreCase(papelAparelho) && !remotoNuvem) {
                 String masterId = ctx.masterDeviceUuid == null ? "" : ctx.masterDeviceUuid.trim();
-                if (masterId.isEmpty()) {
-                    throw new IllegalStateException("Este aparelho ainda não está vinculado ao Master. Faça o pareamento inicial ou entre pela nuvem.");
-                }
+                if (masterId.isEmpty()) throw new IllegalStateException("Este aparelho ainda não está vinculado ao Master. Faça o pareamento inicial ou entre pela nuvem.");
             }
 
             DocumentReference empresa = TechCellCloudSync.firestore(app).collection(ROOT).document(ctx.empresaUuid);
@@ -160,9 +149,8 @@ public final class TechCellAccess {
                 s.ativo = true;
                 s.permissoes = TechCellPermissions.padrao("MASTER");
                 DocumentSnapshot ud = null;
-                try {
-                    ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-                } catch (Throwable ignored) {}
+                try { ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS); }
+                catch (Throwable ignored) {}
                 if (ud != null && ud.exists()) {
                     s.nome = texto(ud.get("nome"));
                     Object ativo = ud.get("ativo");
@@ -182,6 +170,35 @@ public final class TechCellAccess {
 
             if (!s.ativo) throw new IllegalStateException("Esta conta está bloqueada pelo Master.");
             if (s.perfil == Perfil.NENHUM) throw new IllegalStateException("Esta conta está sem nível de acesso válido.");
+
+            // O aparelho Master físico é a raiz de confiança da empresa. Qualquer
+            // outro aparelho precisa estar explicitamente autorizado pelo Master.
+            boolean masterFisico = user.getUid().equals(owner) && "MASTER".equalsIgnoreCase(papelAparelho);
+            if (!masterFisico) {
+                String device = ctx.dispositivoUuid == null ? "" : ctx.dispositivoUuid.trim();
+                TechCellDeviceAuthorization.Dispositivo da = TechCellDeviceAuthorization.consultar(app, ctx.empresaUuid, device);
+                if (da == null) {
+                    TechCellUserCompanyIndex.Vinculo v = new TechCellUserCompanyIndex.Vinculo();
+                    v.empresaUuid = ctx.empresaUuid; v.filialUuid = ctx.filialUuid; v.perfil = s.perfil.name(); v.nome = s.nome; v.proprietario = user.getUid().equals(owner);
+                    da = TechCellDeviceAuthorization.solicitar(app, v, user);
+                }
+                if (da == null || TechCellDeviceAuthorization.PENDENTE.equalsIgnoreCase(da.status)) {
+                    prefs(app).edit().clear().apply();
+                    throw new IllegalStateException("Este aparelho está aguardando autorização do Master.");
+                }
+                if (TechCellDeviceAuthorization.NEGADO.equalsIgnoreCase(da.status)) {
+                    encerrar(app);
+                    throw new IllegalStateException("O Master negou o acesso deste aparelho.");
+                }
+                if (TechCellDeviceAuthorization.BLOQUEADO.equalsIgnoreCase(da.status)) {
+                    encerrar(app);
+                    throw new IllegalStateException("Este aparelho foi bloqueado pelo Master.");
+                }
+                if (!TechCellDeviceAuthorization.AUTORIZADO.equalsIgnoreCase(da.status) || !user.getUid().equals(da.uid)) {
+                    encerrar(app);
+                    throw new IllegalStateException("Este aparelho não possui autorização válida para esta conta.");
+                }
+            }
 
             ContentValues cloud = new ContentValues();
             cloud.put("cloud_ativa", 1);
