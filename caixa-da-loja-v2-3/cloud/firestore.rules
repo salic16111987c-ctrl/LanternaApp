@@ -34,6 +34,16 @@ service cloud.firestore {
               && legacyPermission(memberDoc(empresaId).data.perfil, permissao)));
     }
 
+    // Índice privado para o primeiro login em um aparelho novo. Cada usuário
+    // consegue ler somente o próprio vínculo. Somente o dono da empresa publica.
+    match /techcell_user_empresas/{userId}/empresas/{empresaId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create, update: if isOwner(empresaId)
+                            && request.resource.data.uid == userId
+                            && request.resource.data.empresa_uuid == empresaId;
+      allow delete: if isOwner(empresaId);
+    }
+
     match /techcell_empresas/{empresaId} {
       allow create: if request.auth != null
                     && request.resource.data.owner_uid == request.auth.uid;
@@ -48,7 +58,6 @@ service cloud.firestore {
       }
 
       // Caixa/Gerente com permissão explícita pode cadastrar e alterar produtos.
-      // O documento precisa declarar a própria identidade de origem e a mesma empresa.
       match /produtos/{produtoId} {
         allow read: if isOwner(empresaId) || isActiveMember(empresaId);
         allow create, update: if isOwner(empresaId)
