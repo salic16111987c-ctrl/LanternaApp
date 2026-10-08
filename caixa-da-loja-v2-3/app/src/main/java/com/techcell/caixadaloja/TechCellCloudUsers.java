@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-/** Gerenciamento das contas da empresa feito pelo Master proprietário. */
+/** Gerenciamento das contas da empresa feito pela conta Administrador proprietária. */
 public final class TechCellCloudUsers {
     private static final String ROOT = "techcell_empresas";
     private static final long READ_TIMEOUT_SECONDS = 6L;
@@ -340,11 +340,11 @@ public final class TechCellCloudUsers {
         GestaoDbHelper.SyncContext ctx;
         try { ctx = db.getSyncContext(); }
         finally { db.close(); }
-        if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
-            throw new IllegalStateException("Usuários da nuvem só podem ser administrados pelo aparelho Master.");
+        if (!ctx.configurado || ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
+            throw new IllegalStateException("Este aparelho ainda não está vinculado a uma empresa.");
         }
         FirebaseUser user = TechCellCloudSync.auth(context).getCurrentUser();
-        if (user == null) throw new IllegalStateException("Entre na conta Master da nuvem.");
+        if (user == null) throw new IllegalStateException("Entre na conta Administrador da nuvem.");
 
         DocumentReference empresa = TechCellCloudSync.firestore(context)
                 .collection(ROOT).document(ctx.empresaUuid);
@@ -352,7 +352,7 @@ public final class TechCellCloudUsers {
         if (!d.exists()) throw new IllegalStateException("Primeiro registre esta empresa na Nuvem Tech Cell.");
         String owner = d.getString("owner_uid");
         if (owner == null || !owner.equals(user.getUid())) {
-            throw new IllegalStateException("Somente a conta Master proprietária desta empresa pode administrar usuários.");
+            throw new IllegalStateException("Somente a conta Administrador proprietária desta empresa pode administrar usuários.");
         }
 
         Sessao s = new Sessao();
