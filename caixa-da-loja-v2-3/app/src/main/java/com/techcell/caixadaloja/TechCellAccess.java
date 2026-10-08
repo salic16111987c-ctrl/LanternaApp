@@ -103,22 +103,45 @@ public final class TechCellAccess {
         GestaoDbHelper.SyncContext ctx;
         try {
             ctx = db.getSyncContext();
+
+            // Primeiro acesso remoto: antes de exigir LAN, tenta localizar a empresa
+            // pelo índice privado da própria conta. Isso funciona para Caixa/Gerente.
             if (!ctx.configurado || ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
-                if (descobrirEmpresaProprietario(app, user, db)) ctx = db.getSyncContext();
+                boolean configurou = false;
+                Throwable erroIndice = null;
+                try {
+                    configurou = TechCellCloudFirstLogin.configurarSePossivel(app, user, db);
+                } catch (Throwable e) {
+                    erroIndice = e;
+                }
+                if (!configurou) {
+                    // Mantém compatibilidade com a conta proprietária já existente.
+                    if (descobrirEmpresaProprietario(app, user, db)) configurou = true;
+                }
+                if (configurou) ctx = db.getSyncContext();
+                else if (erroIndice != null) {
+                    String m = TechCellCloudSync.mensagemCloud(erroIndice);
+                    throw new IllegalStateException(
+                            "Não foi possível localizar a empresa desta conta pela nuvem. " +
+                            (m == null ? "" : m), erroIndice);
+                }
             }
+
             if (!ctx.configurado) {
-                throw new IllegalStateException("Este aparelho ainda não foi configurado. Para Caixa/Gerente, faça primeiro o vínculo com a loja.");
+                throw new IllegalStateException("Esta conta ainda não possui um vínculo de empresa disponível na nuvem.");
             }
             if (ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
                 throw new IllegalStateException("Este aparelho ainda não possui uma empresa vinculada.");
             }
 
             String papelAparelho = ctx.papelDispositivo == null ? "" : ctx.papelDispositivo.trim();
-            boolean remotoNuvem = "ADMIN".equalsIgnoreCase(papelAparelho) || "CONSULTA".equalsIgnoreCase(papelAparelho);
+            boolean remotoNuvem = "ADMIN".equalsIgnoreCase(papelAparelho)
+                    || "CONSULTA".equalsIgnoreCase(papelAparelho)
+                    || TechCellCloudFirstLogin.aceitaSemPareamento(ctx);
             if (!"MASTER".equalsIgnoreCase(papelAparelho) && !remotoNuvem) {
                 String masterId = ctx.masterDeviceUuid == null ? "" : ctx.masterDeviceUuid.trim();
                 if (masterId.isEmpty()) {
-                    throw new IllegalStateException("Este aparelho ainda não está vinculado ao Master. Faça o pareamento inicial.");
+                    throw new IllegalStateException("Este aparelho ainda não está vinculado ao Master. Faça o pareamento inicial ou entre pela nuvem.");
                 }
             }
 
