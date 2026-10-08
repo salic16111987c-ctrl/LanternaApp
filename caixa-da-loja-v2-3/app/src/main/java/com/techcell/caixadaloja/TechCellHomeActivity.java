@@ -40,12 +40,22 @@ public class TechCellHomeActivity extends Activity {
         if(requestCode==REQ_LOGIN||requestCode==REQ_DEVELOPER){abrindoLogin=false;abrirOuRenderizar();}
     }
 
+    private boolean modoTeste(){
+        return TechCellDeveloperTestMode.ativo(this)
+                && TechCellCloudSync.estaAutenticado(this)
+                && TechCellDeveloperAccess.ehDesenvolvedor(this);
+    }
+
     private boolean modoDeveloper(){
-        return TechCellCloudSync.estaAutenticado(this)&&TechCellDeveloperAccess.ehDesenvolvedor(this);
+        return !TechCellDeveloperTestMode.ativo(this)
+                && TechCellCloudSync.estaAutenticado(this)
+                && TechCellDeveloperAccess.ehDesenvolvedor(this);
     }
 
     private void abrirOuRenderizar(){
-        // Desenvolvedor é um acesso global independente de qualquer empresa local.
+        if(modoTeste()){
+            abrindoLogin=false;TechCellBackgroundSync.parar(this);render();return;
+        }
         if(modoDeveloper()){
             abrindoLogin=false;TechCellBackgroundSync.parar(this);render();return;
         }
@@ -73,7 +83,7 @@ public class TechCellHomeActivity extends Activity {
     }
 
     private void verificarAprovacoes(){
-        if(checandoAprovacoes||avisoAprovacoesAberto)return;checandoAprovacoes=true;
+        if(checandoAprovacoes||avisoAprovacoesAberto||modoTeste())return;checandoAprovacoes=true;
         new Thread(()->{
             try{
                 int n=TechCellDeviceAuthorization.contarPendentes(getApplicationContext());
@@ -99,6 +109,33 @@ public class TechCellHomeActivity extends Activity {
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(28),dp(18),dp(30));scroll.addView(root);
         TextView brand=text("TECH CELL ACS",29,true);brand.setGravity(Gravity.CENTER);root.addView(brand);
 
+        if(modoTeste()){
+            TechCellDeveloperTestMode.Estado teste=TechCellDeveloperTestMode.estado(this);
+            TechCellAccess.Sessao sessao=TechCellAccess.sessao(this);
+            TextView sub=text("MODO DE TESTE DO DESENVOLVEDOR",14,true);sub.setTextColor(TechCellUi.ORANGE);sub.setGravity(Gravity.CENTER);sub.setPadding(0,dp(4),0,dp(12));root.addView(sub);
+
+            LinearLayout aviso=TechCellUi.card(this);aviso.setLayoutParams(TechCellUi.fullCardParams(this,8));
+            TextView at=text("🧪  TESTE ISOLADO • "+TechCellAccess.perfilExibicao(sessao.perfil),15,true);at.setTextColor(TechCellUi.ORANGE);aviso.addView(at);
+            TextView ad=text("Empresa: "+teste.empresaNome+"\nUsuário simulado: "+sessao.nome+(sessao.email==null||sessao.email.isEmpty()?"":"\n"+sessao.email),12,false);ad.setTextColor(TechCellUi.MUTED);ad.setPadding(0,dp(5),0,0);aviso.addView(ad);
+            TextView seguro=text("A conta Firebase continua sendo a sua conta Desenvolvedor. A base usada neste teste é temporária e as alterações não são enviadas para a empresa.",11,true);seguro.setTextColor(TechCellUi.GREEN);seguro.setPadding(0,dp(8),0,0);aviso.addView(seguro);root.addView(aviso);
+
+            LinearLayout gestao=modulo("🏪","Gestão Tech Cell","Menus e permissões exatamente do perfil que você está simulando.",true);
+            Button abrirGestao=(Button)gestao.getTag();abrirGestao.setText("Testar gestão como "+TechCellAccess.perfilExibicao(sessao.perfil)+"  →");abrirGestao.setOnClickListener(v->startActivity(new Intent(this,GestaoActivity.class)));gestao.setOnClickListener(v->abrirGestao.performClick());root.addView(gestao);
+
+            LinearLayout caixa=modulo("💵","Caixa da Loja","Operação local no banco temporário deste teste.",false);
+            Button abrirCaixa=(Button)caixa.getTag();abrirCaixa.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));caixa.setOnClickListener(v->abrirCaixa.performClick());root.addView(caixa);
+
+            LinearLayout nota=TechCellUi.card(this);nota.setLayoutParams(TechCellUi.fullCardParams(this,8));
+            TextView nt=text("Proteção do teste",12,true);nt.setTextColor(TechCellUi.BLUE);nota.addView(nt);
+            TextView nd=text("Nuvem, cadastro real de usuários e autorizações de aparelhos ficam fora deste ambiente de teste para evitar alterar a operação do cliente sem querer.",11,false);nd.setTextColor(TechCellUi.MUTED);nd.setPadding(0,dp(4),0,0);nota.addView(nd);root.addView(nota);
+
+            Button voltarDev=new Button(this);voltarDev.setText("←  SAIR DO TESTE E VOLTAR AO DESENVOLVEDOR");voltarDev.setAllCaps(false);TechCellUi.stylePrimary(this,voltarDev,TechCellUi.BLUE);
+            voltarDev.setOnClickListener(v->sairDoTeste());
+            LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54));vp.setMargins(0,dp(7),0,0);root.addView(voltarDev,vp);
+
+            setContentView(scroll);return;
+        }
+
         if(modoDeveloper()){
             TechCellDeveloperAccess.Estado dev=TechCellDeveloperAccess.local(this);
             TextView sub=text("Administração global da plataforma",14,false);sub.setTextColor(TechCellUi.MUTED);sub.setGravity(Gravity.CENTER);sub.setPadding(0,dp(4),0,dp(12));root.addView(sub);
@@ -108,7 +145,7 @@ public class TechCellHomeActivity extends Activity {
             String email="";try{if(TechCellCloudSync.auth(this).getCurrentUser()!=null&&TechCellCloudSync.auth(this).getCurrentUser().getEmail()!=null)email=TechCellCloudSync.auth(this).getCurrentUser().getEmail();}catch(Throwable ignored){}
             TextView ud=text(email+"  •  DESENVOLVEDOR DA PLATAFORMA",11,false);ud.setTextColor(TechCellUi.BLUE);ud.setPadding(0,dp(3),0,0);user.addView(ud);root.addView(user);
 
-            LinearLayout painel=modulo("🛠","Painel do Desenvolvedor","Todas as empresas, licenças Master, planos e quantidade de licenças Caixa.",true);
+            LinearLayout painel=modulo("🛠","Painel do Desenvolvedor","Todas as empresas, licenças Master, planos, licenças Caixa e modo de teste.",true);
             Button abrir=(Button)painel.getTag();abrir.setText("Administrar plataforma  →");abrir.setOnClickListener(v->startActivity(new Intent(this,TechCellDeveloperActivity.class)));painel.setOnClickListener(v->abrir.performClick());root.addView(painel);
 
             Button sair=new Button(this);sair.setText("Sair do Desenvolvedor / entrar na loja");sair.setAllCaps(false);TechCellUi.styleSecondary(this,sair);
@@ -164,5 +201,20 @@ public class TechCellHomeActivity extends Activity {
         String rodape=!ctx.configurado?"Aparelho novo • login + autorização do Master":(cloud?"Controle de acesso ativo • operação local continua disponível sem internet":"Ambiente local • ative a nuvem quando desejar acesso remoto");
         TextView safe=text(rodape,12,true);safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(11),dp(12),dp(11));
         root.addView(safe,TechCellUi.fullCardParams(this,16));setContentView(scroll);
+    }
+
+    private void sairDoTeste(){
+        new AlertDialog.Builder(this).setTitle("Voltar ao Desenvolvedor?")
+                .setMessage("As alterações feitas neste teste serão descartadas e sua conta Desenvolvedor continuará conectada.")
+                .setPositiveButton("VOLTAR AO DESENVOLVEDOR",(d,w)->{
+                    TechCellDeveloperTestMode.sair(getApplicationContext());
+                    abrindoLogin=false;abrirOuRenderizar();
+                })
+                .setNegativeButton("Continuar testando",null).show();
+    }
+
+    @Override public void onBackPressed(){
+        if(modoTeste()){sairDoTeste();return;}
+        super.onBackPressed();
     }
 }
