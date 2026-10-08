@@ -5,8 +5,10 @@ import android.content.Context;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Laço leve de sincronização cloud do Master.
- * O serviço LAN continua sendo a base local; a nuvem é complementar.
+ * Laço leve de sincronização cloud.
+ *
+ * Durante a fase de testes multi-local, a nuvem trabalha nos aparelhos vinculados
+ * mesmo quando eles não estão na mesma rede. O SQLite continua como cache local.
  */
 public final class TechCellCloudAutoSync {
     private static final AtomicBoolean RODANDO = new AtomicBoolean(false);
@@ -27,16 +29,23 @@ public final class TechCellCloudAutoSync {
                     try { ctx = db.getSyncContext(); }
                     finally { db.close(); }
 
-                    if (!ctx.configurado || !"MASTER".equalsIgnoreCase(ctx.papelDispositivo)) break;
+                    if (!ctx.configurado) break;
 
                     if (ctx.cloudAtiva && TechCellCloudSync.estaAutenticado(app)) {
-                        try { TechCellCloudSync.sincronizarCadastrosPendentes(app); }
+                        try { TechCellCloudRealtimeSync.sincronizar(app); }
                         catch (Throwable ignored) {}
-                        try { TechCellCloudSales.sincronizar(app, 250); }
-                        catch (Throwable ignored) {}
+
+                        // O Master físico consolida as vendas recebidas pela LAN e as
+                        // publica na nuvem. Os terminais remotos apenas recebem esse histórico.
+                        if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
+                            try { TechCellCloudSales.sincronizar(app, 250); }
+                            catch (Throwable ignored) {}
+                        }
                     }
 
-                    try { Thread.sleep(60000L); }
+                    // Intervalo curto proposital nesta fase para permitir testes em
+                    // cidades diferentes com atualização visual quase imediata.
+                    try { Thread.sleep(3000L); }
                     catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
                 }
             } finally {
