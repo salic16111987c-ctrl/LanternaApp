@@ -34,14 +34,53 @@ service cloud.firestore {
               && legacyPermission(memberDoc(empresaId).data.perfil, permissao)));
     }
 
-    // Índice privado para o primeiro login em um aparelho novo. Cada usuário
-    // consegue ler somente o próprio vínculo. Somente o dono da empresa publica.
+    // Índice privado conta -> empresa. Cada usuário lê somente o próprio vínculo.
     match /techcell_user_empresas/{userId}/empresas/{empresaId} {
       allow read: if request.auth != null && request.auth.uid == userId;
       allow create, update: if isOwner(empresaId)
                             && request.resource.data.uid == userId
                             && request.resource.data.empresa_uuid == empresaId;
       allow delete: if isOwner(empresaId);
+    }
+
+    // Solicitação/autorização do aparelho fica fora da árvore genérica da empresa,
+    // para um funcionário nunca poder listar pedidos de outros usuários.
+    match /techcell_device_requests/{empresaId}/devices/{deviceId} {
+      allow create: if request.auth != null
+                    && (isOwner(empresaId) || isActiveMember(empresaId))
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.empresa_uuid == empresaId
+                    && request.resource.data.device_uuid == deviceId
+                    && request.resource.data.status == 'PENDENTE';
+
+      allow read: if isOwner(empresaId)
+                  || (request.auth != null && resource.data.uid == request.auth.uid);
+
+      allow update: if isOwner(empresaId)
+        || (request.auth != null
+            && resource.data.uid == request.auth.uid
+            && request.resource.data.uid == resource.data.uid
+            && request.resource.data.empresa_uuid == resource.data.empresa_uuid
+            && request.resource.data.device_uuid == resource.data.device_uuid
+            && (
+              (resource.data.status == 'PENDENTE'
+                && request.resource.data.status == 'PENDENTE'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['last_request_at','updated_at']))
+              ||
+              (resource.data.status == 'PENDENTE'
+                && request.resource.data.status == 'AUTORIZADO'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','provided_code','code_used_at','updated_at'])
+                && exists(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId))
+                && get(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId)).data.code == request.resource.data.provided_code
+                && get(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId)).data.expires_at > request.time)
+            ));
+
+      allow delete: if isOwner(empresaId);
+    }
+
+    // Segredo do código alternativo: somente o Master proprietário pode ler/gravar.
+    match /techcell_device_codes/{empresaId}/devices/{deviceId} {
+      allow read, create, update, delete: if isOwner(empresaId);
     }
 
     match /techcell_empresas/{empresaId} {
@@ -57,7 +96,6 @@ service cloud.firestore {
         allow create, update, delete: if isOwner(empresaId);
       }
 
-      // Caixa/Gerente com permissão explícita pode cadastrar e alterar produtos.
       match /produtos/{produtoId} {
         allow read: if isOwner(empresaId) || isActiveMember(empresaId);
         allow create, update: if isOwner(empresaId)
