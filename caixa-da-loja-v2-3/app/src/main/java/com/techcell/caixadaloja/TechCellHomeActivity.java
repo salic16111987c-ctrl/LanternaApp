@@ -1,6 +1,7 @@
 package com.techcell.caixadaloja;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -12,6 +13,8 @@ import android.widget.TextView;
 
 public class TechCellHomeActivity extends Activity {
     private boolean abrindoLogin;
+    private boolean checandoAprovacoes;
+    private boolean avisoAprovacoesAberto;
     private static final int REQ_LOGIN=701;
     private int dp(int v){return TechCellUi.dp(this,v);}
     private TextView text(String v,int s,boolean b){TextView t=new TextView(this);t.setText(v);t.setTextSize(s);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t;}
@@ -37,6 +40,26 @@ public class TechCellHomeActivity extends Activity {
             if(!abrindoLogin){abrindoLogin=true;startActivityForResult(new Intent(this,TechCellUserLoginActivity.class),REQ_LOGIN);}return;
         }
         abrindoLogin=false;render();
+        if(TechCellAccess.controleAtivo(this)&&TechCellAccess.podeAdministrar(this))verificarAprovacoes();
+    }
+
+    private void verificarAprovacoes(){
+        if(checandoAprovacoes||avisoAprovacoesAberto)return;checandoAprovacoes=true;
+        new Thread(()->{
+            try{
+                int n=TechCellDeviceAuthorization.contarPendentes(getApplicationContext());
+                runOnUiThread(()->{
+                    checandoAprovacoes=false;
+                    if(n<=0||isFinishing()||avisoAprovacoesAberto)return;
+                    avisoAprovacoesAberto=true;
+                    new AlertDialog.Builder(this).setTitle("Novo aparelho aguardando autorização")
+                            .setMessage(n==1?"Há 1 aparelho pedindo acesso à empresa.":"Há "+n+" aparelhos pedindo acesso à empresa.")
+                            .setPositiveButton("VER AGORA",(d,w)->{avisoAprovacoesAberto=false;startActivity(new Intent(this,TechCellDeviceApprovalsActivity.class));})
+                            .setNegativeButton("Depois",(d,w)->avisoAprovacoesAberto=false)
+                            .setOnCancelListener(d->avisoAprovacoesAberto=false).show();
+                });
+            }catch(Throwable ignored){runOnUiThread(()->checandoAprovacoes=false);}
+        },"TechCell-PendingDevices").start();
     }
 
     private void render(){
