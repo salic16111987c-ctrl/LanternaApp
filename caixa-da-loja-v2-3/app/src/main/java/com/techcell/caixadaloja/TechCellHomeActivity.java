@@ -58,9 +58,8 @@ public class TechCellHomeActivity extends Activity {
             user.addView(trocar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(42)));root.addView(user);
         }
 
-        // Em aparelho zerado, o caminho principal passa a ser login pela internet.
         if(!ctx.configurado){
-            LinearLayout remoto=modulo("☁","Entrar pela internet","Aparelho novo: use a conta já cadastrada para localizar a empresa e baixar a base sem pareamento LAN.",true);
+            LinearLayout remoto=modulo("☁","Entrar pela internet","Aparelho novo: login + autorização do Master antes de baixar os dados.",true);
             Button abrir=(Button)remoto.getTag();abrir.setText("Conectar à empresa  →");abrir.setOnClickListener(v->startActivityForResult(new Intent(this,TechCellCloudFirstLoginActivity.class),REQ_LOGIN));
             remoto.setOnClickListener(v->abrir.performClick());root.addView(remoto);
         }
@@ -76,13 +75,16 @@ public class TechCellHomeActivity extends Activity {
         if(cloud&&TechCellAccess.podeAdministrar(this)){
             LinearLayout usuarios=modulo("👥","Usuários / Acessos","Cadastrar, bloquear e configurar permissões de Master, Gerente ou Caixa.",false);
             Button abrir=(Button)usuarios.getTag();abrir.setOnClickListener(v->startActivity(new Intent(this,TechCellUsuariosActivity.class)));usuarios.setOnClickListener(v->abrir.performClick());root.addView(usuarios);
+
+            LinearLayout aparelhos=modulo("📱","Dispositivos / Autorizações","Aprovar, negar ou bloquear aparelhos que tentam entrar na empresa.",false);
+            Button abrirA=(Button)aparelhos.getTag();abrirA.setOnClickListener(v->startActivity(new Intent(this,TechCellDeviceApprovalsActivity.class)));aparelhos.setOnClickListener(v->abrirA.performClick());root.addView(aparelhos);
         }
 
         LinearLayout caixa=modulo("💵","Caixa da Loja","Caixa atual preservado para lançamentos e fechamento.",false);
         Button abrirCaixa=(Button)caixa.getTag();abrirCaixa.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));caixa.setOnClickListener(v->abrirCaixa.performClick());root.addView(caixa);
 
         String rodape=!ctx.configurado
-                ?"Aparelho novo • entre pela internet ou configure um Master local"
+                ?"Aparelho novo • login + autorização do Master"
                 :(cloud?"Controle de acesso ativo • operação local continua disponível sem internet":"Ambiente local • ative a nuvem quando desejar acesso remoto");
         TextView safe=text(rodape,12,true);safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(11),dp(12),dp(11));
         root.addView(safe,TechCellUi.fullCardParams(this,16));setContentView(scroll);
