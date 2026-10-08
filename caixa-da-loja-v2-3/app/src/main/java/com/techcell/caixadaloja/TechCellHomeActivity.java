@@ -40,6 +40,9 @@ public class TechCellHomeActivity extends Activity {
     }
 
     private void render(){
+        GestaoDbHelper confDb=new GestaoDbHelper(this);GestaoDbHelper.SyncContext ctx;
+        try{ctx=confDb.getSyncContext();}finally{confDb.close();}
+
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(28),dp(18),dp(30));scroll.addView(root);
         TextView brand=text("TECH CELL ACS",29,true);brand.setGravity(Gravity.CENTER);root.addView(brand);
@@ -55,24 +58,33 @@ public class TechCellHomeActivity extends Activity {
             user.addView(trocar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(42)));root.addView(user);
         }
 
-        LinearLayout gestao=modulo("🏪","Gestão Tech Cell","PDV e módulos liberados para o nível do usuário.",true);
+        // Em aparelho zerado, o caminho principal passa a ser login pela internet.
+        if(!ctx.configurado){
+            LinearLayout remoto=modulo("☁","Entrar pela internet","Aparelho novo: use a conta já cadastrada para localizar a empresa e baixar a base sem pareamento LAN.",true);
+            Button abrir=(Button)remoto.getTag();abrir.setText("Conectar à empresa  →");abrir.setOnClickListener(v->startActivityForResult(new Intent(this,TechCellCloudFirstLoginActivity.class),REQ_LOGIN));
+            remoto.setOnClickListener(v->abrir.performClick());root.addView(remoto);
+        }
+
+        LinearLayout gestao=modulo("🏪","Gestão Tech Cell","PDV e módulos liberados para o nível do usuário.",ctx.configurado);
         Button abrirGestao=(Button)gestao.getTag();abrirGestao.setOnClickListener(v->startActivity(new Intent(this,GestaoActivity.class)));gestao.setOnClickListener(v->abrirGestao.performClick());root.addView(gestao);
 
-        if(!cloud||TechCellAccess.podeAdministrar(this)){
+        if((!cloud&&ctx.configurado)||TechCellAccess.podeAdministrar(this)){
             LinearLayout nuvem=modulo("☁","Nuvem Tech Cell","Empresa, sincronização e configuração da nuvem.",false);
             Button abrirNuvem=(Button)nuvem.getTag();abrirNuvem.setOnClickListener(v->startActivity(new Intent(this,TechCellCloudActivity.class)));nuvem.setOnClickListener(v->abrirNuvem.performClick());root.addView(nuvem);
         }
 
         if(cloud&&TechCellAccess.podeAdministrar(this)){
-            LinearLayout usuarios=modulo("👥","Usuários / Acessos","Cadastrar, bloquear e mudar Master, Gerente ou Caixa.",false);
+            LinearLayout usuarios=modulo("👥","Usuários / Acessos","Cadastrar, bloquear e configurar permissões de Master, Gerente ou Caixa.",false);
             Button abrir=(Button)usuarios.getTag();abrir.setOnClickListener(v->startActivity(new Intent(this,TechCellUsuariosActivity.class)));usuarios.setOnClickListener(v->abrir.performClick());root.addView(usuarios);
         }
 
         LinearLayout caixa=modulo("💵","Caixa da Loja","Caixa atual preservado para lançamentos e fechamento.",false);
         Button abrirCaixa=(Button)caixa.getTag();abrirCaixa.setOnClickListener(v->startActivity(new Intent(this,MainActivity.class)));caixa.setOnClickListener(v->abrirCaixa.performClick());root.addView(caixa);
 
-        TextView safe=text(cloud?"Controle de acesso ativo • operação local continua disponível sem internet":"Ambiente de teste • ative a nuvem para ligar o controle de usuários",12,true);
-        safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(11),dp(12),dp(11));
+        String rodape=!ctx.configurado
+                ?"Aparelho novo • entre pela internet ou configure um Master local"
+                :(cloud?"Controle de acesso ativo • operação local continua disponível sem internet":"Ambiente local • ative a nuvem quando desejar acesso remoto");
+        TextView safe=text(rodape,12,true);safe.setTextColor(TechCellUi.GREEN);safe.setGravity(Gravity.CENTER);safe.setBackground(TechCellUi.solid(this,TechCellUi.PALE_GREEN,12));safe.setPadding(dp(12),dp(11),dp(12),dp(11));
         root.addView(safe,TechCellUi.fullCardParams(this,16));setContentView(scroll);
     }
 }
