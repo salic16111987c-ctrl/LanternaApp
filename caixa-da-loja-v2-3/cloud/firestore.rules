@@ -18,8 +18,7 @@ service cloud.firestore {
     function isBootstrapDeveloper(userId) {
       return request.auth != null
         && request.auth.uid == userId
-        && userId == 'JMBDrlStQdNLD1km8hOrJmcJqXd2'
-        && request.auth.token.email == 'salic1611@hotmail.com';
+        && userId == 'JMBDrlStQdNLD1km8hOrJmcJqXd2';
     }
     function isOwner(empresaId) {
       return request.auth != null
@@ -82,7 +81,8 @@ service cloud.firestore {
     }
 
     // A conta Desenvolvedor é global e independente do MASTER de qualquer empresa.
-    // Bootstrap: somente a conta autenticada abaixo pode criar o próprio documento uma única vez.
+    // Bootstrap: somente a conta autenticada com o UID fixo abaixo pode criar o próprio documento uma única vez.
+    // O e-mail continua gravado no documento para auditoria, mas não é usado como identificador de segurança.
     match /techcell_platform_admins/{userId} {
       allow read: if request.auth != null && (request.auth.uid == userId || isPlatformAdmin());
       allow create: if isPlatformAdmin()
