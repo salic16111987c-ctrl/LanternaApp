@@ -4,6 +4,9 @@ service cloud.firestore {
     function empresaDoc(empresaId) {
       return get(/databases/$(database)/documents/techcell_empresas/$(empresaId));
     }
+    function memberDoc(empresaId) {
+      return get(/databases/$(database)/documents/techcell_empresas/$(empresaId)/usuarios/$(request.auth.uid));
+    }
     function isOwner(empresaId) {
       return request.auth != null
         && empresaDoc(empresaId).data.owner_uid == request.auth.uid;
@@ -11,7 +14,24 @@ service cloud.firestore {
     function isActiveMember(empresaId) {
       return request.auth != null
         && exists(/databases/$(database)/documents/techcell_empresas/$(empresaId)/usuarios/$(request.auth.uid))
-        && get(/databases/$(database)/documents/techcell_empresas/$(empresaId)/usuarios/$(request.auth.uid)).data.ativo == true;
+        && memberDoc(empresaId).data.ativo == true;
+    }
+    function legacyPermission(perfil, permissao) {
+      return perfil == 'GERENTE'
+        || (perfil == 'CAIXA' && (permissao == 'VENDER'
+          || permissao == 'CLIENTES'
+          || permissao == 'PRODUTOS'
+          || permissao == 'PRODUTOS_EDITAR'
+          || permissao == 'PRODUTOS_CUSTO'
+          || permissao == 'RESUMO_DIA'));
+    }
+    function hasPermission(empresaId, permissao) {
+      return isActiveMember(empresaId)
+        && ((('permissoes' in memberDoc(empresaId).data)
+              && memberDoc(empresaId).data.permissoes is list
+              && memberDoc(empresaId).data.permissoes.hasAny([permissao]))
+            || (!('permissoes' in memberDoc(empresaId).data)
+              && legacyPermission(memberDoc(empresaId).data.perfil, permissao)));
     }
 
     match /techcell_empresas/{empresaId} {
@@ -27,17 +47,24 @@ service cloud.firestore {
         allow create, update, delete: if isOwner(empresaId);
       }
 
-      // Fila híbrida de vendas: Caixa/Gerente envia somente vendas assinadas
-      // pela própria conta. O Master proprietário é quem aceita e consolida.
+      // Caixa/Gerente com permissão explícita pode cadastrar e alterar produtos.
+      // O documento precisa declarar a própria identidade de origem e a mesma empresa.
+      match /produtos/{produtoId} {
+        allow read: if isOwner(empresaId) || isActiveMember(empresaId);
+        allow create, update: if isOwner(empresaId)
+          || (hasPermission(empresaId, 'PRODUTOS_EDITAR')
+              && request.resource.data.empresa_uuid == empresaId
+              && request.resource.data.cloud_source_uid == request.auth.uid);
+        allow delete: if isOwner(empresaId);
+      }
+
       match /vendas_entrada/{saleId} {
         allow read: if isOwner(empresaId) || isActiveMember(empresaId);
-
         allow create: if isOwner(empresaId)
                       || (isActiveMember(empresaId)
                           && request.resource.data.empresa_uuid == empresaId
                           && request.resource.data.source_uid == request.auth.uid
                           && request.resource.data.status == 'PENDENTE_MASTER');
-
         allow update: if isOwner(empresaId)
                       || (isActiveMember(empresaId)
                           && resource.data.source_uid == request.auth.uid
@@ -45,13 +72,11 @@ service cloud.firestore {
                           && request.resource.data.empresa_uuid == empresaId
                           && resource.data.status != 'ACEITA_MASTER'
                           && request.resource.data.status == 'PENDENTE_MASTER');
-
         allow delete: if isOwner(empresaId);
       }
 
       match /{document=**} {
         allow read: if isOwner(empresaId) || isActiveMember(empresaId);
-        // Dados canônicos continuam protegidos: só o Master/Administrador grava.
         allow write: if isOwner(empresaId);
       }
     }
