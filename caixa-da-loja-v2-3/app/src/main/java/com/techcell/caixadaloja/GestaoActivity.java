@@ -21,6 +21,7 @@ public class GestaoActivity extends Activity {
     private final Handler liveHandler=new Handler(Looper.getMainLooper());
     private boolean syncProdutosRodando;
     private boolean liveAtivo;
+    private long versaoAcesso;
     private TextView totalVendidoView;
     private TextView lucroView;
     private TextView vendasView;
@@ -30,6 +31,14 @@ public class GestaoActivity extends Activity {
     private final Runnable liveRefresh=new Runnable(){
         @Override public void run(){
             if(!liveAtivo)return;
+            long atual=TechCellPermissionRealtime.versao();
+            if(atual!=versaoAcesso){
+                versaoAcesso=atual;
+                if(TechCellAccess.controleAtivo(GestaoActivity.this)&&!TechCellAccess.temSessaoValida(GestaoActivity.this)){
+                    finish();return;
+                }
+                render();
+            }
             atualizarResumoAoVivo();
             liveHandler.postDelayed(this,1000);
         }
@@ -64,6 +73,7 @@ public class GestaoActivity extends Activity {
     @Override protected void onResume(){
         super.onResume();TechCellBackgroundSync.garantir(this);
         if(TechCellAccess.controleAtivo(this)&&!TechCellAccess.temSessaoValida(this)){finish();return;}
+        versaoAcesso=TechCellPermissionRealtime.versao();
         render();liveAtivo=true;liveHandler.removeCallbacks(liveRefresh);liveHandler.postDelayed(liveRefresh,500);sincronizarTerminal();
     }
     @Override protected void onPause(){liveAtivo=false;liveHandler.removeCallbacks(liveRefresh);super.onPause();}
