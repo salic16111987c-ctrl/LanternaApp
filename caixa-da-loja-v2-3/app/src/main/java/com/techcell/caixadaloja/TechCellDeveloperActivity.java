@@ -2,9 +2,9 @@ package com.techcell.caixadaloja;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Bundle;
 import android.text.InputType;
-import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -18,7 +18,7 @@ import android.widget.Toast;
 
 import java.util.List;
 
-/** Painel global acima do Master: empresas, licença Master e quantidade de caixas. */
+/** Painel global acima do Master: empresas, licenças e acesso de teste do Desenvolvedor. */
 public class TechCellDeveloperActivity extends Activity {
     private LinearLayout lista;
     private boolean ocupado;
@@ -40,8 +40,12 @@ public class TechCellDeveloperActivity extends Activity {
         TextView sub=txt("Nível supremo da plataforma • acima do Master de cada empresa",13,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout hierarquia=TechCellUi.card(this);hierarquia.setLayoutParams(TechCellUi.fullCardParams(this,12));
-        TextView h=txt("DESENVOLVEDOR  →  MASTER  →  CAIXAS",13,true);h.setTextColor(TechCellUi.BLUE);hierarquia.addView(h);
-        TextView hd=txt("Você libera a empresa, a licença Master e a quantidade de aparelhos Caixa contratados. O Master continua controlando usuários, permissões e quais aparelhos usarão essas vagas.",11,false);hd.setTextColor(TechCellUi.MUTED);hd.setPadding(0,dp(5),0,0);hierarquia.addView(hd);root.addView(hierarquia);
+        TextView h=txt("DESENVOLVEDOR  →  MASTER  →  GERENTE / CAIXA",13,true);h.setTextColor(TechCellUi.BLUE);hierarquia.addView(h);
+        TextView hd=txt("Além de liberar licenças, você pode entrar temporariamente no modo de teste de qualquer usuário. Ao sair do teste, volta automaticamente para o Desenvolvedor sem pedir sua senha novamente.",11,false);hd.setTextColor(TechCellUi.MUTED);hd.setPadding(0,dp(5),0,0);hierarquia.addView(hd);root.addView(hierarquia);
+
+        LinearLayout seguro=TechCellUi.card(this);seguro.setLayoutParams(TechCellUi.fullCardParams(this,6));
+        TextView st=txt("MODO DE TESTE ISOLADO",12,true);st.setTextColor(TechCellUi.GREEN);seguro.addView(st);
+        TextView sd=txt("A base da empresa é copiada da nuvem para um SQLite temporário. Vendas e alterações feitas enquanto você testa ficam somente nesse banco temporário e são descartadas ao voltar para o Desenvolvedor.",11,false);sd.setTextColor(TechCellUi.MUTED);sd.setPadding(0,dp(4),0,0);seguro.addView(sd);root.addView(seguro);
 
         Button atualizar=botao("↻  Atualizar empresas");TechCellUi.stylePrimary(this,atualizar,TechCellUi.BLUE);atualizar.setOnClickListener(v->carregar());
         LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));ap.setMargins(0,0,0,dp(8));root.addView(atualizar,ap);
@@ -75,8 +79,7 @@ public class TechCellDeveloperActivity extends Activity {
         lista.addView(resumo);
 
         if(es==null||es.isEmpty()){
-            TextView v=txt("Nenhuma empresa registrada na nuvem.",13,false);v.setTextColor(TechCellUi.MUTED);v.setPadding(0,dp(14),0,0);lista.addView(v);return;
-        }
+            TextView v=txt("Nenhuma empresa registrada na nuvem.",13,false);v.setTextColor(TechCellUi.MUTED);v.setPadding(0,dp(14),0,0);lista.addView(v);return;}
         for(TechCellDeveloper.Empresa e:es)card(e);
     }
 
@@ -94,9 +97,63 @@ public class TechCellDeveloperActivity extends Activity {
                 "\nMaster: "+master+"  •  Caixas: "+emUso+" / "+contratado+
                 (e.solicitacoesPendentes>0?"\n⚠ Solicitações de aparelho aguardando: "+e.solicitacoesPendentes:""),12,false);
         d.setTextColor(TechCellUi.MUTED);d.setPadding(0,dp(5),0,dp(9));c.addView(d);
-        Button gerenciar=botao("⚙  Gerenciar licença desta empresa");TechCellUi.stylePrimary(this,gerenciar,TechCellUi.BLUE);gerenciar.setOnClickListener(v->editar(e));
-        c.addView(gerenciar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+
+        Button testar=botao("▶  Testar acesso como Master / Caixa");TechCellUi.stylePrimary(this,testar,TechCellUi.GREEN);testar.setOnClickListener(v->escolherUsuarioTeste(e));
+        c.addView(testar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+
+        Button gerenciar=botao("⚙  Gerenciar licença desta empresa");TechCellUi.styleSecondary(this,gerenciar);gerenciar.setOnClickListener(v->editar(e));
+        LinearLayout.LayoutParams gp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));gp.setMargins(0,dp(7),0,0);c.addView(gerenciar,gp);
         lista.addView(c);
+    }
+
+    private void escolherUsuarioTeste(TechCellDeveloper.Empresa e){
+        if(ocupado)return;ocupado=true;Toast.makeText(this,"Carregando usuários da empresa…",Toast.LENGTH_SHORT).show();
+        new Thread(()->{
+            try{
+                List<TechCellDeveloper.UsuarioTeste> usuarios=TechCellDeveloper.listarUsuariosTeste(getApplicationContext(),e);
+                runOnUiThread(()->{ocupado=false;mostrarUsuariosTeste(e,usuarios);});
+            }catch(Throwable ex){runOnUiThread(()->{ocupado=false;erro("Não foi possível carregar os usuários",ex);});}
+        },"TechCell-Developer-TestUsers").start();
+    }
+
+    private void mostrarUsuariosTeste(TechCellDeveloper.Empresa e,List<TechCellDeveloper.UsuarioTeste> usuarios){
+        if(usuarios==null||usuarios.isEmpty()){
+            new AlertDialog.Builder(this).setTitle("Sem usuários").setMessage("Esta empresa ainda não possui usuários disponíveis para simulação.").setPositiveButton("OK",null).show();return;
+        }
+        String[] itens=new String[usuarios.size()];
+        for(int i=0;i<usuarios.size();i++){
+            TechCellDeveloper.UsuarioTeste u=usuarios.get(i);
+            String ic=u.proprietario?"👑 ":("GERENTE".equalsIgnoreCase(u.perfil)?"🧑‍💼 ":"💵 ");
+            itens[i]=ic+u.perfilExibicao()+" • "+u.nome+(u.email==null||u.email.isEmpty()?"":"\n"+u.email)+(u.ativo?"":"  [BLOQUEADO]");
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Testar • "+e.nome)
+                .setMessage("Escolha exatamente qual acesso deseja enxergar. Não é necessário saber a senha do cliente.")
+                .setItems(itens,(d,which)->confirmarTeste(e,usuarios.get(which)))
+                .setNegativeButton("Cancelar",null).show();
+    }
+
+    private void confirmarTeste(TechCellDeveloper.Empresa e,TechCellDeveloper.UsuarioTeste u){
+        if(!u.ativo){new AlertDialog.Builder(this).setTitle("Usuário bloqueado").setMessage("Este usuário está bloqueado pelo Master e não pode iniciar uma sessão normal.").setPositiveButton("OK",null).show();return;}
+        new AlertDialog.Builder(this).setTitle("Entrar em modo de teste?")
+                .setMessage("Empresa: "+e.nome+"\nAcesso simulado: "+u.perfilExibicao()+"\nUsuário: "+u.nome+"\n\nSua conta continuará sendo Desenvolvedor. Ao sair do teste, você voltará direto ao Painel do Desenvolvedor. Alterações do teste não serão enviadas à empresa.")
+                .setPositiveButton("ENTRAR NO TESTE",(d,w)->iniciarTeste(e,u))
+                .setNegativeButton("Cancelar",null).show();
+    }
+
+    private void iniciarTeste(TechCellDeveloper.Empresa e,TechCellDeveloper.UsuarioTeste u){
+        if(ocupado)return;ocupado=true;Toast.makeText(this,"Preparando ambiente isolado de teste…",Toast.LENGTH_LONG).show();
+        new Thread(()->{
+            try{
+                TechCellDeveloperTestMode.iniciar(getApplicationContext(),e,u);
+                runOnUiThread(()->{
+                    ocupado=false;
+                    Intent i=new Intent(this,TechCellHomeActivity.class);
+                    i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(i);finish();
+                });
+            }catch(Throwable ex){runOnUiThread(()->{ocupado=false;erro("Não foi possível iniciar o modo de teste",ex);});}
+        },"TechCell-Developer-TestStart").start();
     }
 
     private void editar(TechCellDeveloper.Empresa e){
