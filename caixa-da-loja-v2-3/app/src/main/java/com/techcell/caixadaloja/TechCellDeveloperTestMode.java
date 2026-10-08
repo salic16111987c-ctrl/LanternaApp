@@ -17,7 +17,7 @@ import java.util.Set;
  *
  * A conta Firebase continua sendo a conta Desenvolvedor. O usuário Master/Gerente/Caixa
  * é apenas simulado no app. Antes do teste o banco local real é guardado; durante o teste
- * trabalhamos em um SQLite temporário. Ao sair, o banco real é restaurado.
+ * trabalhamos em uma cópia temporária. Ao sair, o banco real é restaurado.
  */
 public final class TechCellDeveloperTestMode {
     private static final String PREF = "techcell_developer_test_v1";
@@ -75,11 +75,27 @@ public final class TechCellDeveloperTestMode {
         }
         if (!usuario.ativo) throw new IllegalStateException("Este usuário está bloqueado na empresa.");
 
+        // Captura a empresa do banco real antes de entrar no teste. Se for a mesma empresa,
+        // a cópia temporária começa exatamente com os dados locais atuais, inclusive vendas do dia.
+        String empresaLocal = "";
+        try {
+            GestaoDbHelper local = new GestaoDbHelper(app);
+            try {
+                GestaoDbHelper.SyncContext lc = local.getSyncContext();
+                empresaLocal = lc.empresaUuid == null ? "" : lc.empresaUuid.trim();
+            } finally { local.close(); }
+        } catch (Throwable ignored) {}
+
         TechCellBackgroundSync.parar(app);
         garantirBackupBancoReal(app);
 
-        // Descarta um teste anterior e cria uma base temporária limpa.
+        // Descarta um teste anterior. Quando a empresa testada é a mesma empresa deste aparelho,
+        // clona o banco real para o teste; caso contrário começa vazio e carrega snapshot da nuvem.
         app.deleteDatabase(DB_NAME);
+        boolean mesmaEmpresaLocal = !empresaLocal.isEmpty()
+                && empresa.empresaUuid.equalsIgnoreCase(empresaLocal);
+        boolean usandoCloneLocal = mesmaEmpresaLocal && clonarBackupParaTeste(app);
+
         String perfil = normalizarPerfil(usuario.proprietario ? "MASTER" : usuario.perfil);
         Set<String> permissoes = usuario.proprietario
                 ? TechCellPermissions.padrao("MASTER")
@@ -91,6 +107,7 @@ public final class TechCellDeveloperTestMode {
 
         prefs(app).edit()
                 .putBoolean("ativo", true)
+                .putBoolean("clone_local", usandoCloneLocal)
                 .putString("empresa_uuid", empresa.empresaUuid)
                 .putString("filial_uuid", filial)
                 .putString("empresa_nome", empresa.nome == null ? "" : empresa.nome)
@@ -107,9 +124,9 @@ public final class TechCellDeveloperTestMode {
             ContentValues v = new ContentValues();
             v.put("empresa_uuid", empresa.empresaUuid);
             v.put("filial_uuid", filial);
-            // ADMIN força a carga do histórico cloud; o perfil visual vem da sessão simulada.
+            // ADMIN identifica o acesso de suporte/teste; o perfil visual vem da sessão simulada.
             v.put("papel_dispositivo", "ADMIN");
-            v.put("nome_dispositivo", "Teste Desenvolvedor");
+            v.put("nome_dispositivo", usandoCloneLocal ? "Teste Desenvolvedor • cópia local" : "Teste Desenvolvedor");
             v.put("master_tipo", "NUVEM");
             v.put("master_host", "");
             v.put("master_device_uuid", "DEV_TEST");
@@ -121,17 +138,21 @@ public final class TechCellDeveloperTestMode {
             db.getWritableDatabase().update("sync_context", v, "id=1", null);
         } finally { db.close(); }
 
-        try {
-            TechCellDeveloperSnapshotSync.Resultado r = TechCellDeveloperSnapshotSync.carregar(app);
-            if (r == null || !r.ok) {
-                String erro = r == null ? "Falha ao carregar a base da empresa." : r.erro;
-                throw new IllegalStateException(erro == null || erro.trim().isEmpty()
-                        ? "Falha ao carregar a base da empresa para o modo de teste." : erro);
+        // Para a mesma empresa deste aparelho, a cópia local já é a fonte mais atual e contém
+        // inclusive vendas ainda não enviadas à nuvem. Para outra empresa, usa snapshot cloud.
+        if (!usandoCloneLocal) {
+            try {
+                TechCellDeveloperSnapshotSync.Resultado r = TechCellDeveloperSnapshotSync.carregar(app);
+                if (r == null || !r.ok) {
+                    String erro = r == null ? "Falha ao carregar a base da empresa." : r.erro;
+                    throw new IllegalStateException(erro == null || erro.trim().isEmpty()
+                            ? "Falha ao carregar a base da empresa para o modo de teste." : erro);
+                }
+            } catch (Throwable e) {
+                sair(app);
+                if (e instanceof Exception) throw (Exception)e;
+                throw new IllegalStateException(e.getMessage(), e);
             }
-        } catch (Throwable e) {
-            sair(app);
-            if (e instanceof Exception) throw (Exception)e;
-            throw new IllegalStateException(e.getMessage(), e);
         }
     }
 
@@ -181,10 +202,23 @@ public final class TechCellDeveloperTestMode {
             checkpoint(origem);
             copiar(origem, backup);
         } else if (backup.exists()) {
-            // Backup antigo sem marcador não deve contaminar uma nova sessão.
             backup.delete();
         }
         p.edit().putBoolean("backup_pronto", true).putBoolean("tinha_original", existe).apply();
+    }
+
+    private static boolean clonarBackupParaTeste(Context app) {
+        File backup = new File(app.getFilesDir(), BACKUP_NAME);
+        if (!backup.exists()) return false;
+        File destino = app.getDatabasePath(DB_NAME);
+        try {
+            File parent = destino.getParentFile();
+            if (parent != null && !parent.exists()) parent.mkdirs();
+            copiar(backup, destino);
+            return destino.exists();
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private static void restaurarBancoReal(Context app) {
@@ -198,7 +232,6 @@ public final class TechCellDeveloperTestMode {
                 copiar(backup, destino);
             }
         } catch (Throwable ignored) {
-            // Mantém o backup se a restauração falhar; não o apagamos neste caso.
             return;
         }
         try { if (backup.exists()) backup.delete(); } catch (Throwable ignored) {}
