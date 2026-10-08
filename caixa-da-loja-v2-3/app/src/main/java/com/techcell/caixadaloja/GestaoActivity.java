@@ -127,7 +127,6 @@ public class GestaoActivity extends Activity {
             }else{
                 TextView dica=text("Resumo liberado para conferência do dia. Lucro, custo e financeiro completo permanecem protegidos.",11,false);dica.setTextColor(TechCellUi.MUTED);dica.setPadding(dp(4),dp(2),dp(4),0);root.addView(dica);
             }
-            Button relDia=moduleButton("📋  Ver relatório do dia");TechCellUi.stylePrimary(this,relDia,TechCellUi.BLUE);relDia.setOnClickListener(v->startActivity(new Intent(this,RelatorioDiaActivity.class)));addFull(root,relDia);
         }
 
         TextView menu=text("Acesso rápido",17,true);menu.setPadding(0,dp(18),0,0);root.addView(menu);
@@ -142,7 +141,7 @@ public class GestaoActivity extends Activity {
         if(TechCellAccess.podeClientes(this)){Button b=moduleButton("👤  Clientes");b.setOnClickListener(v->startActivity(new Intent(this,ClientesActivity.class)));botoes.add(b);}
         if(TechCellAccess.podeFornecedores(this)){Button b=moduleButton("🚚  Fornecedores");b.setOnClickListener(v->startActivity(new Intent(this,FornecedoresActivity.class)));botoes.add(b);}
         if(TechCellAccess.podeFinanceiro(this)){Button b=moduleButton("💰  Financeiro");b.setOnClickListener(v->startActivity(new Intent(this,FinanceiroActivity.class)));botoes.add(b);}
-        if(TechCellAccess.podeRelatorios(this)){Button b=moduleButton("📊  Relatórios");b.setOnClickListener(v->startActivity(new Intent(this,RelatoriosActivity.class)));botoes.add(b);}
+        if(TechCellAccess.podeRelatorios(this)||TechCellAccess.podeResumoDia(this)){Button b=moduleButton("📊  Relatórios");b.setOnClickListener(v->startActivity(new Intent(this,CentralRelatoriosActivity.class)));botoes.add(b);}
         if(TechCellAccess.podeHistorico(this)){Button b=moduleButton("🧾  Vendas");b.setOnClickListener(v->startActivity(new Intent(this,HistoricoVendasActivity.class)));botoes.add(b);}
         for(int i=0;i<botoes.size();i+=2){if(i+1<botoes.size())addModuleRow(root,botoes.get(i),botoes.get(i+1));else addFull(root,botoes.get(i));}
 
