@@ -51,7 +51,8 @@ public class TechCellCloudActivity extends Activity {
         int pendentes;
         try{ctx=db.getSyncContext();pendentes=db.countSyncPendentes();}finally{db.close();}
         TechCellCloudSync.Estado estado=TechCellCloudSync.estado(this);
-        boolean master=ctx.configurado&&"MASTER".equalsIgnoreCase(ctx.papelDispositivo);
+        boolean masterFisico=ctx.configurado&&"MASTER".equalsIgnoreCase(ctx.papelDispositivo);
+        boolean administrador=TechCellAccess.temSessaoValida(this)&&TechCellAccess.podeAdministrar(this);
 
         ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(TechCellUi.BG);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);
@@ -60,21 +61,21 @@ public class TechCellCloudActivity extends Activity {
         Button voltar=action("←  Voltar");TechCellUi.styleSecondary(this,voltar);voltar.setOnClickListener(v->finish());
         root.addView(voltar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46)));
         TextView titulo=txt("Nuvem Tech Cell",27,true);titulo.setPadding(0,dp(15),0,dp(2));root.addView(titulo);
-        TextView sub=txt("Empresa, Master, cadastros e contas de usuário",12,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
+        TextView sub=txt("Empresa, dados compartilhados e contas de usuário",12,false);sub.setTextColor(TechCellUi.MUTED);root.addView(sub);
 
         LinearLayout info=TechCellUi.card(this);info.setLayoutParams(TechCellUi.fullCardParams(this,11));
-        TextView it=txt("LOCAL CONTINUA FUNCIONANDO",12,true);it.setTextColor(TechCellUi.GREEN);info.addView(it);
-        TextView id=txt("A nuvem é uma camada adicional. O PDV e o Master continuam usando o banco local mesmo sem internet. As contas são vinculadas à empresa desta loja.",12,false);
+        TextView it=txt("LOCAL + NUVEM",12,true);it.setTextColor(TechCellUi.GREEN);info.addView(it);
+        TextView id=txt("Durante os testes, os aparelhos vinculados trabalham com a mesma empresa pela internet. O banco local continua disponível para manter o PDV funcionando quando a conexão cair.",12,false);
         id.setTextColor(Color.parseColor("#475467"));id.setPadding(0,dp(5),0,0);info.addView(id);root.addView(info);
 
         LinearLayout status=TechCellUi.card(this);status.setLayoutParams(TechCellUi.fullCardParams(this,8));
         status.addView(txt("Status",15,true));
         String papel=ctx.configurado?ctx.papelDispositivo:"NÃO CONFIGURADO";
         TextView sv=txt(
-                "Aparelho: "+papel+"\n"+
+                "Função deste aparelho: "+papel+"\n"+
                 "Empresa: "+curto(ctx.empresaUuid)+"\n"+
                 "Conta: "+(estado.autenticado?estado.email:"não conectada")+"\n"+
-                "Nuvem local: "+(estado.cloudAtiva?"ATIVA ✓":"ainda não ativada")+"\n"+
+                "Nuvem: "+(estado.cloudAtiva?"ATIVA ✓":"ainda não ativada")+"\n"+
                 "Alterações locais pendentes: "+pendentes+"\n"+
                 "Último sucesso: "+data(estado.ultimoSucesso)+
                 (estado.ultimaCargaCadastros>0?"\nÚltima carga: "+estado.ultimaCargaCadastros+" cadastro(s)":"")+
@@ -82,54 +83,81 @@ public class TechCellCloudActivity extends Activity {
                 12,false);
         sv.setTextColor(TechCellUi.NAVY);sv.setPadding(0,dp(7),0,0);status.addView(sv);root.addView(status);
 
-        if(!master){
-            LinearLayout alerta=TechCellUi.card(this);alerta.setBackground(TechCellUi.solid(this,Color.parseColor("#FFF1F0"),14));
-            TextView a=txt("A configuração e o cadastro de contas devem ser feitos no MASTER.",12,true);a.setTextColor(TechCellUi.RED);alerta.addView(a);
+        if(!masterFisico){
+            LinearLayout alerta=TechCellUi.card(this);alerta.setBackground(TechCellUi.solid(this,Color.parseColor("#EEF4FF"),14));
+            TextView a=txt("Neste aparelho você entra com uma conta já cadastrada. A criação da primeira conta da empresa continua exclusiva do Master. A conta Administrador pode trabalhar remotamente pela nuvem.",12,true);
+            a.setTextColor(TechCellUi.BLUE);alerta.addView(a);
             root.addView(alerta,TechCellUi.fullCardParams(this,8));
         }
 
         FirebaseUser user=null;
         try{user=TechCellCloudSync.auth(this).getCurrentUser();}catch(Throwable ignored){}
-        if(user==null) adicionarLogin(root,master);
-        else adicionarOperacoes(root,master,estado);
+        if(user==null) adicionarLogin(root,masterFisico);
+        else adicionarOperacoes(root,masterFisico,administrador,estado);
 
         setContentView(scroll);
     }
 
-    private void adicionarLogin(LinearLayout root,boolean master){
+    private void adicionarLogin(LinearLayout root,boolean masterFisico){
         LinearLayout card=TechCellUi.card(this);card.setLayoutParams(TechCellUi.fullCardParams(this,9));
-        card.addView(txt("Conta principal da loja",16,true));
-        TextView obs=txt("Se esta loja ainda não possui conta, crie aqui a primeira conta Administrador. Depois disso, as demais contas serão cadastradas pelo próprio Master.",11,false);
+        card.addView(txt(masterFisico?"Conta principal da loja":"Entrar na conta da loja",16,true));
+        TextView obs=txt(masterFisico
+                ?"No primeiro cadastro da empresa, o Master pode criar a conta Administrador. Depois, cada funcionário usa sua própria conta (Administrador, Gerente ou Caixa)."
+                :"Use o e-mail e a senha de uma conta já cadastrada. O nível de acesso vem da própria conta e não da função física deste aparelho.",11,false);
         obs.setTextColor(TechCellUi.MUTED);obs.setPadding(0,dp(3),0,dp(8));card.addView(obs);
         EditText email=new EditText(this);email.setHint("E-mail");email.setSingleLine(true);email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);card.addView(email);
         EditText senha=new EditText(this);senha.setHint("Senha");senha.setSingleLine(true);senha.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);card.addView(senha);
 
-        Button entrar=action("☁  Entrar na conta existente");TechCellUi.stylePrimary(this,entrar,TechCellUi.BLUE);entrar.setEnabled(master&&!ocupado);entrar.setAlpha(master&&!ocupado?1f:0.55f);
+        Button entrar=action("☁  Entrar na conta existente");TechCellUi.stylePrimary(this,entrar,TechCellUi.BLUE);entrar.setEnabled(!ocupado);entrar.setAlpha(!ocupado?1f:0.55f);
         entrar.setOnClickListener(v->{
             String e=email.getText().toString().trim(),s=senha.getText().toString();
             if(e.isEmpty()||s.isEmpty()){Toast.makeText(this,"Informe e-mail e senha.",Toast.LENGTH_LONG).show();return;}
             ocupado=true;entrar.setEnabled(false);entrar.setText("Entrando…");
             FirebaseAuth auth=TechCellCloudSync.auth(this);
             auth.signInWithEmailAndPassword(e,s).addOnCompleteListener(this,t->{
-                ocupado=false;
-                if(t.isSuccessful()){Toast.makeText(this,"Conta conectada.",Toast.LENGTH_SHORT).show();render();}
-                else{mostrarErro("Não foi possível entrar",TechCellCloudSync.mensagemCloud(t.getException()));render();}
+                if(!t.isSuccessful()){
+                    ocupado=false;
+                    mostrarErro("Não foi possível entrar",TechCellCloudUsers.mensagem(t.getException()));
+                    render();
+                    return;
+                }
+                entrar.setText("Validando empresa e acesso…");
+                new Thread(()->{
+                    try{
+                        TechCellAccess.Sessao sessao=TechCellAccess.atualizarDaNuvem(getApplicationContext());
+                        runOnUiThread(()->{
+                            ocupado=false;
+                            TechCellBackgroundSync.garantir(getApplicationContext());
+                            Toast.makeText(this,"Conta conectada • "+TechCellAccess.perfilExibicao(sessao.perfil),Toast.LENGTH_SHORT).show();
+                            render();
+                        });
+                    }catch(Throwable erro){
+                        TechCellAccess.encerrar(getApplicationContext());
+                        runOnUiThread(()->{
+                            ocupado=false;
+                            mostrarErro("Acesso não autorizado",TechCellCloudUsers.mensagem(erro));
+                            render();
+                        });
+                    }
+                },"TechCell-Cloud-ValidateLogin").start();
             });
         });
         LinearLayout.LayoutParams ep=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));ep.setMargins(0,dp(10),0,0);card.addView(entrar,ep);
 
-        Button criar=action("＋  Criar primeira conta Administrador");TechCellUi.styleSecondary(this,criar);criar.setEnabled(master&&!ocupado);criar.setAlpha(master&&!ocupado?1f:0.55f);
-        criar.setOnClickListener(v->{
-            String e=email.getText().toString().trim(),s=senha.getText().toString();
-            if(e.isEmpty()||!e.contains("@")){Toast.makeText(this,"Informe um e-mail válido.",Toast.LENGTH_LONG).show();return;}
-            if(s.length()<6){Toast.makeText(this,"A senha deve ter pelo menos 6 caracteres.",Toast.LENGTH_LONG).show();return;}
-            new AlertDialog.Builder(this)
-                    .setTitle("Criar conta proprietária?")
-                    .setMessage("Esta será a conta Administrador principal desta loja. Use este botão somente no primeiro cadastro da empresa.\n\nE-mail: "+e)
-                    .setPositiveButton("Criar Administrador",(d,w)->criarPrimeiraConta(e,s,criar,entrar))
-                    .setNegativeButton("Cancelar",null).show();
-        });
-        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));cp.setMargins(0,dp(8),0,0);card.addView(criar,cp);
+        if(masterFisico){
+            Button criar=action("＋  Criar primeira conta Administrador");TechCellUi.styleSecondary(this,criar);criar.setEnabled(!ocupado);criar.setAlpha(!ocupado?1f:0.55f);
+            criar.setOnClickListener(v->{
+                String e=email.getText().toString().trim(),s=senha.getText().toString();
+                if(e.isEmpty()||!e.contains("@")){Toast.makeText(this,"Informe um e-mail válido.",Toast.LENGTH_LONG).show();return;}
+                if(s.length()<6){Toast.makeText(this,"A senha deve ter pelo menos 6 caracteres.",Toast.LENGTH_LONG).show();return;}
+                new AlertDialog.Builder(this)
+                        .setTitle("Criar conta proprietária?")
+                        .setMessage("Esta será a conta Administrador principal desta loja. Use este botão somente no primeiro cadastro da empresa.\n\nE-mail: "+e)
+                        .setPositiveButton("Criar Administrador",(d,w)->criarPrimeiraConta(e,s,criar,entrar))
+                        .setNegativeButton("Cancelar",null).show();
+            });
+            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));cp.setMargins(0,dp(8),0,0);card.addView(criar,cp);
+        }
         root.addView(card);
     }
 
@@ -149,11 +177,14 @@ public class TechCellCloudActivity extends Activity {
                     try{TechCellCloudUsers.garantirProprietario(getApplicationContext());}
                     catch(Throwable e){r.ok=false;r.mensagem="Conta criada, mas o perfil Administrador não foi confirmado: "+TechCellCloudUsers.mensagem(e);}
                 }
+                if(r.ok){
+                    try{TechCellAccess.atualizarDaNuvem(getApplicationContext());}catch(Throwable ignored){}
+                }
                 TechCellCloudSync.Resultado fim=r;
                 runOnUiThread(()->{
                     ocupado=false;
                     String msg=fim.ok
-                            ? "Conta Administrador criada e empresa registrada na nuvem. Agora você pode cadastrar as outras contas pelo Master."
+                            ? "Conta Administrador criada e empresa registrada na nuvem. Agora você pode cadastrar as outras contas."
                             : "A conta foi criada e ficou conectada, mas a empresa ainda não foi registrada.\n\n"+fim.mensagem+"\n\nVocê poderá usar o botão de registrar empresa para tentar novamente.";
                     new AlertDialog.Builder(this).setTitle(fim.ok?"Administrador criado ✓":"Conta criada — falta registrar empresa")
                             .setMessage(msg).setPositiveButton("OK",(d,w)->render()).setCancelable(false).show();
@@ -162,43 +193,76 @@ public class TechCellCloudActivity extends Activity {
         });
     }
 
-    private void adicionarOperacoes(LinearLayout root,boolean master,TechCellCloudSync.Estado estado){
-        LinearLayout card=TechCellUi.card(this);card.setLayoutParams(TechCellUi.fullCardParams(this,9));
-        card.addView(txt("Configuração da empresa",16,true));
-        TextView aviso=txt("Confirme empresa + Master e depois envie a carga inicial de produtos, clientes, fornecedores e despesas.",11,false);aviso.setTextColor(TechCellUi.MUTED);aviso.setPadding(0,dp(4),0,dp(8));card.addView(aviso);
+    private void adicionarOperacoes(LinearLayout root,boolean masterFisico,boolean administrador,TechCellCloudSync.Estado estado){
+        TechCellAccess.Sessao sessao=TechCellAccess.sessao(this);
 
-        Button testar=action("1. Testar conexão / registrar empresa");TechCellUi.styleSecondary(this,testar);habilitar(testar,master);
-        testar.setOnClickListener(v->executar("Conexão com a nuvem",()->TechCellCloudSync.testarRegistrarEmpresa(getApplicationContext())));
-        card.addView(testar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
+        if(masterFisico && administrador){
+            LinearLayout card=TechCellUi.card(this);card.setLayoutParams(TechCellUi.fullCardParams(this,9));
+            card.addView(txt("Configuração da empresa",16,true));
+            TextView aviso=txt("O Master registra a empresa e faz a carga inicial. Depois disso, as alterações passam a circular automaticamente pela nuvem.",11,false);aviso.setTextColor(TechCellUi.MUTED);aviso.setPadding(0,dp(4),0,dp(8));card.addView(aviso);
 
-        Button carga=action("2. Enviar carga inicial de cadastros");TechCellUi.stylePrimary(this,carga,TechCellUi.BLUE);habilitar(carga,master);
-        carga.setOnClickListener(v->confirmarCarga());
-        LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));cp.setMargins(0,dp(8),0,0);card.addView(carga,cp);
+            Button testar=action("1. Testar conexão / registrar empresa");TechCellUi.styleSecondary(this,testar);habilitar(testar,true);
+            testar.setOnClickListener(v->executar("Conexão com a nuvem",()->TechCellCloudSync.testarRegistrarEmpresa(getApplicationContext())));
+            card.addView(testar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
 
-        Button pend=action("Sincronizar cadastros pendentes agora");TechCellUi.styleSecondary(this,pend);habilitar(pend,master&&estado.cloudAtiva);
-        pend.setOnClickListener(v->executar("Sincronização manual",()->TechCellCloudSync.sincronizarCadastrosPendentes(getApplicationContext())));
-        LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));pp.setMargins(0,dp(8),0,0);card.addView(pend,pp);
-        root.addView(card);
+            Button carga=action("2. Enviar carga inicial de cadastros");TechCellUi.stylePrimary(this,carga,TechCellUi.BLUE);habilitar(carga,true);
+            carga.setOnClickListener(v->confirmarCarga());
+            LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50));cp.setMargins(0,dp(8),0,0);card.addView(carga,cp);
 
-        LinearLayout contas=TechCellUi.card(this);contas.setLayoutParams(TechCellUi.fullCardParams(this,9));
-        contas.addView(txt("👥 Usuários / Contas",16,true));
-        TextView co=txt("Cadastre as contas desta loja diretamente pelo Master. Perfis disponíveis: Administrador, Gerente e Caixa. Nenhuma senha é armazenada no aparelho.",11,false);co.setTextColor(TechCellUi.MUTED);co.setPadding(0,dp(4),0,dp(8));contas.addView(co);
+            Button pend=action("Sincronizar nuvem agora");TechCellUi.styleSecondary(this,pend);habilitar(pend,estado.cloudAtiva);
+            pend.setOnClickListener(v->sincronizarNuvemAgora());
+            LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));pp.setMargins(0,dp(8),0,0);card.addView(pend,pp);
+            root.addView(card);
+        }else{
+            LinearLayout card=TechCellUi.card(this);card.setLayoutParams(TechCellUi.fullCardParams(this,9));
+            card.addView(txt("Conta conectada",16,true));
+            TextView perfil=txt("Usuário: "+(sessao.nome==null||sessao.nome.trim().isEmpty()?sessao.email:sessao.nome)+"\nNível: "+TechCellAccess.perfilExibicao(sessao.perfil)+"\nOs dados desta empresa são recebidos pela internet sem exigir o mesmo roteador do Master.",12,false);
+            perfil.setTextColor(TechCellUi.NAVY);perfil.setPadding(0,dp(5),0,dp(8));card.addView(perfil);
+            Button agora=action("↻  Sincronizar nuvem agora");TechCellUi.stylePrimary(this,agora,TechCellUi.BLUE);habilitar(agora,estado.cloudAtiva);
+            agora.setOnClickListener(v->sincronizarNuvemAgora());
+            card.addView(agora,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+            root.addView(card);
+        }
 
-        Button novo=action("＋  Cadastrar nova conta");TechCellUi.stylePrimary(this,novo,TechCellUi.GREEN);habilitar(novo,master);
-        novo.setOnClickListener(v->mostrarNovoUsuario());
-        contas.addView(novo,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+        if(administrador){
+            LinearLayout contas=TechCellUi.card(this);contas.setLayoutParams(TechCellUi.fullCardParams(this,9));
+            contas.addView(txt("👥 Usuários / Contas",16,true));
+            TextView co=txt("A conta Administrador gerencia as contas da empresa mesmo em acesso remoto. Perfis disponíveis: Administrador, Gerente e Caixa. Nenhuma senha é armazenada no aparelho.",11,false);co.setTextColor(TechCellUi.MUTED);co.setPadding(0,dp(4),0,dp(8));contas.addView(co);
 
-        Button listar=action("Ver / gerenciar contas cadastradas");TechCellUi.styleSecondary(this,listar);habilitar(listar,master);
-        listar.setOnClickListener(v->mostrarUsuarios());
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));lp.setMargins(0,dp(8),0,0);contas.addView(listar,lp);
-        root.addView(contas);
+            Button novo=action("＋  Cadastrar nova conta");TechCellUi.stylePrimary(this,novo,TechCellUi.GREEN);habilitar(novo,true);
+            novo.setOnClickListener(v->mostrarNovoUsuario());
+            contas.addView(novo,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+
+            Button listar=action("Ver / gerenciar contas cadastradas");TechCellUi.styleSecondary(this,listar);habilitar(listar,true);
+            listar.setOnClickListener(v->mostrarUsuarios());
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));lp.setMargins(0,dp(8),0,0);contas.addView(listar,lp);
+            root.addView(contas);
+        }
 
         LinearLayout nota=TechCellUi.card(this);nota.setLayoutParams(TechCellUi.fullCardParams(this,8));
-        TextView nt=txt("Controle de acesso",13,true);nt.setTextColor(TechCellUi.NAVY);nota.addView(nt);
-        TextView nv=txt("Nesta etapa o perfil já fica vinculado à empresa na nuvem. As permissões detalhadas de cada tela serão aplicadas na etapa seguinte, sem precisar recadastrar os usuários.",11,false);nv.setTextColor(TechCellUi.MUTED);nv.setPadding(0,dp(4),0,0);nota.addView(nv);root.addView(nota);
+        TextView nt=txt("Conta ≠ função do aparelho",13,true);nt.setTextColor(TechCellUi.NAVY);nota.addView(nt);
+        TextView nv=txt("O aparelho pode ser Master, Caixa ou acesso remoto. Separadamente, a pessoa entra como Administrador, Gerente ou Caixa e recebe as permissões da própria conta.",11,false);nv.setTextColor(TechCellUi.MUTED);nv.setPadding(0,dp(4),0,0);nota.addView(nv);root.addView(nota);
 
-        Button sair=action("Sair da conta da nuvem");TechCellUi.styleSecondary(this,sair);sair.setOnClickListener(v->{TechCellCloudSync.auth(this).signOut();render();});
+        Button sair=action("Sair da conta da nuvem");TechCellUi.styleSecondary(this,sair);sair.setOnClickListener(v->{TechCellAccess.encerrar(this);TechCellCloudAutoSync.parar();render();});
         LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46));sp.setMargins(0,dp(9),0,0);root.addView(sair,sp);
+    }
+
+    private void sincronizarNuvemAgora(){
+        if(ocupado)return;ocupado=true;
+        Toast.makeText(this,"Sincronizando pela internet…",Toast.LENGTH_SHORT).show();
+        new Thread(()->{
+            TechCellCloudRealtimeSync.Resultado r=TechCellCloudRealtimeSync.sincronizar(getApplicationContext());
+            runOnUiThread(()->{
+                ocupado=false;
+                if(r.ok){
+                    String msg="Enviados: "+r.enviados+"\nRecebidos: "+r.recebidos+"\nVendas recebidas: "+r.vendasRecebidas+"\nExclusões: "+r.exclusoes;
+                    new AlertDialog.Builder(this).setTitle("Nuvem sincronizada ✓").setMessage(msg).setPositiveButton("OK",(d,w)->render()).show();
+                }else{
+                    mostrarErro("Sincronização da nuvem",r.erro);
+                    render();
+                }
+            });
+        },"TechCell-Cloud-Now").start();
     }
 
     private void mostrarNovoUsuario(){
@@ -309,7 +373,7 @@ public class TechCellCloudActivity extends Activity {
 
     private void confirmarCarga(){
         new AlertDialog.Builder(this).setTitle("Enviar cadastros para a nuvem?")
-                .setMessage("Serão enviados produtos, clientes, fornecedores, despesas e a configuração da empresa desta base de teste.\n\nAs coleções antigas do Firebase não serão alteradas. Vendas entram na próxima etapa.")
+                .setMessage("Serão enviados produtos, clientes, fornecedores, despesas e a configuração da empresa desta base de teste.\n\nDepois da carga, as alterações passam a sincronizar automaticamente entre os aparelhos conectados à mesma empresa.")
                 .setPositiveButton("Enviar carga",(d,w)->executar("Carga inicial",()->TechCellCloudSync.enviarCargaInicialCadastros(getApplicationContext())))
                 .setNegativeButton("Cancelar",null).show();
     }
