@@ -27,7 +27,9 @@ public final class TechCellCloudFirstLogin {
         v.put("nome_dispositivo", admin ? "Acesso remoto" : "Caixa remoto");
         v.put("master_tipo", "NUVEM");
         v.put("master_host", "");
-        v.put("master_device_uuid", "");
+        // Sentinela indica que o vínculo inicial foi validado pela nuvem. A LAN
+        // poderá substituir isso depois quando houver pareamento local real.
+        v.put("master_device_uuid", "CLOUD");
         v.put("master_name", "Master da loja");
         v.put("master_auth_token", "");
         v.put("configurado", 1);
