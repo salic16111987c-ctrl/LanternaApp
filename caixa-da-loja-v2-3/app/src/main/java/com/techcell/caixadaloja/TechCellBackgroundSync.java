@@ -19,14 +19,18 @@ public final class TechCellBackgroundSync {
             return;
         }
 
+        // A nuvem independe da rede local. Se a empresa já estiver ativada e houver
+        // uma conta autenticada, mantém a sincronização cloud em qualquer função do aparelho.
+        if (ctx.cloudAtiva && TechCellCloudSync.estaAutenticado(app)) {
+            TechCellCloudAutoSync.garantir(app);
+        }
+
         if ("MASTER".equalsIgnoreCase(ctx.papelDispositivo)) {
             try { app.stopService(new Intent(app, TechCellTerminalSyncService.class)); } catch (Throwable ignored) {}
             iniciar(app, new Intent(app, TechCellMasterService.class));
-            TechCellCloudAutoSync.garantir(app);
             return;
         }
 
-        TechCellCloudAutoSync.parar();
         try { app.stopService(new Intent(app, TechCellMasterService.class)); } catch (Throwable ignored) {}
 
         boolean pronto = ctx.masterHost != null && !ctx.masterHost.trim().isEmpty() &&
