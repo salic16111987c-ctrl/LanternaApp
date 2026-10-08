@@ -17,9 +17,11 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /** Operações globais exclusivas da conta Desenvolvedor da plataforma. */
@@ -30,6 +32,7 @@ public final class TechCellDeveloper {
 
     public static class Empresa {
         public String empresaUuid = "";
+        public String filialUuid = "";
         public String nome = "";
         public String ownerUid = "";
         public String ownerEmail = "";
@@ -41,6 +44,23 @@ public final class TechCellDeveloper {
         public String statusExibicao() {
             if (!licenca.existe) return "LEGADO / SEM LICENÇA COMERCIAL";
             return licenca.status;
+        }
+    }
+
+    public static class UsuarioTeste {
+        public String uid = "";
+        public String nome = "";
+        public String email = "";
+        public String perfil = "CAIXA";
+        public boolean proprietario;
+        public boolean ativo = true;
+        public Set<String> permissoes = new LinkedHashSet<>();
+
+        public String perfilExibicao() {
+            if (proprietario) return "Master";
+            if ("MASTER".equalsIgnoreCase(perfil) || "ADMINISTRADOR".equalsIgnoreCase(perfil)) return "Master";
+            if ("GERENTE".equalsIgnoreCase(perfil)) return "Gerente";
+            return "Caixa";
         }
     }
 
@@ -56,6 +76,8 @@ public final class TechCellDeveloper {
             for (QueryDocumentSnapshot d : qs) {
                 Empresa e = new Empresa();
                 e.empresaUuid = d.getId();
+                e.filialUuid = texto(d.get("filial_uuid"));
+                if (e.filialUuid.isEmpty()) e.filialUuid = e.empresaUuid;
                 e.ownerUid = texto(d.get("owner_uid"));
                 e.ownerEmail = texto(d.get("owner_email"));
                 e.nome = nomeEmpresa(d);
@@ -70,6 +92,65 @@ public final class TechCellDeveloper {
         Collections.sort(out, new Comparator<Empresa>() {
             @Override public int compare(Empresa a, Empresa b) {
                 int pa = prioridade(a), pb = prioridade(b);
+                if (pa != pb) return Integer.compare(pa, pb);
+                return a.nome.compareToIgnoreCase(b.nome);
+            }
+        });
+        return out;
+    }
+
+    /** Lista as identidades que o Desenvolvedor pode simular sem conhecer a senha do cliente. */
+    public static List<UsuarioTeste> listarUsuariosTeste(Context context, Empresa empresa) throws Exception {
+        Context app = context.getApplicationContext();
+        TechCellDeveloperAccess.exigir(app);
+        if (empresa == null || empresa.empresaUuid == null || empresa.empresaUuid.trim().isEmpty()) {
+            throw new IllegalArgumentException("Empresa inválida.");
+        }
+
+        DocumentReference er = TechCellCloudSync.firestore(app).collection(EMPRESAS).document(empresa.empresaUuid);
+        DocumentSnapshot ed = Tasks.await(er.get(Source.SERVER), TIMEOUT, TimeUnit.SECONDS);
+        if (!ed.exists()) throw new IllegalStateException("Empresa não encontrada.");
+        String ownerUid = texto(ed.get("owner_uid"));
+        String ownerEmail = texto(ed.get("owner_email"));
+
+        List<UsuarioTeste> out = new ArrayList<>();
+        QuerySnapshot qs = Tasks.await(er.collection("usuarios").get(Source.SERVER), TIMEOUT, TimeUnit.SECONDS);
+        boolean ownerEncontrado = false;
+        if (qs != null) {
+            for (QueryDocumentSnapshot d : qs) {
+                UsuarioTeste u = new UsuarioTeste();
+                u.uid = texto(d.get("uid")); if (u.uid.isEmpty()) u.uid = d.getId();
+                u.nome = texto(d.get("nome"));
+                u.email = texto(d.get("email"));
+                u.proprietario = u.uid.equals(ownerUid) || bool(d.get("proprietario"), false);
+                u.perfil = u.proprietario ? "MASTER" : normalizarPerfil(texto(d.get("perfil")));
+                u.ativo = bool(d.get("ativo"), true);
+                u.permissoes = u.proprietario
+                        ? TechCellPermissions.padrao("MASTER")
+                        : TechCellPermissions.ler(d.get("permissoes"), u.perfil);
+                if (u.nome.isEmpty()) u.nome = u.proprietario ? "Master" : (u.email.isEmpty() ? u.perfilExibicao() : u.email);
+                if (u.email.isEmpty() && u.proprietario) u.email = ownerEmail;
+                if (u.proprietario) ownerEncontrado = true;
+                out.add(u);
+            }
+        }
+
+        if (!ownerEncontrado && !ownerUid.isEmpty()) {
+            UsuarioTeste m = new UsuarioTeste();
+            m.uid = ownerUid;
+            m.nome = "Master";
+            m.email = ownerEmail;
+            m.perfil = "MASTER";
+            m.proprietario = true;
+            m.ativo = true;
+            m.permissoes = TechCellPermissions.padrao("MASTER");
+            out.add(m);
+        }
+
+        Collections.sort(out, new Comparator<UsuarioTeste>() {
+            @Override public int compare(UsuarioTeste a, UsuarioTeste b) {
+                if (a.proprietario != b.proprietario) return a.proprietario ? -1 : 1;
+                int pa = ordemPerfil(a.perfil), pb = ordemPerfil(b.perfil);
                 if (pa != pb) return Integer.compare(pa, pb);
                 return a.nome.compareToIgnoreCase(b.nome);
             }
@@ -120,7 +201,6 @@ public final class TechCellDeveloper {
         LinkedHashMap<String,DocumentSnapshot> slots = new LinkedHashMap<>();
         if (slotQs != null) for (QueryDocumentSnapshot d : slotQs) slots.put(d.getId(), d);
 
-        // Cria vagas até atingir a quantidade contratada. IDs são estáveis e legíveis.
         int proximo = 1;
         WriteBatch criar = TechCellCloudSync.firestore(app).batch();
         int criados = 0;
@@ -147,7 +227,6 @@ public final class TechCellDeveloper {
         List<DocumentSnapshot> atuais = new ArrayList<>();
         if (slotQs != null) for (QueryDocumentSnapshot d : slotQs) atuais.add(d);
 
-        // Ao reduzir, remove apenas vagas livres. Vaga em uso nunca é apagada.
         if (atuais.size() > desejados) {
             int remover = atuais.size() - desejados;
             WriteBatch del = TechCellCloudSync.firestore(app).batch();
@@ -163,7 +242,6 @@ public final class TechCellDeveloper {
             Tasks.await(del.commit(), TIMEOUT, TimeUnit.SECONDS);
         }
 
-        // Migra aparelhos já autorizados antes do sistema de licenças para ocupar uma vaga.
         slotQs = Tasks.await(TechCellLicenseManager.slotsCaixa(app, empresaUuid)
                 .get(Source.SERVER), TIMEOUT, TimeUnit.SECONDS);
         List<DocumentSnapshot> livres = new ArrayList<>();
@@ -231,6 +309,19 @@ public final class TechCellDeveloper {
         return 3;
     }
 
+    private static int ordemPerfil(String perfil) {
+        if ("MASTER".equalsIgnoreCase(perfil) || "ADMINISTRADOR".equalsIgnoreCase(perfil)) return 0;
+        if ("GERENTE".equalsIgnoreCase(perfil)) return 1;
+        return 2;
+    }
+
+    private static String normalizarPerfil(String valor) {
+        String v = valor == null ? "" : valor.trim().toUpperCase(Locale.ROOT);
+        if ("MASTER".equals(v) || "ADMINISTRADOR".equals(v) || "PROPRIETARIO".equals(v) || "PROPRIETÁRIO".equals(v)) return "MASTER";
+        if ("GERENTE".equals(v)) return "GERENTE";
+        return "CAIXA";
+    }
+
     private static String nomeEmpresa(DocumentSnapshot d) {
         Object cfgObj = d.get("config");
         if (cfgObj instanceof Map) {
@@ -259,5 +350,6 @@ public final class TechCellDeveloper {
         throw new IllegalArgumentException("Plano inválido.");
     }
 
+    private static boolean bool(Object v, boolean padrao) { return v instanceof Boolean ? (Boolean)v : padrao; }
     private static String texto(Object v) { return v == null ? "" : String.valueOf(v).trim(); }
 }
