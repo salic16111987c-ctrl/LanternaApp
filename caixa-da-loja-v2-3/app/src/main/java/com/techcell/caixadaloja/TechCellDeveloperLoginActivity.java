@@ -32,11 +32,11 @@ public class TechCellDeveloperLoginActivity extends Activity {
 
         TextView brand=txt("TECH CELL • PLATAFORMA",24,true);brand.setGravity(Gravity.CENTER);root.addView(brand);
         TextView titulo=txt("Acesso do Desenvolvedor",25,true);titulo.setGravity(Gravity.CENTER);titulo.setPadding(0,dp(14),0,dp(4));root.addView(titulo);
-        TextView sub=txt("Acesso global • separado das contas Master das lojas",13,false);sub.setTextColor(TechCellUi.MUTED);sub.setGravity(Gravity.CENTER);root.addView(sub);
+        TextView sub=txt("Programador / administração global • separado das contas Master das lojas",13,false);sub.setTextColor(TechCellUi.MUTED);sub.setGravity(Gravity.CENTER);root.addView(sub);
 
         LinearLayout info=TechCellUi.card(this);info.setLayoutParams(TechCellUi.fullCardParams(this,16));
-        TextView i1=txt("NÍVEL SUPREMO DA PLATAFORMA",12,true);i1.setTextColor(TechCellUi.BLUE);info.addView(i1);
-        TextView i2=txt("Esta conta não precisa pertencer a nenhuma loja. Após o login, o sistema valida o UID na lista segura de Desenvolvedores e abre o painel global de empresas, planos e licenças.",11,false);i2.setTextColor(TechCellUi.MUTED);i2.setPadding(0,dp(5),0,0);info.addView(i2);root.addView(info);
+        TextView i1=txt("DESENVOLVEDOR DA PLATAFORMA",12,true);i1.setTextColor(TechCellUi.BLUE);info.addView(i1);
+        TextView i2=txt("Esta conta não pertence a uma loja. Após o login, o sistema valida o UID seguro do Desenvolvedor e abre o painel global de empresas, planos, licenças e testes de acesso.",11,false);i2.setTextColor(TechCellUi.MUTED);i2.setPadding(0,dp(5),0,0);info.addView(i2);root.addView(info);
 
         LinearLayout card=TechCellUi.card(this);card.setLayoutParams(TechCellUi.fullCardParams(this,8));
         EditText email=new EditText(this);email.setHint("E-mail do Desenvolvedor");email.setSingleLine(true);email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);card.addView(email);
@@ -49,7 +49,7 @@ public class TechCellDeveloperLoginActivity extends Activity {
         Button voltar=botao("←  Voltar ao acesso da loja");TechCellUi.styleSecondary(this,voltar);voltar.setOnClickListener(v->finish());
         LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));vp.setMargins(0,dp(10),0,0);root.addView(voltar,vp);
 
-        TextView aviso=txt("Segurança: uma conta comum não consegue se transformar em Desenvolvedor pelo aplicativo. O primeiro Desenvolvedor é provisionado uma única vez no controle central usando o UID da conta.",11,false);aviso.setTextColor(TechCellUi.MUTED);aviso.setPadding(dp(4),dp(10),dp(4),0);root.addView(aviso);
+        TextView aviso=txt("Segurança: o primeiro Desenvolvedor é reconhecido pelo UID único da conta Firebase. Uma conta comum não consegue se promover a Desenvolvedor pelo aplicativo.",11,false);aviso.setTextColor(TechCellUi.MUTED);aviso.setPadding(dp(4),dp(10),dp(4),0);root.addView(aviso);
         setContentView(scroll);
     }
 
@@ -80,11 +80,20 @@ public class TechCellDeveloperLoginActivity extends Activity {
                     TechCellDeveloperAccess.limpar(getApplicationContext());
                     runOnUiThread(()->{
                         ocupado=false;botao.setEnabled(true);botao.setText("🛠  ENTRAR COMO DESENVOLVEDOR");
-                        String m=TechCellCloudUsers.mensagem(ex);status("Acesso negado: "+m,TechCellUi.RED);erro("Conta sem acesso de Desenvolvedor",m);
+                        String m=mensagemDeveloper(ex);status("Acesso negado: "+m,TechCellUi.RED);erro("Conta sem acesso de Desenvolvedor",m);
                     });
                 }
             },"TechCell-Developer-Login").start();
         });
+    }
+
+    private String mensagemDeveloper(Throwable ex){
+        String m=TechCellCloudUsers.mensagem(ex);
+        String x=m==null?"":m.toLowerCase(java.util.Locale.ROOT);
+        if(x.contains("permission_denied")||x.contains("permission denied")||x.contains("permiss")){
+            return "O login Firebase funcionou, mas o Firestore bloqueou o cadastro/validação do Desenvolvedor. Publique as regras atuais do Firestore do projeto Tech Cell e tente novamente.";
+        }
+        return m==null||m.trim().isEmpty()?"Erro desconhecido ao validar o Desenvolvedor.":m;
     }
 
     private void status(String s,int cor){if(status!=null){status.setText(s);status.setTextColor(cor);}}
