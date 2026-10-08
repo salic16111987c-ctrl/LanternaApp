@@ -17,7 +17,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-/** Sessão local + permissões granulares vindas da empresa na nuvem. */
+/** Sessão local + permissões granulares + licença comercial da empresa. */
 public final class TechCellAccess {
     private static final String ROOT = "techcell_empresas";
     private static final String PREF = "techcell_access_v1";
@@ -28,6 +28,7 @@ public final class TechCellAccess {
     public static class Sessao {
         public boolean valida;
         public boolean ativo;
+        public boolean proprietario;
         public String uid = "";
         public String nome = "";
         public String email = "";
@@ -55,6 +56,7 @@ public final class TechCellAccess {
         if (!ctx.cloudAtiva) {
             s.valida = true;
             s.ativo = true;
+            s.proprietario = true;
             s.nome = "Desenvolvimento";
             s.perfil = Perfil.MASTER;
             s.empresaUuid = ctx.empresaUuid == null ? "" : ctx.empresaUuid;
@@ -78,6 +80,7 @@ public final class TechCellAccess {
         s.nome = p.getString("nome", "");
         s.email = p.getString("email", atual.getEmail() == null ? "" : atual.getEmail());
         s.ativo = p.getBoolean("ativo", false);
+        s.proprietario = p.getBoolean("proprietario", false);
         s.perfil = normalizar(p.getString("perfil", ""));
         String csv = p.getString("permissoes_csv", "");
         if (csv == null || csv.trim().isEmpty()) {
@@ -87,7 +90,8 @@ public final class TechCellAccess {
             for (String x : csv.split(",")) if (!x.trim().isEmpty()) ps.add(x.trim().toUpperCase(Locale.ROOT));
             s.permissoes = ps;
         }
-        s.valida = s.ativo && s.perfil != Perfil.NENHUM;
+        s.valida = s.ativo && s.perfil != Perfil.NENHUM
+                && TechCellLicenseManager.permiteSessaoLocal(app, empresaAtual, s.proprietario);
         return s;
     }
 
@@ -99,6 +103,9 @@ public final class TechCellAccess {
         FirebaseUser user = TechCellCloudSync.auth(app).getCurrentUser();
         if (user == null) throw new IllegalStateException("Entre com seu e-mail e senha.");
 
+        // Atualiza primeiro o papel global. A mesma conta pode ser Desenvolvedor e Master da própria loja.
+        try { TechCellDeveloperAccess.atualizar(app); } catch (Throwable ignored) {}
+
         GestaoDbHelper db = new GestaoDbHelper(app);
         GestaoDbHelper.SyncContext ctx;
         try {
@@ -107,11 +114,8 @@ public final class TechCellAccess {
             if (!ctx.configurado || ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
                 boolean configurou = false;
                 Throwable erroIndice = null;
-                try {
-                    configurou = TechCellCloudFirstLogin.configurarSePossivel(app, user, db);
-                } catch (Throwable e) {
-                    erroIndice = e;
-                }
+                try { configurou = TechCellCloudFirstLogin.configurarSePossivel(app, user, db); }
+                catch (Throwable e) { erroIndice = e; }
                 if (!configurou) {
                     if (descobrirEmpresaProprietario(app, user, db)) configurou = true;
                 }
@@ -139,12 +143,19 @@ public final class TechCellAccess {
             if (!emp.exists()) throw new IllegalStateException("Esta empresa ainda não foi registrada na Nuvem Tech Cell.");
 
             String owner = texto(emp.get("owner_uid"));
+            boolean ehOwner = user.getUid().equals(owner);
+
+            // A licença é controlada pelo Desenvolvedor. Empresas antigas sem documento continuam
+            // em modo legado até serem migradas no novo painel.
+            TechCellLicenseManager.validarAcesso(app, ctx.empresaUuid, ehOwner);
+
             Sessao s = new Sessao();
             s.uid = user.getUid();
             s.email = user.getEmail() == null ? "" : user.getEmail();
             s.empresaUuid = ctx.empresaUuid;
+            s.proprietario = ehOwner;
 
-            if (user.getUid().equals(owner)) {
+            if (ehOwner) {
                 s.perfil = Perfil.MASTER;
                 s.ativo = true;
                 s.permissoes = TechCellPermissions.padrao("MASTER");
@@ -171,15 +182,14 @@ public final class TechCellAccess {
             if (!s.ativo) throw new IllegalStateException("Esta conta está bloqueada pelo Master.");
             if (s.perfil == Perfil.NENHUM) throw new IllegalStateException("Esta conta está sem nível de acesso válido.");
 
-            // O aparelho Master físico é a raiz de confiança da empresa. Qualquer
-            // outro aparelho precisa estar explicitamente autorizado pelo Master.
-            boolean masterFisico = user.getUid().equals(owner) && "MASTER".equalsIgnoreCase(papelAparelho);
+            // O Master físico é raiz da empresa. Demais aparelhos precisam de aprovação do Master.
+            boolean masterFisico = ehOwner && "MASTER".equalsIgnoreCase(papelAparelho);
             if (!masterFisico) {
                 String device = ctx.dispositivoUuid == null ? "" : ctx.dispositivoUuid.trim();
                 TechCellDeviceAuthorization.Dispositivo da = TechCellDeviceAuthorization.consultar(app, ctx.empresaUuid, device);
                 if (da == null) {
                     TechCellUserCompanyIndex.Vinculo v = new TechCellUserCompanyIndex.Vinculo();
-                    v.empresaUuid = ctx.empresaUuid; v.filialUuid = ctx.filialUuid; v.perfil = s.perfil.name(); v.nome = s.nome; v.proprietario = user.getUid().equals(owner);
+                    v.empresaUuid = ctx.empresaUuid; v.filialUuid = ctx.filialUuid; v.perfil = s.perfil.name(); v.nome = s.nome; v.proprietario = ehOwner;
                     da = TechCellDeviceAuthorization.solicitar(app, v, user);
                 }
                 if (da == null || TechCellDeviceAuthorization.PENDENTE.equalsIgnoreCase(da.status)) {
@@ -239,6 +249,7 @@ public final class TechCellAccess {
     public static void encerrar(Context context) {
         try { TechCellCloudSync.auth(context).signOut(); } catch (Throwable ignored) {}
         prefs(context).edit().clear().apply();
+        TechCellDeveloperAccess.limpar(context);
     }
 
     public static boolean temPermissao(Context c, String permissao) {
@@ -284,6 +295,7 @@ public final class TechCellAccess {
                 .putString("uid", s.uid).putString("empresa_uuid", s.empresaUuid)
                 .putString("nome", s.nome).putString("email", s.email)
                 .putString("perfil", s.perfil.name()).putBoolean("ativo", s.ativo)
+                .putBoolean("proprietario", s.proprietario)
                 .putString("permissoes_csv", csv.toString())
                 .putLong("validado_em", System.currentTimeMillis()).apply();
     }
