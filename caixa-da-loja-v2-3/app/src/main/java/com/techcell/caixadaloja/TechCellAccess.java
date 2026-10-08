@@ -12,14 +12,12 @@ import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.firestore.Source;
 
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Sessão e permissões dos usuários da loja.
- * O perfil fica na nuvem, mas uma cópia é mantida localmente para a operação
- * continuar funcionando quando a internet cair depois de uma autenticação válida.
- */
+/** Sessão local + permissões granulares vindas da empresa na nuvem. */
 public final class TechCellAccess {
     private static final String ROOT = "techcell_empresas";
     private static final String PREF = "techcell_access_v1";
@@ -35,6 +33,7 @@ public final class TechCellAccess {
         public String email = "";
         public String empresaUuid = "";
         public Perfil perfil = Perfil.NENHUM;
+        public Set<String> permissoes = new LinkedHashSet<>();
     }
 
     private TechCellAccess() {}
@@ -59,6 +58,7 @@ public final class TechCellAccess {
             s.nome = "Desenvolvimento";
             s.perfil = Perfil.MASTER;
             s.empresaUuid = ctx.empresaUuid == null ? "" : ctx.empresaUuid;
+            s.permissoes = TechCellPermissions.padrao("MASTER");
             return s;
         }
 
@@ -79,6 +79,14 @@ public final class TechCellAccess {
         s.email = p.getString("email", atual.getEmail() == null ? "" : atual.getEmail());
         s.ativo = p.getBoolean("ativo", false);
         s.perfil = normalizar(p.getString("perfil", ""));
+        String csv = p.getString("permissoes_csv", "");
+        if (csv == null || csv.trim().isEmpty()) {
+            s.permissoes = TechCellPermissions.padrao(s.perfil.name());
+        } else {
+            LinkedHashSet<String> ps = new LinkedHashSet<>();
+            for (String x : csv.split(",")) if (!x.trim().isEmpty()) ps.add(x.trim().toUpperCase(Locale.ROOT));
+            s.permissoes = ps;
+        }
         s.valida = s.ativo && s.perfil != Perfil.NENHUM;
         return s;
     }
@@ -95,19 +103,11 @@ public final class TechCellAccess {
         GestaoDbHelper.SyncContext ctx;
         try {
             ctx = db.getSyncContext();
-
-            // Em um aparelho novo, a conta proprietária pode localizar a própria
-            // empresa pela nuvem. O aparelho passa a ser um terminal ADMIN remoto,
-            // sem virar o Master físico da loja.
             if (!ctx.configurado || ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
-                if (descobrirEmpresaProprietario(app, user, db)) {
-                    ctx = db.getSyncContext();
-                }
+                if (descobrirEmpresaProprietario(app, user, db)) ctx = db.getSyncContext();
             }
-
             if (!ctx.configurado) {
-                throw new IllegalStateException(
-                        "Este aparelho ainda não foi configurado. Se esta for a conta Administrador proprietária, confira a internet e tente novamente. Para uma conta Caixa/Gerente nova, faça primeiro o pareamento com o Master.");
+                throw new IllegalStateException("Este aparelho ainda não foi configurado. Para Caixa/Gerente, faça primeiro o vínculo com a loja.");
             }
             if (ctx.empresaUuid == null || ctx.empresaUuid.trim().isEmpty()) {
                 throw new IllegalStateException("Este aparelho ainda não possui uma empresa vinculada.");
@@ -118,13 +118,11 @@ public final class TechCellAccess {
             if (!"MASTER".equalsIgnoreCase(papelAparelho) && !remotoNuvem) {
                 String masterId = ctx.masterDeviceUuid == null ? "" : ctx.masterDeviceUuid.trim();
                 if (masterId.isEmpty()) {
-                    throw new IllegalStateException(
-                            "Este aparelho ainda não está vinculado ao Master. Para um Caixa/Gerente, conecte os aparelhos à mesma rede Wi-Fi e faça o pareamento inicial.");
+                    throw new IllegalStateException("Este aparelho ainda não está vinculado ao Master. Faça o pareamento inicial.");
                 }
             }
 
-            DocumentReference empresa = TechCellCloudSync.firestore(app)
-                    .collection(ROOT).document(ctx.empresaUuid);
+            DocumentReference empresa = TechCellCloudSync.firestore(app).collection(ROOT).document(ctx.empresaUuid);
             DocumentSnapshot emp = Tasks.await(empresa.get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             if (!emp.exists()) throw new IllegalStateException("Esta empresa ainda não foi registrada na Nuvem Tech Cell.");
 
@@ -137,10 +135,10 @@ public final class TechCellAccess {
             if (user.getUid().equals(owner)) {
                 s.perfil = Perfil.MASTER;
                 s.ativo = true;
+                s.permissoes = TechCellPermissions.padrao("MASTER");
                 DocumentSnapshot ud = null;
                 try {
-                    ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER),
-                            READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                    ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 } catch (Throwable ignored) {}
                 if (ud != null && ud.exists()) {
                     s.nome = texto(ud.get("nome"));
@@ -149,13 +147,13 @@ public final class TechCellAccess {
                 }
                 if (s.nome.isEmpty()) s.nome = "Master";
             } else {
-                DocumentSnapshot ud = Tasks.await(empresa.collection("usuarios")
-                        .document(user.getUid()).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+                DocumentSnapshot ud = Tasks.await(empresa.collection("usuarios").document(user.getUid()).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 if (!ud.exists()) throw new IllegalStateException("Esta conta não está vinculada a esta empresa.");
                 Object ativo = ud.get("ativo");
                 s.ativo = !(ativo instanceof Boolean) || (Boolean) ativo;
                 s.perfil = normalizar(texto(ud.get("perfil")));
                 s.nome = texto(ud.get("nome"));
+                s.permissoes = TechCellPermissions.ler(ud.get("permissoes"), s.perfil.name());
                 if (s.nome.isEmpty()) s.nome = s.email;
             }
 
@@ -170,32 +168,17 @@ public final class TechCellAccess {
             salvar(app, s);
             s.valida = true;
             return s;
-        } finally {
-            db.close();
-        }
+        } finally { db.close(); }
     }
 
-    /**
-     * Descobre automaticamente a empresa apenas para a conta proprietária.
-     * Contas Caixa/Gerente continuam exigindo o vínculo inicial com a loja,
-     * preservando o isolamento entre empresas.
-     */
     private static boolean descobrirEmpresaProprietario(Context app, FirebaseUser user, GestaoDbHelper db) throws Exception {
         QuerySnapshot qs;
         try {
-            qs = Tasks.await(TechCellCloudSync.firestore(app)
-                            .collection(ROOT)
-                            .whereEqualTo("owner_uid", user.getUid())
-                            .limit(2)
-                            .get(Source.SERVER),
-                    READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (Throwable e) {
-            return false;
-        }
+            qs = Tasks.await(TechCellCloudSync.firestore(app).collection(ROOT)
+                    .whereEqualTo("owner_uid", user.getUid()).limit(2).get(Source.SERVER), READ_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (Throwable e) { return false; }
         if (qs == null || qs.isEmpty()) return false;
-        if (qs.size() > 1) {
-            throw new IllegalStateException("Esta conta administra mais de uma empresa. A seleção da empresa será habilitada em uma próxima etapa.");
-        }
+        if (qs.size() > 1) throw new IllegalStateException("Esta conta administra mais de uma empresa. A seleção de empresa será habilitada no painel do Desenvolvedor.");
 
         DocumentSnapshot emp = qs.getDocuments().get(0);
         String empresaUuid = emp.getId();
@@ -204,18 +187,11 @@ public final class TechCellAccess {
 
         SQLiteDatabase sql = db.getWritableDatabase();
         ContentValues v = new ContentValues();
-        v.put("empresa_uuid", empresaUuid);
-        v.put("filial_uuid", filialUuid);
-        v.put("papel_dispositivo", "ADMIN");
-        v.put("nome_dispositivo", "Acesso remoto");
-        v.put("master_tipo", "NUVEM");
-        v.put("master_host", "");
-        v.put("master_device_uuid", "");
-        v.put("master_name", "Master da loja");
-        v.put("master_auth_token", "");
-        v.put("configurado", 1);
-        v.put("cloud_ativa", 1);
-        v.put("updated_at", System.currentTimeMillis());
+        v.put("empresa_uuid", empresaUuid); v.put("filial_uuid", filialUuid);
+        v.put("papel_dispositivo", "ADMIN"); v.put("nome_dispositivo", "Acesso remoto");
+        v.put("master_tipo", "NUVEM"); v.put("master_host", ""); v.put("master_device_uuid", "");
+        v.put("master_name", "Master da loja"); v.put("master_auth_token", "");
+        v.put("configurado", 1); v.put("cloud_ativa", 1); v.put("updated_at", System.currentTimeMillis());
         sql.update("sync_context", v, "id=1", null);
         return true;
     }
@@ -225,15 +201,25 @@ public final class TechCellAccess {
         prefs(context).edit().clear().apply();
     }
 
-    public static boolean podeVender(Context c) { return permitido(c, Perfil.CAIXA); }
-    public static boolean podeClientes(Context c) { return permitido(c, Perfil.CAIXA); }
-    public static boolean podeProdutos(Context c) { return permitido(c, Perfil.GERENTE); }
-    public static boolean podeEstoque(Context c) { return permitido(c, Perfil.GERENTE); }
-    public static boolean podeFinanceiro(Context c) { return permitido(c, Perfil.GERENTE); }
-    public static boolean podeRelatorios(Context c) { return permitido(c, Perfil.GERENTE); }
-    public static boolean podeFornecedores(Context c) { return permitido(c, Perfil.GERENTE); }
-    public static boolean podeHistorico(Context c) { return permitido(c, Perfil.GERENTE); }
-    public static boolean podeResumoFinanceiro(Context c) { return permitido(c, Perfil.GERENTE); }
+    public static boolean temPermissao(Context c, String permissao) {
+        Sessao s = sessao(c);
+        if (!s.valida) return false;
+        if (s.perfil == Perfil.MASTER) return true;
+        return TechCellPermissions.contem(s.permissoes, permissao);
+    }
+
+    public static boolean podeVender(Context c) { return temPermissao(c, TechCellPermissions.VENDER); }
+    public static boolean podeClientes(Context c) { return temPermissao(c, TechCellPermissions.CLIENTES); }
+    public static boolean podeProdutos(Context c) { return temPermissao(c, TechCellPermissions.PRODUTOS); }
+    public static boolean podeEditarProdutos(Context c) { return temPermissao(c, TechCellPermissions.PRODUTOS_EDITAR); }
+    public static boolean podeVerCusto(Context c) { return temPermissao(c, TechCellPermissions.PRODUTOS_CUSTO); }
+    public static boolean podeEstoque(Context c) { return temPermissao(c, TechCellPermissions.ESTOQUE); }
+    public static boolean podeResumoDia(Context c) { return temPermissao(c, TechCellPermissions.RESUMO_DIA); }
+    public static boolean podeFinanceiro(Context c) { return temPermissao(c, TechCellPermissions.FINANCEIRO); }
+    public static boolean podeRelatorios(Context c) { return temPermissao(c, TechCellPermissions.RELATORIOS); }
+    public static boolean podeFornecedores(Context c) { return temPermissao(c, TechCellPermissions.FORNECEDORES); }
+    public static boolean podeHistorico(Context c) { return temPermissao(c, TechCellPermissions.HISTORICO); }
+    public static boolean podeResumoFinanceiro(Context c) { return temPermissao(c, TechCellPermissions.LUCRO_CUSTO); }
     public static boolean podeAdministrar(Context c) { return perfilAtual(c) == Perfil.MASTER; }
 
     public static String perfilExibicao(Perfil p) {
@@ -241,14 +227,6 @@ public final class TechCellAccess {
         if (p == Perfil.GERENTE) return "Gerente";
         if (p == Perfil.CAIXA) return "Caixa";
         return "Sem acesso";
-    }
-
-    private static boolean permitido(Context c, Perfil minimo) {
-        Perfil p = perfilAtual(c);
-        if (p == Perfil.MASTER) return true;
-        if (minimo == Perfil.CAIXA) return p == Perfil.GERENTE || p == Perfil.CAIXA;
-        if (minimo == Perfil.GERENTE) return p == Perfil.GERENTE;
-        return false;
     }
 
     private static Perfil normalizar(String valor) {
@@ -260,20 +238,18 @@ public final class TechCellAccess {
     }
 
     private static void salvar(Context context, Sessao s) {
+        StringBuilder csv = new StringBuilder();
+        for (String x : s.permissoes) { if (csv.length() > 0) csv.append(','); csv.append(x); }
         prefs(context).edit()
-                .putString("uid", s.uid)
-                .putString("empresa_uuid", s.empresaUuid)
-                .putString("nome", s.nome)
-                .putString("email", s.email)
-                .putString("perfil", s.perfil.name())
-                .putBoolean("ativo", s.ativo)
-                .putLong("validado_em", System.currentTimeMillis())
-                .apply();
+                .putString("uid", s.uid).putString("empresa_uuid", s.empresaUuid)
+                .putString("nome", s.nome).putString("email", s.email)
+                .putString("perfil", s.perfil.name()).putBoolean("ativo", s.ativo)
+                .putString("permissoes_csv", csv.toString())
+                .putLong("validado_em", System.currentTimeMillis()).apply();
     }
 
     private static SharedPreferences prefs(Context context) {
         return context.getApplicationContext().getSharedPreferences(PREF, Context.MODE_PRIVATE);
     }
-
     private static String texto(Object v) { return v == null ? "" : String.valueOf(v).trim(); }
 }
