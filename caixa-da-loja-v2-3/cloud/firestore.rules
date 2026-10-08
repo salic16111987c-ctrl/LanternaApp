@@ -15,6 +15,12 @@ service cloud.firestore {
         && exists(adminPath())
         && get(adminPath()).data.ativo == true;
     }
+    function isBootstrapDeveloper(userId) {
+      return request.auth != null
+        && request.auth.uid == userId
+        && userId == 'JMBDrlStQdNLD1km8hOrJmcJqXd2'
+        && request.auth.token.email == 'salic1611@hotmail.com';
+    }
     function isOwner(empresaId) {
       return request.auth != null
         && exists(/databases/$(database)/documents/techcell_empresas/$(empresaId))
@@ -76,10 +82,16 @@ service cloud.firestore {
     }
 
     // A conta Desenvolvedor é global e independente do MASTER de qualquer empresa.
-    // O primeiro documento de Desenvolvedor deve ser provisionado manualmente/por backend seguro.
+    // Bootstrap: somente a conta autenticada abaixo pode criar o próprio documento uma única vez.
     match /techcell_platform_admins/{userId} {
       allow read: if request.auth != null && (request.auth.uid == userId || isPlatformAdmin());
-      allow create, update, delete: if isPlatformAdmin();
+      allow create: if isPlatformAdmin()
+                    || (isBootstrapDeveloper(userId)
+                        && request.resource.data.ativo == true
+                        && request.resource.data.papel == 'DEVELOPER'
+                        && request.resource.data.bootstrap_uid == userId
+                        && request.resource.data.bootstrap_email == request.auth.token.email);
+      allow update, delete: if isPlatformAdmin();
     }
 
     // Licença comercial controlada exclusivamente pelo Desenvolvedor.
