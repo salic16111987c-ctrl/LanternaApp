@@ -9,6 +9,15 @@ public final class TechCellBackgroundSync {
 
     public static void garantir(Context context) {
         Context app = context.getApplicationContext();
+
+        // A conta Desenvolvedor é global e não opera o banco de nenhuma loja local.
+        // Enquanto esse modo estiver ativo, paramos os serviços de sincronização da loja
+        // para manter os dois contextos totalmente separados.
+        if (TechCellDeveloperAccess.ehDesenvolvedor(app)) {
+            parar(app);
+            return;
+        }
+
         GestaoDbHelper helper = new GestaoDbHelper(app);
         GestaoDbHelper.SyncContext ctx;
         try { ctx = helper.getSyncContext(); }
@@ -19,8 +28,6 @@ public final class TechCellBackgroundSync {
             return;
         }
 
-        // A nuvem independe da rede local. Se a empresa já estiver ativada e houver
-        // uma conta autenticada, mantém a sincronização cloud em qualquer função do aparelho.
         if (ctx.cloudAtiva && TechCellCloudSync.estaAutenticado(app)) {
             TechCellCloudAutoSync.garantir(app);
         }
@@ -35,9 +42,8 @@ public final class TechCellBackgroundSync {
 
         boolean pronto = ctx.masterHost != null && !ctx.masterHost.trim().isEmpty() &&
                 ctx.masterAuthToken != null && !ctx.masterAuthToken.trim().isEmpty();
-        if (pronto) {
-            iniciar(app, new Intent(app, TechCellTerminalSyncService.class));
-        } else {
+        if (pronto) iniciar(app, new Intent(app, TechCellTerminalSyncService.class));
+        else {
             try { app.stopService(new Intent(app, TechCellTerminalSyncService.class)); } catch (Throwable ignored) {}
         }
     }
@@ -53,8 +59,6 @@ public final class TechCellBackgroundSync {
         try {
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
             else context.startService(intent);
-        } catch (Throwable ignored) {
-            // Se o Android bloquear uma partida em segundo plano, o próximo acesso ao app tenta novamente.
-        }
+        } catch (Throwable ignored) {}
     }
 }
