@@ -22,9 +22,8 @@ public final class TechCellDeveloperAccess {
     private static final long TIMEOUT_SECONDS = 10L;
 
     // Bootstrap único do primeiro Desenvolvedor da plataforma.
-    // Exige autenticação Firebase + UID exato + e-mail exato.
+    // A segurança usa o UID Firebase, que é único e não depende da grafia do e-mail.
     private static final String BOOTSTRAP_UID = "JMBDrlStQdNLD1km8hOrJmcJqXd2";
-    private static final String BOOTSTRAP_EMAIL = "salic1611@hotmail.com";
 
     public static class Estado {
         public boolean conhecido;
@@ -71,6 +70,8 @@ public final class TechCellDeveloperAccess {
         DocumentReference ref = TechCellCloudSync.firestore(app).collection(ADMINS).document(u.getUid());
         DocumentSnapshot d = Tasks.await(ref.get(Source.SERVER), TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
+        // Na primeira entrada da conta oficial do Desenvolvedor, cria o próprio registro.
+        // Depois disso, todo acesso depende do documento ativo no controle central.
         if (!d.exists() && podeFazerBootstrap(u)) {
             Map<String,Object> dados = new HashMap<>();
             dados.put("ativo", true);
@@ -108,9 +109,7 @@ public final class TechCellDeveloperAccess {
     }
 
     private static boolean podeFazerBootstrap(FirebaseUser u) {
-        if (u == null || !BOOTSTRAP_UID.equals(u.getUid())) return false;
-        String email = u.getEmail();
-        return email != null && BOOTSTRAP_EMAIL.equalsIgnoreCase(email.trim());
+        return u != null && BOOTSTRAP_UID.equals(u.getUid());
     }
 
     public static void exigir(Context context) throws Exception {
