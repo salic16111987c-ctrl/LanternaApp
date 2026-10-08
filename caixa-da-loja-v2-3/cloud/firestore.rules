@@ -7,14 +7,37 @@ service cloud.firestore {
     function memberDoc(empresaId) {
       return get(/databases/$(database)/documents/techcell_empresas/$(empresaId)/usuarios/$(request.auth.uid));
     }
+    function adminPath() {
+      return /databases/$(database)/documents/techcell_platform_admins/$(request.auth.uid);
+    }
+    function isPlatformAdmin() {
+      return request.auth != null
+        && exists(adminPath())
+        && get(adminPath()).data.ativo == true;
+    }
     function isOwner(empresaId) {
       return request.auth != null
+        && exists(/databases/$(database)/documents/techcell_empresas/$(empresaId))
         && empresaDoc(empresaId).data.owner_uid == request.auth.uid;
     }
     function isActiveMember(empresaId) {
       return request.auth != null
         && exists(/databases/$(database)/documents/techcell_empresas/$(empresaId)/usuarios/$(request.auth.uid))
         && memberDoc(empresaId).data.ativo == true;
+    }
+    function licensePath(empresaId) {
+      return /databases/$(database)/documents/techcell_licenses/$(empresaId);
+    }
+    function licenseExists(empresaId) {
+      return exists(licensePath(empresaId));
+    }
+    function licenseActive(empresaId) {
+      return licenseExists(empresaId)
+        && get(licensePath(empresaId)).data.status == 'ATIVA'
+        && get(licensePath(empresaId)).data.master_ativo == true;
+    }
+    function tenantAllowed(empresaId) {
+      return !licenseExists(empresaId) || licenseActive(empresaId) || isPlatformAdmin();
     }
     function legacyPermission(perfil, permissao) {
       return perfil == 'GERENTE'
@@ -33,30 +56,94 @@ service cloud.firestore {
             || (!('permissoes' in memberDoc(empresaId).data)
               && legacyPermission(memberDoc(empresaId).data.perfil, permissao)));
     }
+    function validStatus(status) {
+      return status == 'PENDENTE' || status == 'AUTORIZADO'
+        || status == 'NEGADO' || status == 'BLOQUEADO';
+    }
+    function slotValidAfter(empresaId, deviceId) {
+      return request.resource.data.license_slot_id is string
+        && request.resource.data.license_slot_id != ''
+        && getAfter(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.status == 'EM_USO'
+        && getAfter(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.device_uuid == deviceId
+        && getAfter(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.uid == resource.data.uid;
+    }
+    function slotValidCurrent(empresaId, deviceId) {
+      return request.resource.data.license_slot_id is string
+        && request.resource.data.license_slot_id != ''
+        && get(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.status == 'EM_USO'
+        && get(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.device_uuid == deviceId
+        && get(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.uid == resource.data.uid;
+    }
+
+    // A conta Desenvolvedor é global e independente do MASTER de qualquer empresa.
+    // O primeiro documento de Desenvolvedor deve ser provisionado manualmente/por backend seguro.
+    match /techcell_platform_admins/{userId} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isPlatformAdmin());
+      allow create, update, delete: if isPlatformAdmin();
+    }
+
+    // Licença comercial controlada exclusivamente pelo Desenvolvedor.
+    match /techcell_licenses/{empresaId} {
+      allow read: if isPlatformAdmin() || isOwner(empresaId) || isActiveMember(empresaId);
+      allow create, update, delete: if isPlatformAdmin();
+
+      match /caixa_slots/{slotId} {
+        allow read: if isPlatformAdmin() || isOwner(empresaId);
+        allow create, delete: if isPlatformAdmin();
+        allow update: if isPlatformAdmin()
+          || (isOwner(empresaId)
+              && licenseActive(empresaId)
+              && resource.data.empresa_uuid == empresaId
+              && request.resource.data.empresa_uuid == empresaId
+              && resource.data.tipo == 'CAIXA'
+              && request.resource.data.tipo == 'CAIXA'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','device_uuid','uid','updated_at'])
+              && (
+                (resource.data.status == 'LIVRE'
+                  && request.resource.data.status == 'EM_USO'
+                  && request.resource.data.device_uuid != ''
+                  && request.resource.data.uid != '')
+                ||
+                (resource.data.status == 'EM_USO'
+                  && request.resource.data.status == 'LIVRE'
+                  && request.resource.data.device_uuid == ''
+                  && request.resource.data.uid == '')
+              ));
+      }
+    }
 
     // Índice privado conta -> empresa. Cada usuário lê somente o próprio vínculo.
     match /techcell_user_empresas/{userId}/empresas/{empresaId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow create, update: if isOwner(empresaId)
-                            && request.resource.data.uid == userId
-                            && request.resource.data.empresa_uuid == empresaId;
-      allow delete: if isOwner(empresaId);
+      allow read: if request.auth != null && (request.auth.uid == userId || isPlatformAdmin());
+      allow create, update: if isPlatformAdmin()
+                            || (isOwner(empresaId)
+                                && request.resource.data.uid == userId
+                                && request.resource.data.empresa_uuid == empresaId);
+      allow delete: if isPlatformAdmin() || isOwner(empresaId);
     }
 
-    // Solicitação/autorização do aparelho fica fora da árvore genérica da empresa,
-    // para um funcionário nunca poder listar pedidos de outros usuários.
+    // Solicitação/autorização de aparelhos. Uma empresa licenciada só autoriza Caixa
+    // quando existe uma vaga física de licença ligada ao device_uuid.
     match /techcell_device_requests/{empresaId}/devices/{deviceId} {
       allow create: if request.auth != null
                     && (isOwner(empresaId) || isActiveMember(empresaId))
+                    && tenantAllowed(empresaId)
                     && request.resource.data.uid == request.auth.uid
                     && request.resource.data.empresa_uuid == empresaId
                     && request.resource.data.device_uuid == deviceId
                     && request.resource.data.status == 'PENDENTE';
 
-      allow read: if isOwner(empresaId)
+      allow read: if isPlatformAdmin() || isOwner(empresaId)
                   || (request.auth != null && resource.data.uid == request.auth.uid);
 
-      allow update: if isOwner(empresaId)
+      allow update: if isPlatformAdmin()
+        || (isOwner(empresaId)
+            && validStatus(request.resource.data.status)
+            && (
+              request.resource.data.status != 'AUTORIZADO'
+              || !licenseExists(empresaId)
+              || (licenseActive(empresaId) && slotValidAfter(empresaId, deviceId))
+            ))
         || (request.auth != null
             && resource.data.uid == request.auth.uid
             && request.resource.data.uid == resource.data.uid
@@ -72,59 +159,69 @@ service cloud.firestore {
                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','provided_code','code_used_at','updated_at'])
                 && exists(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId))
                 && get(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId)).data.code == request.resource.data.provided_code
-                && get(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId)).data.expires_at > request.time)
+                && get(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId)).data.expires_at > request.time
+                && (!licenseExists(empresaId) || (licenseActive(empresaId) && slotValidCurrent(empresaId, deviceId))))
             ));
 
-      allow delete: if isOwner(empresaId);
+      allow delete: if isPlatformAdmin() || isOwner(empresaId);
     }
 
-    // Segredo do código alternativo: somente o Master proprietário pode ler/gravar.
+    // Código alternativo é segredo do Master/Desenvolvedor.
     match /techcell_device_codes/{empresaId}/devices/{deviceId} {
-      allow read, create, update, delete: if isOwner(empresaId);
+      allow read, create, update, delete: if isPlatformAdmin() || isOwner(empresaId);
     }
 
     match /techcell_empresas/{empresaId} {
       allow create: if request.auth != null
                     && request.resource.data.owner_uid == request.auth.uid;
-      allow read: if isOwner(empresaId) || isActiveMember(empresaId);
-      allow update, delete: if isOwner(empresaId)
-                            && request.resource.data.owner_uid == request.auth.uid;
+      allow read: if isPlatformAdmin() || isOwner(empresaId) || isActiveMember(empresaId);
+      allow update, delete: if isPlatformAdmin()
+                            || (isOwner(empresaId)
+                                && tenantAllowed(empresaId)
+                                && request.resource.data.owner_uid == request.auth.uid);
 
       match /usuarios/{userId} {
-        allow read: if isOwner(empresaId)
+        allow read: if isPlatformAdmin() || isOwner(empresaId)
                     || (request.auth != null && request.auth.uid == userId);
-        allow create, update, delete: if isOwner(empresaId);
+        allow create, update, delete: if isPlatformAdmin()
+                                     || (isOwner(empresaId) && tenantAllowed(empresaId));
       }
 
       match /produtos/{produtoId} {
-        allow read: if isOwner(empresaId) || isActiveMember(empresaId);
-        allow create, update: if isOwner(empresaId)
-          || (hasPermission(empresaId, 'PRODUTOS_EDITAR')
+        allow read: if isPlatformAdmin() || isOwner(empresaId) || isActiveMember(empresaId);
+        allow create, update: if isPlatformAdmin()
+          || (tenantAllowed(empresaId) && isOwner(empresaId))
+          || (tenantAllowed(empresaId)
+              && hasPermission(empresaId, 'PRODUTOS_EDITAR')
               && request.resource.data.empresa_uuid == empresaId
               && request.resource.data.cloud_source_uid == request.auth.uid);
-        allow delete: if isOwner(empresaId);
+        allow delete: if isPlatformAdmin() || (isOwner(empresaId) && tenantAllowed(empresaId));
       }
 
       match /vendas_entrada/{saleId} {
-        allow read: if isOwner(empresaId) || isActiveMember(empresaId);
-        allow create: if isOwner(empresaId)
-                      || (isActiveMember(empresaId)
+        allow read: if isPlatformAdmin() || isOwner(empresaId) || isActiveMember(empresaId);
+        allow create: if isPlatformAdmin()
+                      || (tenantAllowed(empresaId) && isOwner(empresaId))
+                      || (tenantAllowed(empresaId)
+                          && isActiveMember(empresaId)
                           && request.resource.data.empresa_uuid == empresaId
                           && request.resource.data.source_uid == request.auth.uid
                           && request.resource.data.status == 'PENDENTE_MASTER');
-        allow update: if isOwner(empresaId)
-                      || (isActiveMember(empresaId)
+        allow update: if isPlatformAdmin()
+                      || (tenantAllowed(empresaId) && isOwner(empresaId))
+                      || (tenantAllowed(empresaId)
+                          && isActiveMember(empresaId)
                           && resource.data.source_uid == request.auth.uid
                           && request.resource.data.source_uid == request.auth.uid
                           && request.resource.data.empresa_uuid == empresaId
                           && resource.data.status != 'ACEITA_MASTER'
                           && request.resource.data.status == 'PENDENTE_MASTER');
-        allow delete: if isOwner(empresaId);
+        allow delete: if isPlatformAdmin() || (isOwner(empresaId) && tenantAllowed(empresaId));
       }
 
       match /{document=**} {
-        allow read: if isOwner(empresaId) || isActiveMember(empresaId);
-        allow write: if isOwner(empresaId);
+        allow read: if isPlatformAdmin() || isOwner(empresaId) || isActiveMember(empresaId);
+        allow write: if isPlatformAdmin() || (isOwner(empresaId) && tenantAllowed(empresaId));
       }
     }
   }
