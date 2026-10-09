@@ -2,6 +2,7 @@ package com.techcell.caixadaloja;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.Looper;
 
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.auth.FirebaseUser;
@@ -113,6 +114,16 @@ public final class TechCellDeveloperAccess {
     }
 
     public static void exigir(Context context) throws Exception {
+        // Se a conta já foi validada no login/painel Developer, usa o estado local.
+        // Isso evita Tasks.await() na UI thread (Android proíbe bloqueio de rede na thread principal).
+        Estado cache = local(context);
+        if (cache.desenvolvedor) return;
+
+        // Validação no servidor só pode ocorrer fora da thread principal.
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            throw new IllegalStateException("Acesso de Desenvolvedor ainda não validado. Volte à Central da Plataforma e tente novamente.");
+        }
+
         Estado e = atualizar(context);
         if (!e.desenvolvedor) throw new IllegalStateException("Esta conta não possui acesso de Desenvolvedor da plataforma.");
     }
