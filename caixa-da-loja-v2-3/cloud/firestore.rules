@@ -80,18 +80,95 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.uid == resource.data.uid;
     }
 
+    // Compatibilidade do Caixa da Loja que já está embutido no Tech Cell.
+    // Mantém o histórico nas coleções antigas sem migrar ou apagar documentos.
+    function legacyCaixaAllowed() {
+      return request.auth != null
+        && request.auth.token.email in [
+          'techcellacs1@gmail.com',
+          'techellacs1@gmail.com',
+          'acsolar1611@gmail.com'
+        ];
+    }
+    function legacyCaixaAdmin() {
+      return request.auth != null
+        && request.auth.token.email in [
+          'techcellacs1@gmail.com',
+          'techellacs1@gmail.com'
+        ];
+    }
+
+    // Compatibilidade adicional com o Caixa 2.7.1 inicial.
+    function legacyV271SignedIn() {
+      return request.auth != null;
+    }
+    function legacyV271UserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function legacyV271SameStore(storeId) {
+      return legacyV271SignedIn()
+        && legacyV271UserDoc().data.storeId == storeId;
+    }
+    function legacyV271Admin() {
+      return legacyV271SignedIn()
+        && legacyV271UserDoc().data.role == 'admin';
+    }
+    function legacyV271Cashier() {
+      return legacyV271SignedIn()
+        && legacyV271UserDoc().data.role == 'cashier';
+    }
+
     // A conta Desenvolvedor é global e independente do MASTER de qualquer empresa.
     // Bootstrap: somente a conta autenticada com o UID fixo abaixo pode criar o próprio documento uma única vez.
-    // O e-mail continua gravado no documento para auditoria, mas não é usado como identificador de segurança.
+    // O e-mail fica apenas como dado de auditoria; o UID é a identidade de segurança.
     match /techcell_platform_admins/{userId} {
       allow read: if request.auth != null && (request.auth.uid == userId || isPlatformAdmin());
       allow create: if isPlatformAdmin()
                     || (isBootstrapDeveloper(userId)
                         && request.resource.data.ativo == true
                         && request.resource.data.papel == 'DEVELOPER'
-                        && request.resource.data.bootstrap_uid == userId
-                        && request.resource.data.bootstrap_email == request.auth.token.email);
+                        && request.resource.data.bootstrap_uid == userId);
       allow update, delete: if isPlatformAdmin();
+    }
+
+    // Caixa da Loja embutido no sistema atual: histórico preservado em top-level.
+    match /movimentos/{movementId} {
+      allow read: if isPlatformAdmin() || legacyCaixaAllowed();
+      allow create: if isPlatformAdmin() || legacyCaixaAllowed();
+      allow update, delete: if isPlatformAdmin() || legacyCaixaAdmin();
+    }
+
+    match /fechamentos/{closingId} {
+      allow read: if isPlatformAdmin() || legacyCaixaAdmin();
+      allow create, update, delete: if isPlatformAdmin() || legacyCaixaAdmin();
+    }
+
+    // Caixa 2.7.1: perfil e loja usados pelo aplicativo inicial.
+    match /users/{uid} {
+      allow read: if isPlatformAdmin()
+                  || (legacyV271SignedIn() && request.auth.uid == uid);
+      allow write: if false;
+    }
+
+    match /stores/{storeId}/movements/{movementId} {
+      allow read: if isPlatformAdmin() || legacyV271SameStore(storeId);
+      allow create, update: if isPlatformAdmin()
+                            || (legacyV271SameStore(storeId)
+                                && (legacyV271Admin() || legacyV271Cashier()));
+      allow delete: if isPlatformAdmin()
+                    || (legacyV271SameStore(storeId) && legacyV271Admin());
+    }
+
+    match /stores/{storeId}/expenses/{expenseId} {
+      allow read: if isPlatformAdmin() || legacyV271SameStore(storeId);
+      allow create, update, delete: if isPlatformAdmin()
+                                    || (legacyV271SameStore(storeId) && legacyV271Admin());
+    }
+
+    match /stores/{storeId}/closings/{closingId} {
+      allow read: if isPlatformAdmin() || legacyV271SameStore(storeId);
+      allow create, update, delete: if isPlatformAdmin()
+                                    || (legacyV271SameStore(storeId) && legacyV271Admin());
     }
 
     // Licença comercial controlada exclusivamente pelo Desenvolvedor.
