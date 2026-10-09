@@ -42,6 +42,17 @@ public class MainActivityV25 extends Activity {
         createNotificationChannel();
         requestNotificationPermissionIfNeeded();
 
+        TechCellAccess.Sessao sessao = TechCellAccess.sessao(this);
+        String empresaUuid = sessao.empresaUuid == null ? "" : sessao.empresaUuid.trim();
+        if (empresaUuid.isEmpty()) {
+            Toast.makeText(this, "Este aparelho ainda não está vinculado a uma empresa.", Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
+
+        // Migração é somente cópia: não remove nem altera os dados antigos.
+        TechCellCaixaMigration.iniciar(this);
+
         webView = new WebView(this);
         webView.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -77,8 +88,73 @@ public class MainActivityV25 extends Activity {
             }
         });
 
-        if (savedInstanceState != null) webView.restoreState(savedInstanceState);
-        else webView.loadDataWithBaseURL("file:///android_asset/", EmbeddedApp.html(), "text/html", "UTF-8", null);
+        String html = adaptarCaixaMultiEmpresa(EmbeddedApp.html(), sessao);
+        webView.loadDataWithBaseURL("file:///android_asset/", html, "text/html", "UTF-8", null);
+    }
+
+    /**
+     * Mantém a interface do Caixa já aprovada, mas troca o armazenamento global por
+     * techcell_empresas/{empresa_uuid}/caixa_movimentos e caixa_fechamentos.
+     * Assim cada empresa enxerga somente o próprio Caixa e o Excel também sai isolado.
+     */
+    private String adaptarCaixaMultiEmpresa(String html, TechCellAccess.Sessao sessao) {
+        String empresa = js(sessao.empresaUuid == null ? "" : sessao.empresaUuid.trim());
+        boolean admin = sessao.perfil == TechCellAccess.Perfil.MASTER;
+
+        String state = "let F,auth,db,user,role='caixa',movs=[],closings=[],stops=[],tab='lancamentos',period='hoje';";
+        String multi = "const EMPRESA_ID='" + empresa + "';" + state;
+        html = html.replace(state, multi);
+
+        html = html.replace(
+                "F.doc(db,'movimentos',",
+                "F.doc(db,'techcell_empresas',EMPRESA_ID,'caixa_movimentos',");
+        html = html.replace(
+                "F.collection(db,'movimentos')",
+                "F.collection(db,'techcell_empresas',EMPRESA_ID,'caixa_movimentos')");
+
+        html = html.replace(
+                "F.doc(db,'fechamentos',",
+                "F.doc(db,'techcell_empresas',EMPRESA_ID,'caixa_fechamentos',");
+        html = html.replace(
+                "F.collection(db,'fechamentos')",
+                "F.collection(db,'techcell_empresas',EMPRESA_ID,'caixa_fechamentos')");
+
+        // Todo documento novo carrega também o identificador da empresa e do usuário.
+        html = html.replace(
+                "{data:d,dinheiro:din,cartao:car,total:din+car,",
+                "{empresa_uuid:EMPRESA_ID,source_uid:user?.uid||'',data:d,dinheiro:din,cartao:car,total:din+car,");
+        html = html.replace(
+                "{mes:m,lucro:l,despesas:e,despesasTotal:t,resultadoLiquido:l-t,",
+                "{empresa_uuid:EMPRESA_ID,source_uid:user?.uid||'',mes:m,lucro:l,despesas:e,despesasTotal:t,resultadoLiquido:l-t,");
+
+        // O papel vem da sessão Tech Cell da empresa atual; deixa de depender de e-mail fixo.
+        String papelAntigo = "role=(u.email||'').toLowerCase()===ADMIN?'admin':'caixa';if(role==='caixa'&&(u.email||'').toLowerCase()!==CAIXA)console.warn('Conta não listada tratada como caixa');";
+        html = html.replace(papelAntigo, "role=" + (admin ? "'admin'" : "'caixa'") + ";");
+
+        // No modo de teste do Desenvolvedor nenhuma gravação do Caixa pode atingir a empresa real.
+        if (TechCellDeveloperTestMode.ativo(this)) {
+            html = html.replace(
+                    "document.getElementById('cash').onsubmit=saveCash",
+                    "document.getElementById('cash').onsubmit=e=>{e.preventDefault();toast('Modo de teste: gravação bloqueada.',true)}");
+            html = html.replace(
+                    "document.getElementById('admSave')?.addEventListener('click',adminSave)",
+                    "document.getElementById('admSave')?.addEventListener('click',()=>toast('Modo de teste: gravação bloqueada.',true))");
+            html = html.replace(
+                    "document.getElementById('admDel')?.addEventListener('click',adminDel)",
+                    "document.getElementById('admDel')?.addEventListener('click',()=>toast('Modo de teste: exclusão bloqueada.',true))");
+            html = html.replace(
+                    "document.getElementById('saveClose')?.addEventListener('click',saveClose)",
+                    "document.getElementById('saveClose')?.addEventListener('click',()=>toast('Modo de teste: gravação bloqueada.',true))");
+        }
+
+        return html;
+    }
+
+    private static String js(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\r", "")
+                .replace("\n", "\\n");
     }
 
     private void createNotificationChannel() {
