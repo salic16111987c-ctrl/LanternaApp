@@ -4,55 +4,69 @@ service cloud.firestore {
     function empresaDoc(empresaId) {
       return get(/databases/$(database)/documents/techcell_empresas/$(empresaId));
     }
+
     function memberDoc(empresaId) {
       return get(/databases/$(database)/documents/techcell_empresas/$(empresaId)/usuarios/$(request.auth.uid));
     }
+
     function adminPath() {
       return /databases/$(database)/documents/techcell_platform_admins/$(request.auth.uid);
     }
+
     function isPlatformAdmin() {
       return request.auth != null
         && exists(adminPath())
         && get(adminPath()).data.ativo == true;
     }
+
     function isBootstrapDeveloper(userId) {
       return request.auth != null
         && request.auth.uid == userId
         && userId == 'JMBDrlStQdNLD1km8hOrJmcJqXd2';
     }
+
     function isOwner(empresaId) {
       return request.auth != null
         && exists(/databases/$(database)/documents/techcell_empresas/$(empresaId))
         && empresaDoc(empresaId).data.owner_uid == request.auth.uid;
     }
+
     function isActiveMember(empresaId) {
       return request.auth != null
         && exists(/databases/$(database)/documents/techcell_empresas/$(empresaId)/usuarios/$(request.auth.uid))
         && memberDoc(empresaId).data.ativo == true;
     }
+
     function licensePath(empresaId) {
       return /databases/$(database)/documents/techcell_licenses/$(empresaId);
     }
+
     function licenseExists(empresaId) {
       return exists(licensePath(empresaId));
     }
+
     function licenseActive(empresaId) {
       return licenseExists(empresaId)
         && get(licensePath(empresaId)).data.status == 'ATIVA'
         && get(licensePath(empresaId)).data.master_ativo == true;
     }
+
     function tenantAllowed(empresaId) {
       return !licenseExists(empresaId) || licenseActive(empresaId) || isPlatformAdmin();
     }
+
     function legacyPermission(perfil, permissao) {
       return perfil == 'GERENTE'
-        || (perfil == 'CAIXA' && (permissao == 'VENDER'
+        || (perfil == 'CAIXA' && (
+          permissao == 'VENDER'
           || permissao == 'CLIENTES'
           || permissao == 'PRODUTOS'
           || permissao == 'PRODUTOS_EDITAR'
           || permissao == 'PRODUTOS_CUSTO'
-          || permissao == 'RESUMO_DIA'));
+          || permissao == 'RESUMO_DIA'
+        ));
     }
+
     function hasPermission(empresaId, permissao) {
       return isActiveMember(empresaId)
         && ((('permissoes' in memberDoc(empresaId).data)
@@ -61,10 +75,14 @@ service cloud.firestore {
             || (!('permissoes' in memberDoc(empresaId).data)
               && legacyPermission(memberDoc(empresaId).data.perfil, permissao)));
     }
+
     function validStatus(status) {
-      return status == 'PENDENTE' || status == 'AUTORIZADO'
-        || status == 'NEGADO' || status == 'BLOQUEADO';
+      return status == 'PENDENTE'
+        || status == 'AUTORIZADO'
+        || status == 'NEGADO'
+        || status == 'BLOQUEADO';
     }
+
     function slotValidAfter(empresaId, deviceId) {
       return request.resource.data.license_slot_id is string
         && request.resource.data.license_slot_id != ''
@@ -72,6 +90,7 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.device_uuid == deviceId
         && getAfter(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.uid == resource.data.uid;
     }
+
     function slotValidCurrent(empresaId, deviceId) {
       return request.resource.data.license_slot_id is string
         && request.resource.data.license_slot_id != ''
@@ -80,8 +99,8 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/techcell_licenses/$(empresaId)/caixa_slots/$(request.resource.data.license_slot_id)).data.uid == resource.data.uid;
     }
 
-    // Compatibilidade do Caixa da Loja que já está embutido no Tech Cell.
-    // Mantém o histórico nas coleções antigas sem migrar ou apagar documentos.
+    // Compatibilidade temporaria com o Caixa embutido antigo, que usava colecoes globais.
+    // Serve para preservar o historico e permitir a migracao sem apagar documentos.
     function legacyCaixaAllowed() {
       return request.auth != null
         && request.auth.token.email in [
@@ -90,6 +109,7 @@ service cloud.firestore {
           'acsolar1611@gmail.com'
         ];
     }
+
     function legacyCaixaAdmin() {
       return request.auth != null
         && request.auth.token.email in [
@@ -98,31 +118,34 @@ service cloud.firestore {
         ];
     }
 
-    // Compatibilidade adicional com o Caixa 2.7.1 inicial.
+    // Compatibilidade com o Caixa 2.7.1.
     function legacyV271SignedIn() {
       return request.auth != null;
     }
+
     function legacyV271UserDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
+
     function legacyV271SameStore(storeId) {
       return legacyV271SignedIn()
         && legacyV271UserDoc().data.storeId == storeId;
     }
+
     function legacyV271Admin() {
       return legacyV271SignedIn()
         && legacyV271UserDoc().data.role == 'admin';
     }
+
     function legacyV271Cashier() {
       return legacyV271SignedIn()
         && legacyV271UserDoc().data.role == 'cashier';
     }
 
-    // A conta Desenvolvedor é global e independente do MASTER de qualquer empresa.
-    // Bootstrap: somente a conta autenticada com o UID fixo abaixo pode criar o próprio documento uma única vez.
-    // O e-mail fica apenas como dado de auditoria; o UID é a identidade de segurança.
+    // Desenvolvedor global.
     match /techcell_platform_admins/{userId} {
-      allow read: if request.auth != null && (request.auth.uid == userId || isPlatformAdmin());
+      allow read: if request.auth != null
+                  && (request.auth.uid == userId || isPlatformAdmin());
       allow create: if isPlatformAdmin()
                     || (isBootstrapDeveloper(userId)
                         && request.resource.data.ativo == true
@@ -131,7 +154,7 @@ service cloud.firestore {
       allow update, delete: if isPlatformAdmin();
     }
 
-    // Caixa da Loja embutido no sistema atual: histórico preservado em top-level.
+    // Colecoes globais antigas do Caixa embutido. Mantidas somente para compatibilidade/migracao.
     match /movimentos/{movementId} {
       allow read: if isPlatformAdmin() || legacyCaixaAllowed();
       allow create: if isPlatformAdmin() || legacyCaixaAllowed();
@@ -143,7 +166,7 @@ service cloud.firestore {
       allow create, update, delete: if isPlatformAdmin() || legacyCaixaAdmin();
     }
 
-    // Caixa 2.7.1: perfil e loja usados pelo aplicativo inicial.
+    // Caixa 2.7.1.
     match /users/{uid} {
       allow read: if isPlatformAdmin()
                   || (legacyV271SignedIn() && request.auth.uid == uid);
@@ -171,7 +194,7 @@ service cloud.firestore {
                                     || (legacyV271SameStore(storeId) && legacyV271Admin());
     }
 
-    // Licença comercial controlada exclusivamente pelo Desenvolvedor.
+    // Licencas comerciais.
     match /techcell_licenses/{empresaId} {
       allow read: if isPlatformAdmin() || isOwner(empresaId) || isActiveMember(empresaId);
       allow create, update, delete: if isPlatformAdmin();
@@ -186,7 +209,9 @@ service cloud.firestore {
               && request.resource.data.empresa_uuid == empresaId
               && resource.data.tipo == 'CAIXA'
               && request.resource.data.tipo == 'CAIXA'
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','device_uuid','uid','updated_at'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status','device_uuid','uid','updated_at'
+              ])
               && (
                 (resource.data.status == 'LIVRE'
                   && request.resource.data.status == 'EM_USO'
@@ -201,9 +226,10 @@ service cloud.firestore {
       }
     }
 
-    // Índice privado conta -> empresa. Cada usuário lê somente o próprio vínculo.
+    // Indice privado usuario -> empresa.
     match /techcell_user_empresas/{userId}/empresas/{empresaId} {
-      allow read: if request.auth != null && (request.auth.uid == userId || isPlatformAdmin());
+      allow read: if request.auth != null
+                  && (request.auth.uid == userId || isPlatformAdmin());
       allow create, update: if isPlatformAdmin()
                             || (isOwner(empresaId)
                                 && request.resource.data.uid == userId
@@ -211,8 +237,7 @@ service cloud.firestore {
       allow delete: if isPlatformAdmin() || isOwner(empresaId);
     }
 
-    // Solicitação/autorização de aparelhos. Uma empresa licenciada só autoriza Caixa
-    // quando existe uma vaga física de licença ligada ao device_uuid.
+    // Autorizacao de aparelhos.
     match /techcell_device_requests/{empresaId}/devices/{deviceId} {
       allow create: if request.auth != null
                     && (isOwner(empresaId) || isActiveMember(empresaId))
@@ -241,25 +266,30 @@ service cloud.firestore {
             && (
               (resource.data.status == 'PENDENTE'
                 && request.resource.data.status == 'PENDENTE'
-                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['last_request_at','updated_at']))
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'last_request_at','updated_at'
+                ]))
               ||
               (resource.data.status == 'PENDENTE'
                 && request.resource.data.status == 'AUTORIZADO'
-                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','provided_code','code_used_at','updated_at'])
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                  'status','provided_code','code_used_at','updated_at'
+                ])
                 && exists(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId))
                 && get(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId)).data.code == request.resource.data.provided_code
                 && get(/databases/$(database)/documents/techcell_device_codes/$(empresaId)/devices/$(deviceId)).data.expires_at > request.time
-                && (!licenseExists(empresaId) || (licenseActive(empresaId) && slotValidCurrent(empresaId, deviceId))))
+                && (!licenseExists(empresaId)
+                    || (licenseActive(empresaId) && slotValidCurrent(empresaId, deviceId))))
             ));
 
       allow delete: if isPlatformAdmin() || isOwner(empresaId);
     }
 
-    // Código alternativo é segredo do Master/Desenvolvedor.
     match /techcell_device_codes/{empresaId}/devices/{deviceId} {
       allow read, create, update, delete: if isPlatformAdmin() || isOwner(empresaId);
     }
 
+    // Dados isolados por empresa.
     match /techcell_empresas/{empresaId} {
       allow create: if request.auth != null
                     && request.resource.data.owner_uid == request.auth.uid;
@@ -284,7 +314,8 @@ service cloud.firestore {
               && hasPermission(empresaId, 'PRODUTOS_EDITAR')
               && request.resource.data.empresa_uuid == empresaId
               && request.resource.data.cloud_source_uid == request.auth.uid);
-        allow delete: if isPlatformAdmin() || (isOwner(empresaId) && tenantAllowed(empresaId));
+        allow delete: if isPlatformAdmin()
+                      || (isOwner(empresaId) && tenantAllowed(empresaId));
       }
 
       match /vendas_entrada/{saleId} {
@@ -305,12 +336,50 @@ service cloud.firestore {
                           && request.resource.data.empresa_uuid == empresaId
                           && resource.data.status != 'ACEITA_MASTER'
                           && request.resource.data.status == 'PENDENTE_MASTER');
-        allow delete: if isPlatformAdmin() || (isOwner(empresaId) && tenantAllowed(empresaId));
+        allow delete: if isPlatformAdmin()
+                      || (isOwner(empresaId) && tenantAllowed(empresaId));
       }
 
+      // Caixa da Loja multiempresa.
+      match /caixa_movimentos/{movementId} {
+        allow read: if isPlatformAdmin()
+                    || isOwner(empresaId)
+                    || isActiveMember(empresaId);
+
+        allow create: if isPlatformAdmin()
+                      || (tenantAllowed(empresaId)
+                          && isOwner(empresaId)
+                          && request.resource.data.empresa_uuid == empresaId)
+                      || (tenantAllowed(empresaId)
+                          && hasPermission(empresaId, 'VENDER')
+                          && request.resource.data.empresa_uuid == empresaId
+                          && request.resource.data.source_uid == request.auth.uid);
+
+        allow update, delete: if isPlatformAdmin()
+                              || (isOwner(empresaId) && tenantAllowed(empresaId));
+      }
+
+      match /caixa_fechamentos/{closingId} {
+        allow read: if isPlatformAdmin()
+                    || isOwner(empresaId)
+                    || isActiveMember(empresaId);
+        allow create, update, delete: if isPlatformAdmin()
+                                     || (isOwner(empresaId)
+                                         && tenantAllowed(empresaId)
+                                         && request.resource.data.empresa_uuid == empresaId);
+      }
+
+      match /caixa_meta/{metaId} {
+        allow read: if isPlatformAdmin() || isOwner(empresaId);
+        allow create, update, delete: if isPlatformAdmin()
+                                     || (isOwner(empresaId) && tenantAllowed(empresaId));
+      }
+
+      // Demais dados existentes da empresa.
       match /{document=**} {
         allow read: if isPlatformAdmin() || isOwner(empresaId) || isActiveMember(empresaId);
-        allow write: if isPlatformAdmin() || (isOwner(empresaId) && tenantAllowed(empresaId));
+        allow write: if isPlatformAdmin()
+                     || (isOwner(empresaId) && tenantAllowed(empresaId));
       }
     }
   }
