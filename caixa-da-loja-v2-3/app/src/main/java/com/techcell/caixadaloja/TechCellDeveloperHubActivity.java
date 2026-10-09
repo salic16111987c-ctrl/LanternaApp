@@ -1,6 +1,7 @@
 package com.techcell.caixadaloja;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.view.ViewGroup;
@@ -8,21 +9,33 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
+import java.util.List;
 
-/** Entrada principal da Central da Plataforma. */
+/** Central completa do Desenvolvedor. */
 public class TechCellDeveloperHubActivity extends Activity {
-    private int dp(int v){ return TechCellUi.dp(this,v); }
-    private TextView txt(String s,int z,boolean b){ TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t; }
-    private Button botao(String s){ Button b=new Button(this);b.setText(s);b.setAllCaps(false);return b; }
+    private LinearLayout lista; private boolean ocupado;
+    private int dp(int v){return TechCellUi.dp(this,v);} private TextView txt(String s,int z,boolean b){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(TechCellUi.TEXT);if(b)t.setTypeface(null,android.graphics.Typeface.BOLD);return t;} private Button bt(String s){Button b=new Button(this);b.setText(s);b.setAllCaps(false);return b;}
+    @Override protected void onCreate(Bundle b){super.onCreate(b);TechCellUi.applyWindowChrome(this);render();carregar();}
+    @Override protected void onResume(){super.onResume();if(lista!=null&&!ocupado)carregar();}
 
-    @Override protected void onCreate(Bundle b){
-        super.onCreate(b);TechCellUi.applyWindowChrome(this);
-        ScrollView sv=new ScrollView(this);sv.setBackgroundColor(TechCellUi.BG);
-        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(22),dp(18),dp(34));sv.addView(root);
-        TextView t=txt("Central da Plataforma",28,true);root.addView(t);
-        TextView d=txt("Criação de empresas, contratos, licenças e suporte do Desenvolvedor.",12,false);d.setTextColor(TechCellUi.MUTED);d.setPadding(0,dp(5),0,dp(14));root.addView(d);
-        Button nova=botao("+ NOVA EMPRESA");TechCellUi.stylePrimary(this,nova,TechCellUi.GREEN);nova.setOnClickListener(v->startActivity(new Intent(this,TechCellDeveloperCompanyActivity.class)));root.addView(nova,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54)));
-        Button painel=botao("EMPRESAS CADASTRADAS / SUPORTE");TechCellUi.stylePrimary(this,painel,TechCellUi.BLUE);painel.setOnClickListener(v->startActivity(new Intent(this,TechCellDeveloperActivity.class)));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54));p.setMargins(0,dp(10),0,0);root.addView(painel,p);
-        setContentView(sv);
-    }
+    private void render(){ScrollView sv=new ScrollView(this);sv.setBackgroundColor(TechCellUi.BG);LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(16),dp(18),dp(16),dp(30));sv.addView(root);
+        Button voltar=bt("← Voltar");TechCellUi.styleSecondary(this,voltar);voltar.setOnClickListener(v->finish());root.addView(voltar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
+        TextView h=txt("Central da Plataforma",28,true);h.setPadding(0,dp(14),0,0);root.addView(h);TextView s=txt("Desenvolvedor • criar, licenciar, testar e administrar clientes",12,false);s.setTextColor(TechCellUi.MUTED);root.addView(s);
+        LinearLayout info=TechCellUi.card(this);info.setLayoutParams(TechCellUi.fullCardParams(this,12));info.addView(txt("DESENVOLVEDOR → EMPRESA/LICENÇA → MASTER → GERENTE/CAIXA",12,true));TextView d=txt("Cadastro e contrato ficam aqui. O Master administra a loja, mas não altera plano nem quantidade de licenças contratadas.",11,false);d.setTextColor(TechCellUi.MUTED);d.setPadding(0,dp(5),0,0);info.addView(d);root.addView(info);
+        Button nova=bt("＋ NOVA EMPRESA");TechCellUi.stylePrimary(this,nova,TechCellUi.GREEN);nova.setOnClickListener(v->startActivity(new Intent(this,TechCellDeveloperCompanyActivity.class)));LinearLayout.LayoutParams np=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(54));np.setMargins(0,dp(10),0,0);root.addView(nova,np);
+        Button atualizar=bt("↻ Atualizar empresas");TechCellUi.stylePrimary(this,atualizar,TechCellUi.BLUE);atualizar.setOnClickListener(v->carregar());LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));ap.setMargins(0,dp(8),0,dp(8));root.addView(atualizar,ap);lista=new LinearLayout(this);lista.setOrientation(LinearLayout.VERTICAL);root.addView(lista);setContentView(sv);}
+
+    private void carregar(){if(ocupado||lista==null)return;ocupado=true;lista.removeAllViews();lista.addView(txt("Carregando empresas…",13,true));new Thread(()->{try{TechCellDeveloperAccess.exigir(getApplicationContext());List<TechCellDeveloper.Empresa> es=TechCellDeveloper.listarEmpresas(getApplicationContext());runOnUiThread(()->{ocupado=false;mostrar(es);});}catch(Throwable e){runOnUiThread(()->{ocupado=false;erro(e);});}},"TechCell-DevHub").start();}
+    private void mostrar(List<TechCellDeveloper.Empresa> es){lista.removeAllViews();int total=es==null?0:es.size(),ativas=0,susp=0,caixas=0;if(es!=null)for(TechCellDeveloper.Empresa e:es){if(e.licenca.existe&&TechCellLicenseManager.ATIVA.equalsIgnoreCase(e.licenca.status))ativas++;if(e.licenca.existe&&TechCellLicenseManager.SUSPENSA.equalsIgnoreCase(e.licenca.status))susp++;if(e.licenca.existe)caixas+=e.licenca.caixasContratados;}LinearLayout r=TechCellUi.card(this);r.setLayoutParams(TechCellUi.fullCardParams(this,8));r.addView(txt("Empresas: "+total+" • Ativas: "+ativas+" • Suspensas: "+susp+"\nCaixas contratados: "+caixas,12,true));lista.addView(r);if(es==null||es.isEmpty()){TextView v=txt("Nenhuma empresa cadastrada. Use + NOVA EMPRESA.",13,false);v.setTextColor(TechCellUi.MUTED);v.setPadding(0,dp(12),0,0);lista.addView(v);return;}for(TechCellDeveloper.Empresa e:es)card(e);}
+    private void card(TechCellDeveloper.Empresa e){LinearLayout c=TechCellUi.card(this);c.setLayoutParams(TechCellUi.fullCardParams(this,9));c.addView(txt(e.nome,18,true));int uso=e.licenca.existe?e.caixasEmUso:e.caixasAutorizadosLegado,q=e.licenca.existe?e.licenca.caixasContratados:0;TextView d=txt("Master: "+(e.ownerEmail.isEmpty()?"—":e.ownerEmail)+"\nStatus: "+e.statusExibicao()+" • Plano: "+(e.licenca.existe?e.licenca.plano:"—")+"\nCaixas: "+uso+" / "+q,12,false);d.setTextColor(TechCellUi.MUTED);d.setPadding(0,dp(4),0,dp(8));c.addView(d);
+        Button contrato=bt("🏢 Cadastro, contrato e Master");TechCellUi.stylePrimary(this,contrato,TechCellUi.BLUE);contrato.setOnClickListener(v->{Intent i=new Intent(this,TechCellDeveloperCompanyActivity.class);i.putExtra(TechCellDeveloperCompanyActivity.EXTRA_EMPRESA_UUID,e.empresaUuid);startActivity(i);});c.addView(contrato,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
+        Button teste=bt("🧪 Testar como usuário — NÃO GRAVA");TechCellUi.stylePrimary(this,teste,TechCellUi.GREEN);teste.setOnClickListener(v->usuariosTeste(e));LinearLayout.LayoutParams p1=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));p1.setMargins(0,dp(7),0,0);c.addView(teste,p1);
+        Button sup=bt("🛠 Suporte operacional — ALTERA REAL");TechCellUi.stylePrimary(this,sup,TechCellUi.RED);sup.setOnClickListener(v->abrirAdmin(e));LinearLayout.LayoutParams p2=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));p2.setMargins(0,dp(7),0,0);c.addView(sup,p2);lista.addView(c);}
+    private void abrirAdmin(TechCellDeveloper.Empresa e){Intent i=new Intent(this,TechCellDeveloperAdminActivity.class);i.putExtra(TechCellDeveloperAdminActivity.EXTRA_EMPRESA_UUID,e.empresaUuid);i.putExtra(TechCellDeveloperAdminActivity.EXTRA_FILIAL_UUID,e.filialUuid);i.putExtra(TechCellDeveloperAdminActivity.EXTRA_EMPRESA_NOME,e.nome);i.putExtra(TechCellDeveloperAdminActivity.EXTRA_OWNER_UID,e.ownerUid);i.putExtra(TechCellDeveloperAdminActivity.EXTRA_OWNER_EMAIL,e.ownerEmail);startActivity(i);}
+    private void usuariosTeste(TechCellDeveloper.Empresa e){if(ocupado)return;ocupado=true;Toast.makeText(this,"Carregando usuários…",Toast.LENGTH_SHORT).show();new Thread(()->{try{List<TechCellDeveloper.UsuarioTeste> us=TechCellDeveloper.listarUsuariosTeste(getApplicationContext(),e);runOnUiThread(()->{ocupado=false;mostrarUsuarios(e,us);});}catch(Throwable x){runOnUiThread(()->{ocupado=false;erro(x);});}},"TechCell-TestUsers").start();}
+    private void mostrarUsuarios(TechCellDeveloper.Empresa e,List<TechCellDeveloper.UsuarioTeste> us){if(us==null||us.isEmpty()){new AlertDialog.Builder(this).setTitle("Sem usuários").setMessage("Esta empresa ainda não possui usuários para teste.").setPositiveButton("OK",null).show();return;}String[] itens=new String[us.size()];for(int i=0;i<us.size();i++){TechCellDeveloper.UsuarioTeste u=us.get(i);itens[i]=u.perfilExibicao()+" • "+u.nome+(u.email.isEmpty()?"":"\n"+u.email);}new AlertDialog.Builder(this).setTitle("🧪 Testar • "+e.nome).setItems(itens,(d,w)->confirmarTeste(e,us.get(w))).setNegativeButton("Cancelar",null).show();}
+    private void confirmarTeste(TechCellDeveloper.Empresa e,TechCellDeveloper.UsuarioTeste u){if(!u.ativo){Toast.makeText(this,"Usuário bloqueado.",Toast.LENGTH_LONG).show();return;}new AlertDialog.Builder(this).setTitle("Entrar no teste isolado?").setMessage("Empresa: "+e.nome+"\nUsuário: "+u.nome+"\nPerfil: "+u.perfilExibicao()+"\n\nNada será gravado na empresa.").setPositiveButton("ENTRAR NO TESTE",(d,w)->iniciarTeste(e,u)).setNegativeButton("Cancelar",null).show();}
+    private void iniciarTeste(TechCellDeveloper.Empresa e,TechCellDeveloper.UsuarioTeste u){if(ocupado)return;ocupado=true;new Thread(()->{try{TechCellDeveloperTestMode.iniciar(getApplicationContext(),e,u);runOnUiThread(()->{ocupado=false;Intent i=new Intent(this,TechCellHomeActivity.class);i.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);startActivity(i);finish();});}catch(Throwable x){runOnUiThread(()->{ocupado=false;erro(x);});}},"TechCell-TestStart").start();}
+    private void erro(Throwable e){new AlertDialog.Builder(this).setTitle("Central da Plataforma").setMessage(TechCellCloudUsers.mensagem(e)).setPositiveButton("OK",null).show();}
 }
