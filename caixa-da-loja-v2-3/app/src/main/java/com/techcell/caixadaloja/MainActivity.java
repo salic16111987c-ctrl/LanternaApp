@@ -1,4 +1,4 @@
 package com.techcell.caixadaloja;
 
-public class MainActivity extends MainActivityV27 {
+public class MainActivity extends MainActivityV28 {
 }
