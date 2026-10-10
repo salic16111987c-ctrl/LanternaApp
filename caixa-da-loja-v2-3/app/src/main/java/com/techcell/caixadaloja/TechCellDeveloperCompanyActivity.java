@@ -99,9 +99,14 @@ public class TechCellDeveloperCompanyActivity extends Activity {
             TextView info=txt("O Desenvolvedor define uma senha inicial de pelo menos 6 caracteres. O Master já poderá entrar imediatamente com e-mail + essa senha. A senha não é gravada no banco e não ficará visível depois.",11,false);info.setTextColor(TechCellUi.GREEN);info.setPadding(0,dp(9),0,0);master.addView(info);
         }else{
             TextView atual=txt("Master atual\n"+(d.ownerNome==null?"Master":d.ownerNome)+"\n"+(d.ownerEmail==null?"":d.ownerEmail),13,true);atual.setPadding(0,dp(10),0,dp(10));master.addView(atual);
-            Button trocar=botao("⇄  Substituir Master");TechCellUi.styleSecondary(this,trocar);trocar.setOnClickListener(v->dialogTrocarMaster());master.addView(trocar,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48)));
-            Button senha=botao("✉  Enviar redefinição de senha por e-mail");TechCellUi.styleSecondary(this,senha);senha.setOnClickListener(v->reenviarSenha());LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46));sp.setMargins(0,dp(7),0,0);master.addView(senha,sp);
-            TextView info=txt("Para um novo Master, use Substituir Master e informe uma senha inicial. O e-mail de redefinição fica apenas como opção adicional para o Master atual.",11,false);info.setTextColor(TechCellUi.MUTED);info.setPadding(0,dp(9),0,0);master.addView(info);
+
+            Button definirSenha=botao("🔐  Definir nova senha do Master");TechCellUi.stylePrimary(this,definirSenha,TechCellUi.BLUE);definirSenha.setOnClickListener(v->dialogNovaSenhaMaster());master.addView(definirSenha,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(50)));
+
+            Button trocar=botao("⇄  Substituir Master");TechCellUi.styleSecondary(this,trocar);trocar.setOnClickListener(v->dialogTrocarMaster());LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(48));tp.setMargins(0,dp(7),0,0);master.addView(trocar,tp);
+
+            Button senhaEmail=botao("✉  Enviar redefinição por e-mail");TechCellUi.styleSecondary(this,senhaEmail);senhaEmail.setOnClickListener(v->reenviarSenha());LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(46));sp.setMargins(0,dp(7),0,0);master.addView(senhaEmail,sp);
+
+            TextView info=txt("Definir nova senha mantém o mesmo Master e o mesmo e-mail. A senha atual nunca é exibida: ela é substituída por uma nova senha escolhida pelo Desenvolvedor. A senha não é salva no Firestore nem na auditoria.",11,false);info.setTextColor(TechCellUi.MUTED);info.setPadding(0,dp(9),0,0);master.addView(info);
         }
         root.addView(master);
 
@@ -120,7 +125,7 @@ public class TechCellDeveloperCompanyActivity extends Activity {
         Button salvar=botao(nova?"CRIAR EMPRESA E MASTER":"SALVAR CADASTRO E CONTRATO");TechCellUi.stylePrimary(this,salvar,TechCellUi.BLUE);salvar.setOnClickListener(v->confirmarSalvar());LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(56));bp.setMargins(0,dp(14),0,0);root.addView(salvar,bp);
 
         if(!nova){
-            LinearLayout audit=TechCellUi.card(this);audit.setLayoutParams(TechCellUi.fullCardParams(this,10));audit.addView(txt("Auditoria",13,true));TextView a=txt("Criação, troca de Master e alterações de plano/licenças são registradas com a identidade do Desenvolvedor. Senhas nunca entram na auditoria.",11,false);a.setTextColor(TechCellUi.MUTED);a.setPadding(0,dp(5),0,0);audit.addView(a);root.addView(audit);
+            LinearLayout audit=TechCellUi.card(this);audit.setLayoutParams(TechCellUi.fullCardParams(this,10));audit.addView(txt("Auditoria",13,true));TextView a=txt("Criação, troca de Master, redefinição de senha e alterações de plano/licenças são registradas com a identidade do Desenvolvedor. Senhas nunca entram na auditoria.",11,false);a.setTextColor(TechCellUi.MUTED);a.setPadding(0,dp(5),0,0);audit.addView(a);root.addView(audit);
         }
         setContentView(scroll);
     }
@@ -129,7 +134,7 @@ public class TechCellDeveloperCompanyActivity extends Activity {
     private void addCampo(LinearLayout box,String titulo,EditText e,int top){TextView l=txt(titulo,12,true);l.setPadding(0,dp(top),0,dp(4));box.addView(l);box.addView(e,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52)));}
     private void selecionar(Spinner s,String[] itens,String valor){if(valor==null)return;for(int i=0;i<itens.length;i++)if(itens[i].equalsIgnoreCase(valor)){s.setSelection(i);return;}}
     private int caixas(){try{return Math.max(0,Integer.parseInt(caixas.getText().toString().trim()));}catch(Throwable e){return 0;}}
-    private boolean senhaValida(String a,String b){if(a==null||a.length()<6){Toast.makeText(this,"A senha inicial do Master deve ter pelo menos 6 caracteres.",Toast.LENGTH_LONG).show();return false;}if(!a.equals(b)){Toast.makeText(this,"As duas senhas do Master não são iguais.",Toast.LENGTH_LONG).show();return false;}return true;}
+    private boolean senhaValida(String a,String b){if(a==null||a.length()<6){Toast.makeText(this,"A senha do Master deve ter pelo menos 6 caracteres.",Toast.LENGTH_LONG).show();return false;}if(!a.equals(b)){Toast.makeText(this,"As duas senhas do Master não são iguais.",Toast.LENGTH_LONG).show();return false;}return true;}
 
     private void confirmarSalvar(){
         String nome=fantasia.getText().toString().trim();
@@ -163,7 +168,9 @@ public class TechCellDeveloperCompanyActivity extends Activity {
         EditText senha=campo("Senha inicial do novo Master",true);LinearLayout.LayoutParams sp1=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));sp1.setMargins(0,dp(8),0,0);f.addView(senha,sp1);
         EditText confirmar=campo("Repita a senha inicial",true);LinearLayout.LayoutParams sp2=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));sp2.setMargins(0,dp(8),0,0);f.addView(confirmar,sp2);
         TextView info=txt("O novo Master já poderá entrar imediatamente com o e-mail e a senha inicial informados. O Master anterior perde o vínculo com esta empresa.",11,false);info.setTextColor(TechCellUi.RED);info.setPadding(0,dp(8),0,0);f.addView(info);
-        new AlertDialog.Builder(this).setTitle("Substituir Master • REAL").setView(f).setPositiveButton("CONTINUAR",(d,w)->{String s=senha.getText().toString();if(!senhaValida(s,confirmar.getText().toString()))return;confirmarTroca(nome.getText().toString(),email.getText().toString(),s);}).setNegativeButton("Cancelar",null).show();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Substituir Master • REAL").setView(f).setPositiveButton("CONTINUAR",null).setNegativeButton("Cancelar",null).create();
+        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String s=senha.getText().toString();if(!senhaValida(s,confirmar.getText().toString()))return;dialog.dismiss();confirmarTroca(nome.getText().toString(),email.getText().toString(),s);}));
+        dialog.show();
     }
 
     private void confirmarTroca(String nome,String email,String senha){
@@ -173,6 +180,32 @@ public class TechCellDeveloperCompanyActivity extends Activity {
     private void trocarMaster(String nome,String email,String senha){
         if(ocupado)return;ocupado=true;Toast.makeText(this,"Substituindo Master…",Toast.LENGTH_LONG).show();
         new Thread(()->{try{TechCellDeveloperCompanyManager.Dados out=TechCellDeveloperCompanyManager.substituirMaster(getApplicationContext(),dados,nome,email,senha);runOnUiThread(()->{ocupado=false;dados=out;new AlertDialog.Builder(this).setTitle("Master substituído").setMessage("Novo Master: "+out.ownerEmail+"\n\nEle já pode entrar com o e-mail e a senha inicial que você definiu.").setPositiveButton("OK",(x,y)->render(out)).show();});}catch(Throwable e){runOnUiThread(()->{ocupado=false;erro("Não foi possível substituir o Master",e,false);});}},"TechCell-Replace-Master").start();
+    }
+
+    private void dialogNovaSenhaMaster(){
+        if(dados==null)return;
+        LinearLayout f=new LinearLayout(this);f.setOrientation(LinearLayout.VERTICAL);f.setPadding(dp(20),dp(2),dp(20),0);
+        TextView conta=txt("Master atual\n"+dados.ownerEmail,12,true);conta.setPadding(0,0,0,dp(8));f.addView(conta);
+        EditText senha=campo("Nova senha do Master",true);f.addView(senha,new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52)));
+        EditText confirmar=campo("Repita a nova senha",true);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,dp(52));cp.setMargins(0,dp(8),0,0);f.addView(confirmar,cp);
+        TextView info=txt("A senha atual não pode ser exibida. Esta operação substitui a senha do mesmo Master por uma nova. A senha não será armazenada no banco.",11,false);info.setTextColor(TechCellUi.MUTED);info.setPadding(0,dp(9),0,0);f.addView(info);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Definir nova senha • REAL").setView(f).setPositiveButton("CONTINUAR",null).setNegativeButton("Cancelar",null).create();
+        dialog.setOnShowListener(x->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{String s=senha.getText().toString();if(!senhaValida(s,confirmar.getText().toString()))return;dialog.dismiss();confirmarNovaSenhaMaster(s);}));
+        dialog.show();
+    }
+
+    private void confirmarNovaSenhaMaster(String senha){
+        new AlertDialog.Builder(this).setTitle("Alterar a senha deste Master?").setMessage("Empresa: "+dados.fantasia+"\nMaster: "+dados.ownerEmail+"\n\nA senha anterior deixará de funcionar imediatamente. O Master continuará sendo a mesma conta e a ação será auditada.").setPositiveButton("ALTERAR SENHA",(d,w)->alterarSenhaMaster(senha)).setNegativeButton("Cancelar",null).show();
+    }
+
+    private void alterarSenhaMaster(String senha){
+        if(ocupado)return;ocupado=true;Toast.makeText(this,"Alterando senha do Master…",Toast.LENGTH_LONG).show();
+        new Thread(()->{
+            try{
+                TechCellDeveloperPasswordAdmin.definirSenhaMaster(getApplicationContext(),dados,senha);
+                runOnUiThread(()->{ocupado=false;new AlertDialog.Builder(this).setTitle("Senha alterada").setMessage("A nova senha do Master foi definida.\n\nEle já pode entrar com:\n"+dados.ownerEmail+"\n+ a nova senha escolhida.").setPositiveButton("OK",null).show();});
+            }catch(Throwable e){runOnUiThread(()->{ocupado=false;erro("Não foi possível alterar a senha do Master",e,false);});}
+        },"TechCell-Master-Password").start();
     }
 
     private void reenviarSenha(){
