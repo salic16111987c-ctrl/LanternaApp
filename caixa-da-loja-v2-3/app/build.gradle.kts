@@ -10,8 +10,8 @@ android {
         applicationId = "com.techcell.techcellacs.gestao.pdvpreview"
         minSdk = 24
         targetSdk = 35
-        versionCode = 486
-        versionName = "3.0.0-alpha42-pdvpreview-r56"
+        versionCode = 487
+        versionName = "3.0.0-alpha42-pdvpreview-r57"
     }
 
     buildTypes {
@@ -30,4 +30,5 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.16.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-functions")
 }
