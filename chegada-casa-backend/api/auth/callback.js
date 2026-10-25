@@ -25,7 +25,10 @@ export default function handler(req, res) {
 
   let scheme = 'chegadacasa';
   let appName = 'Chegada Casa';
-  if (state.startsWith('v3-')) {
+  if (state.startsWith('v3rc3-')) {
+    scheme = 'chegadacasav3rc3';
+    appName = 'Chegada Casa Rápido RC3';
+  } else if (state.startsWith('v3-')) {
     scheme = 'chegadacasav3';
     appName = 'Chegada Casa Rápido';
   } else if (state.startsWith('v2-')) {
