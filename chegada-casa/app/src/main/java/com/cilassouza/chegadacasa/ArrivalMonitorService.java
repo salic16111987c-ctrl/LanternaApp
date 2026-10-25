@@ -105,17 +105,29 @@ public class ArrivalMonitorService extends Service {
 
     /** No clock-based throttling: the gate must remain available 24 hours. */
     private int desiredProfile() {
-        if (prefs.getBoolean("dentro", false)) return MODE_HOME;
         int distance = prefs.getInt("monitor_distance", -1);
         int accuracy = prefs.getInt("monitor_accuracy", 9999);
         long fixAt = prefs.getLong("monitor_fix_at", 0L);
+        int radius = Math.max(50, prefs.getInt("raio", 100));
+        boolean moving = System.currentTimeMillis() < prefs.getLong("motion_until", 0L);
+        boolean approaching = prefs.getBoolean("motion_toward", false);
+
+        // While marked as home, do not stay indefinitely in the economical profile.
+        // A first credible fix outside the circle is only a HINT: it switches to high
+        // accuracy. Exit is still confirmed later by the existing sustained-fix rules.
+        if (prefs.getBoolean("dentro", false)) {
+            float wakeMargin = Math.max(60f, Math.min(140f, radius * 0.5f));
+            boolean outsideHint = distance >= 0 && distance > radius + wakeMargin;
+            boolean leavingHint = moving && distance >= Math.max(radius, 80);
+            if (outsideHint || leavingHint) return MODE_FAST;
+            return MODE_HOME;
+        }
+
         // Missing/stale/coarse position: sample economically but more often until known.
         if (distance < 0 || accuracy > 600 || fixAt <= 0L
                 || Math.abs(System.currentTimeMillis() - fixAt) > 180000L) return MODE_NEAR;
         if (distance > 2600) return MODE_FAR;
         if (distance <= 250) return MODE_FAST; // Never miss the final approach.
-        boolean moving = System.currentTimeMillis() < prefs.getLong("motion_until", 0L);
-        boolean approaching = prefs.getBoolean("motion_toward", false);
         if (moving && (distance <= 2000 || (distance <= 2500 && approaching))) return MODE_FAST;
         return MODE_NEAR;
     }
