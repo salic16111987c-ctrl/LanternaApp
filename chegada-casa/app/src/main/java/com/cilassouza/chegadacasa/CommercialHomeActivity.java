@@ -25,6 +25,10 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
 import com.google.android.gms.tasks.CancellationTokenSource;
@@ -117,7 +121,7 @@ public class CommercialHomeActivity extends Activity {
         brand.addView(names, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView version = pill("3.0 RC1", Color.rgb(236, 242, 255), BLUE);
+        TextView version = pill("3.0 RC3", Color.rgb(236, 242, 255), BLUE);
         version.setOnLongClickListener(v -> {
             openTechnicalMode();
             return true;
@@ -212,6 +216,21 @@ public class CommercialHomeActivity extends Activity {
         nav.addView(setup, navParams());
         page.addView(nav, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(62)));
+
+        // Android 15/target 35 may draw app content behind the system navigation bar.
+        // Apply the real navigation-bar inset so Inicio/Configurar always stay tappable.
+        ViewCompat.setOnApplyWindowInsetsListener(nav, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.navigationBars());
+            v.setPadding(dp(12), dp(7), dp(12), dp(9) + bars.bottom);
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            int wantedHeight = dp(62) + bars.bottom;
+            if (lp != null && lp.height != wantedHeight) {
+                lp.height = wantedHeight;
+                v.setLayoutParams(lp);
+            }
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(nav);
 
         setContentView(page);
     }
