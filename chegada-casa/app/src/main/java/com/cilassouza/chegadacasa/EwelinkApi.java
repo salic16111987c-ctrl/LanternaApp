@@ -235,23 +235,65 @@ public class EwelinkApi {
                 }
 
                 String gateId = getGateDeviceId(context);
-                int ok = 0;
+                boolean[] confirmed = new boolean[selected.length()];
+                int targets = 0;
                 for (int i = 0; i < selected.length(); i++) {
                     JSONObject d = selected.optJSONObject(i);
                     if (d == null) continue;
                     String id = d.optString("id", "");
-                    if (!gateId.isEmpty() && gateId.equals(id)) continue;
-                    int channels = Math.max(1, d.optInt("channels", 1));
-                    if (sendSwitchState(region, token, id, channels, -1, "on")) ok++;
-                    if (i < selected.length() - 1) Thread.sleep(1100L);
+                    if (id.isEmpty() || (!gateId.isEmpty() && gateId.equals(id))) continue;
+                    targets++;
+                }
+                if (targets == 0) {
+                    callback.onError("Nenhuma lâmpada válida foi selecionada.");
+                    return;
                 }
 
-                if (ok > 0) callback.onSuccess(ok + " lâmpada/dispositivo(s) acionado(s) pelo eWeLink.");
-                else callback.onError("O eWeLink não confirmou o acionamento das lâmpadas.");
+                int ok = 0;
+                String lastError = "";
+                long[] retryDelayMs = new long[]{0L, 5000L, 15000L};
+                for (int attempt = 0; attempt < retryDelayMs.length && ok < targets; attempt++) {
+                    if (retryDelayMs[attempt] > 0L) Thread.sleep(retryDelayMs[attempt]);
+                    p.edit()
+                            .putInt("ewelink_light_attempt", attempt + 1)
+                            .putLong("ewelink_light_attempt_at", System.currentTimeMillis())
+                            .apply();
+
+                    for (int i = 0; i < selected.length(); i++) {
+                        if (confirmed[i]) continue;
+                        JSONObject d = selected.optJSONObject(i);
+                        if (d == null) continue;
+                        String id = d.optString("id", "");
+                        if (id.isEmpty() || (!gateId.isEmpty() && gateId.equals(id))) continue;
+                        int channels = Math.max(1, d.optInt("channels", 1));
+                        try {
+                            if (sendSwitchState(region, token, id, channels, -1, "on")) {
+                                confirmed[i] = true;
+                                ok++;
+                            } else {
+                                lastError = "eWeLink não confirmou o comando";
+                            }
+                        } catch (Exception e) {
+                            lastError = message(e);
+                        }
+                        Thread.sleep(650L);
+                    }
+                }
+
+                if (ok > 0) {
+                    String detail = ok + " de " + targets + " lâmpada/dispositivo(s) acionado(s)";
+                    if (ok < targets) detail += "; houve falha parcial após novas tentativas.";
+                    else if (p.getInt("ewelink_light_attempt", 1) > 1)
+                        detail += " após recuperação automática da conexão.";
+                    callback.onSuccess(detail);
+                } else {
+                    callback.onError("Não consegui acionar as lâmpadas após 3 tentativas"
+                            + (lastError.isEmpty() ? "." : ": " + lastError));
+                }
             } catch (Exception e) {
                 callback.onError("Erro ao acionar eWeLink: " + message(e));
             }
-        }).start();
+        }, "ewelink-lights-retry").start();
     }
 
     public static void pulseGate(Context context, TextCallback callback) {
