@@ -25,10 +25,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Instalar Android API 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Preparar Android SDK já instalado no runner
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
       - name: Compilar APK Android real
         working-directory: orcavidro-v9
         run: gradle --no-daemon :app:assembleDebug --stacktrace
