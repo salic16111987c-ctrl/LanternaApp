@@ -1,0 +1,19 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'br.com.fariastemper.orcavidro'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'br.com.fariastemper.orcavidro'
+        minSdk 24
+        targetSdk 32
+        versionCode 90
+        versionName '9.0.0'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+}
