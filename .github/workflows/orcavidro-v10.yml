@@ -1,0 +1,49 @@
+name: Compilar OrçaVidro APK V10 Teste
+on:
+  push:
+    branches:
+      - orcavidro-v10-teste
+    paths:
+      - 'orcavidro-v9/**'
+      - '.github/workflows/orcavidro-v10.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Preparar Android SDK já instalado no runner
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Compilar APK Android real
+        working-directory: orcavidro-v9
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+      - name: Auditar pacote e assinatura
+        run: |
+          set -e
+          FILE="orcavidro-v9/app/build/outputs/apk/debug/app-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$FILE"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$FILE"
+          unzip -t "$FILE" | tail -1
+          sha256sum "$FILE"
+      - name: Publicar APK auditado
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrcaVidro-Pro-V10-Teste-APK
+          path: orcavidro-v9/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+          if-no-files-found: error

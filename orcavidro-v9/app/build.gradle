@@ -3,11 +3,11 @@ android {
     namespace 'br.com.fariastemper.orcavidro'
     compileSdk 35
     defaultConfig {
-        applicationId 'br.com.fariastemper.orcavidro'
+        applicationId 'br.com.fariastemper.orcavidro.teste'
         minSdk 24
         targetSdk 32
-        versionCode 90
-        versionName '9.0.0'
+        versionCode 100
+        versionName '10.0.0'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
